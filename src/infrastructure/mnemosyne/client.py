@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.infrastructure.mnemosyne.bank_manager import BankManager
+
+logger = logging.getLogger(__name__)
 
 
 class MnemosyneClient:
@@ -25,7 +28,9 @@ class MnemosyneClient:
         from mnemosyne.core.memory import Mnemosyne
 
         db_path = bank_manager.get_bank_db_path(namespace)
+        logger.info("[MnemosyneClient] Initializing: namespace=%s, bank=%s, db_path=%s", namespace, namespace, db_path)
         self._instance = Mnemosyne(bank=namespace, db_path=str(db_path))
+        logger.info("[MnemosyneClient] Created instance: namespace=%s, db_path=%s", namespace, self._instance.db_path)
 
     # ------------------------------------------------------------------
     # IMnemosyneClient implementation

@@ -9,6 +9,21 @@ from typing import Any, Callable, Coroutine, TypeVar
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+def _extract_namespace(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    """Extract namespace from handler call arguments.
+
+    Handlers are called as: handler(router, arguments_dict)
+    where arguments_dict contains the namespace key.
+    """
+    # First check kwargs directly (defensive)
+    if "namespace" in kwargs:
+        return kwargs["namespace"]
+    # Then check arguments dict (second positional arg)
+    if len(args) > 1 and isinstance(args[1], dict):
+        return args[1].get("namespace", "default")
+    return "default"
+
+
 def setup_logging() -> logging.Logger:
     """Configure application logging.
 
@@ -59,10 +74,10 @@ def log_tool_call(tool_name: str) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            namespace = kwargs.get("namespace", "default")
+            namespace = _extract_namespace(args, kwargs)
 
             logger.info(f"{tool_name} called: namespace={namespace}")
-            logger.debug(f"{tool_name} arguments: {kwargs}")
+            logger.debug(f"{tool_name} arguments: {kwargs} (args[1]={args[1] if len(args) > 1 else None})")
             logger.debug(f"{tool_name}: routing to namespace={namespace}")
             logger.debug(f"{tool_name}: getting instance for namespace={namespace}")
 
@@ -76,10 +91,10 @@ def log_tool_call(tool_name: str) -> Callable[[F], F]:
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            namespace = kwargs.get("namespace", "default")
+            namespace = _extract_namespace(args, kwargs)
 
             logger.info(f"{tool_name} called: namespace={namespace}")
-            logger.debug(f"{tool_name} arguments: {kwargs}")
+            logger.debug(f"{tool_name} arguments: {kwargs} (args[1]={args[1] if len(args) > 1 else None})")
             logger.debug(f"{tool_name}: routing to namespace={namespace}")
             logger.debug(f"{tool_name}: getting instance for namespace={namespace}")
 

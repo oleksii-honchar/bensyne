@@ -59,16 +59,21 @@ class NamespaceRouter:
         Returns:
             MnemosyneClient instance for the namespace.
         """
+        logger.debug("[router] get_instance called for namespace=%s, current_instances=%s", namespace, list(self.instances.keys()))
+
         # First check (before lock) — fast path for cached instances
         if namespace in self.instances:
             self.instances[namespace].last_accessed = time.time()
+            logger.debug("[router] HIT cached instance for namespace=%s", namespace)
             return self.instances[namespace]
 
         async with self._get_lock():
             # Second check (after lock) — prevent duplicate creation
             if namespace not in self.instances:
+                logger.debug("[router] Creating new instance for namespace=%s", namespace)
                 self.instances[namespace] = self._create_instance(namespace)
                 await self._evict_if_over_limit()
+                logger.debug("[router] Active instances after creation: %s", list(self.instances.keys()))
             return self.instances[namespace]
 
     async def _evict_if_over_limit(self) -> None:

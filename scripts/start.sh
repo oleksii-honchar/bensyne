@@ -25,4 +25,4 @@ echo "Starting better-mnemosyne server..."
 echo "Data directory: $MNEMOSYNE_DATA_DIR"
 echo "Press Ctrl+C to stop"
 
-python main.py --port 3000 --log-level INFO
+python main.py --port 3000 --data-dir "$MNEMOSYNE_DATA_DIR" --log-level INFO

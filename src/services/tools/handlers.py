@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.domain.exceptions import ValidationError
@@ -11,16 +12,23 @@ if TYPE_CHECKING:
     from src.services.namespace.router import NamespaceRouter
 
 
+logger = logging.getLogger(__name__)
+
+
 @log_tool_call("mnemosyne_remember")
 async def handle_remember(router: NamespaceRouter, arguments: dict) -> dict:
     """Store a durable memory in the specified namespace."""
     namespace = arguments.get("namespace", "default")
     content = arguments.get("content")
 
+    logger.debug("[mnemosyne_remember] Received arguments: namespace=%s, content=%r", namespace, content)
+
     if not content:
         raise ValidationError("content is required")
 
+    logger.debug("[mnemosyne_remember] Getting instance for namespace=%s", namespace)
     instance = await router.get_instance(namespace)
+    logger.debug("[mnemosyne_remember] Got instance, database=%s", instance._instance.db_path)
 
     # Extract only valid kwargs for Mnemosyne.remember()
     kwargs: Dict[str, Any] = {"content": content}
