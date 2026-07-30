@@ -12,20 +12,28 @@ if [ ! -d ".venv" ]; then
 fi
 source .venv/bin/activate
 
-# Set test environment
+# Load .env file if it exists (respects env vars already set)
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+    echo "Loaded .env file"
+fi
+
+# Set test environment (respect existing env vars)
 export PYTHONPATH="./src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
 
-# Use a unique port for e2e tests
-E2E_PORT=3001
-E2E_DATA_DIR="./data/e2e-test"
+# Use a unique port for e2e tests (respects env vars)
+E2E_PORT="${E2E_PORT:-3001}"
+E2E_DATA_DIR="${E2E_DATA_DIR:-./data/e2e-test}"
 
 # Create test data directory
 mkdir -p "$E2E_DATA_DIR"
 
 # Start server in background using main.py (activated venv python)
 echo "Starting test server on port $E2E_PORT..."
-.venv/bin/python main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" --log-level DEBUG &
+.venv/bin/python main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" &
 SERVER_PID=$!
 
 # Function to cleanup on exit

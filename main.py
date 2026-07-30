@@ -7,12 +7,28 @@ import argparse
 import asyncio
 import dataclasses
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
 
 # Add src to path for direct execution
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+# Load .env file if it exists (before ConfigManager reads env vars)
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path)
+    except ImportError:
+        # Fallback: manually load if python-dotenv is not installed
+        with open(_env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    os.environ.setdefault(key.strip(), value.strip())
 
 from src.infrastructure.config.manager import ConfigManager
 from src.infrastructure.mnemosyne.bank_manager import BankManager
