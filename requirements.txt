@@ -1,0 +1,5 @@
+fastmcp
+starlette>=0.27
+uvicorn
+mnemosyne-memory[mcp]
+pyyaml

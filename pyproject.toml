@@ -1,0 +1,29 @@
+[project]
+name = "better-mnemosyne"
+version = "1.0.0"
+description = "Multi-tenant namespace-aware MCP server for mnemosyne-oss"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp",
+    "starlette>=0.27",
+    "uvicorn",
+    "mnemosyne-memory[mcp]",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/tests"]
+
+[tool.black]
+line-length = 120

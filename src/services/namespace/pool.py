@@ -1,0 +1,44 @@
+"""Instance pool management with LRU eviction."""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Dict
+
+from src.domain.models import InstancePoolConfig
+
+if TYPE_CHECKING:
+    from src.infrastructure.mnemosyne.client import MnemosyneClient
+
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_NAMESPACE = "default"
+
+
+def evict_if_over_limit(
+    instances: Dict[str, MnemosyneClient],
+    config: InstancePoolConfig,
+) -> None:
+    """Evict oldest (first created) non-default instance when over max limit.
+
+    This is a synchronous helper used by NamespaceRouter after acquiring its lock.
+
+    Args:
+        instances: The instances dictionary managed by the router.
+        config: Instance pool configuration containing max_instances.
+    """
+    while len(instances) > config.max_instances:
+        # Find oldest non-default instance by created_at
+        non_default = {
+            k: v for k, v in instances.items() if k != DEFAULT_NAMESPACE
+        }
+
+        if not non_default:
+            # Should never happen since default is excluded from eviction
+            logger.warning("No non-default instances to evict, stopping eviction")
+            break
+
+        target = min(non_default.keys(), key=lambda k: non_default[k].created_at)
+        del instances[target]
+        logger.info("Evicted oldest instance: %s", target)

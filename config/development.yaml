@@ -1,0 +1,2 @@
+instance_pool:
+  data_dir: "./data/dev"
