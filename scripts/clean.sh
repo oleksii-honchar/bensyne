@@ -8,8 +8,8 @@ cd "$PROJECT_DIR"
 echo "Cleaning development artifacts..."
 
 # Remove virtual environment
-if [ -d "venv" ]; then
-    rm -rf venv
+if [ -d ".venv" ]; then
+    rm -rf .venv
 fi
 
 # Remove test data

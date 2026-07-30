@@ -88,7 +88,7 @@ docker-compose -f docker-compose.dev.yml up -d
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Docker (optional, for containerized runs)
 
 ### Setup
@@ -97,11 +97,11 @@ docker-compose -f docker-compose.dev.yml up -d
 # Clone and enter project
 cd /path/to/better-mnemosyne
 
-# Run setup script (creates venv, installs dependencies)
+# Run setup script (creates .venv, installs dependencies)
 ./scripts/setup.sh
 
 # Activate virtual environment
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 ### Run Dev Server
@@ -111,7 +111,7 @@ source venv/bin/activate
 ./scripts/start.sh
 
 # Or directly with main.py
-python main.py --port 3000 --data-dir ./data/dev --log-level DEBUG
+python3.12 main.py --port 3000 --data-dir ./data/dev --log-level DEBUG
 ```
 
 ### Run Tests
@@ -338,7 +338,7 @@ Arguments passed to `main.py` override YAML config:
 Example:
 
 ```bash
-python main.py --port 8080 --data-dir ./my-data --log-level DEBUG
+python3.12 main.py --port 8080 --data-dir ./my-data --log-level DEBUG
 ```
 
 ## Usage Examples

@@ -2,7 +2,7 @@
 name = "better-mnemosyne"
 version = "1.0.0"
 description = "Multi-tenant namespace-aware MCP server for mnemosyne-oss"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=3.0.0,<4.0.0",
     "starlette>=0.41.0,<1.0.0",

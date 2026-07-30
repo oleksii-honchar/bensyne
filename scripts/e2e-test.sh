@@ -6,8 +6,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 # Activate virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
 fi
 
 # Set test environment
@@ -21,13 +21,11 @@ E2E_DATA_DIR="./data/e2e-test"
 # Create test data directory
 mkdir -p "$E2E_DATA_DIR"
 
-# Use venv python for subprocess (prefer venv312 for Python 3.12+ required by fastmcp)
-if [ -x "$PROJECT_DIR/venv312/bin/python" ]; then
-    VENV_PYTHON="$PROJECT_DIR/venv312/bin/python"
-elif [ -x "$PROJECT_DIR/venv/bin/python" ]; then
-    VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
+# Use venv python for subprocess
+if [ -x "$PROJECT_DIR/.venv/bin/python" ]; then
+    VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 else
-    echo "ERROR: No virtual environment found (venv or venv312)"
+    echo "ERROR: No virtual environment found. Run: ./scripts/setup.sh"
     exit 1
 fi
 

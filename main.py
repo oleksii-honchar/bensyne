@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """Better Mnemosyne — multi-tenant namespace-aware MCP server."""
 
 from __future__ import annotations

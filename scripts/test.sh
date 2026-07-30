@@ -6,12 +6,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 # Activate virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
 fi
 
-export PYTHONPATH="./src:$PYTHONPATH"
+export PYTHONPATH="./src:${PYTHONPATH:-}"
 
 # Run pytest
 echo "Running tests..."
-pytest src/tests/ -v
+python3.12 -m pytest src/tests/ -v
