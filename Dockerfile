@@ -7,11 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pyproject.toml first for better caching
+# Copy pyproject.toml and src first for better caching
 COPY pyproject.toml .
+COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-# Copy application
+# Copy rest of application
 COPY . .
 
 # Create data directory
