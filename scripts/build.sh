@@ -12,8 +12,8 @@ VERSION=$(python3.12 -c "import tomllib; print(tomllib.load(open('pyproject.toml
 REPO="${DOCKER_REPO:-tuiteraz}"
 IMAGE_NAME="${DOCKER_IMAGE:-better-mnemosyne}"
 
-# Tags to apply (always includes latest)
-TAGS=("latest" "v${VERSION}" "dev")
+# Tags: numeric (X.X.X) and latest
+TAGS=("${VERSION}" "latest")
 
 IMAGE_FULL="${REPO}/${IMAGE_NAME}:${VERSION}"
 

@@ -67,7 +67,7 @@ docker run -d \
   --name better-mnemosyne \
   -p 3000:3000 \
   -v /data/mnemosyne/data:/data/mnemosyne/data \
-  tuteraz/better-mnemosyne:latest
+  tuiteraz/better-mnemosyne:latest
 
 # Verify health
 curl http://localhost:3000/health
@@ -155,7 +155,7 @@ version: '3.8'
 
 services:
   better-mnemosyne:
-    image: tuteraz/better-mnemosyne:latest
+    image: tuiteraz/better-mnemosyne:latest
     ports:
       - "3000:3000"
     volumes:

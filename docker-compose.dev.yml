@@ -10,10 +10,9 @@ services:
       - ./config:/app/config
       - ./data:/data/mnemosyne/data
     environment:
-      - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app/src
       - LOG_LEVEL=DEBUG
-    command: ["python", "main.py", "--port", "3000", "--log-level", "DEBUG"]
+    command: ["python", "main.py"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

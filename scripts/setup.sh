@@ -24,12 +24,9 @@ VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 # Upgrade pip
 "$VENV_PYTHON" -m pip install --upgrade pip
 
-# Install dependencies
+# Install dependencies (from pyproject.toml)
 echo "Installing dependencies..."
-"$VENV_PYTHON" -m pip install -r requirements.txt
-
-# Install dev dependencies
-"$VENV_PYTHON" -m pip install pytest pytest-asyncio httpx black flake8 mypy
+"$VENV_PYTHON" -m pip install ".[dev]"
 
 # Create test data directory
 mkdir -p data/test

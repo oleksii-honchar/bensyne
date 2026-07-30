@@ -1,0 +1,34 @@
+# Virtual environment
+.venv/
+
+# Data directories
+data/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+
+# Documentation
+*.md
+
+# Test and coverage
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Env (not needed in production image)
+.env
+.env.*
+
+# Session artifacts
+.session/
