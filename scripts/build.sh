@@ -8,29 +8,34 @@ cd "$PROJECT_DIR"
 # Get version from pyproject.toml
 VERSION=$(python3.12 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
 
-# Docker config (was in project.yaml, now hardcoded)
-REPO="tuteraz"
-IMAGE_NAME="better-mnemosyne"
+# Docker config
+REPO="${DOCKER_REPO:-tuiteraz}"
+IMAGE_NAME="${DOCKER_IMAGE:-better-mnemosyne}"
 
-# Set tags
+# Tags to apply (always includes latest)
 TAGS=("latest" "v${VERSION}" "dev")
 
+IMAGE_FULL="${REPO}/${IMAGE_NAME}:${VERSION}"
+
 # Build image
-echo "Building Docker image..."
-docker build -t "${REPO}/${IMAGE_NAME}:${VERSION}" .
+echo "Building Docker image: $IMAGE_FULL"
+docker build -t "$IMAGE_FULL" .
 
 # Tag image
 for tag in "${TAGS[@]}"; do
-    docker tag "${REPO}/${IMAGE_NAME}:${VERSION}" "${REPO}/${IMAGE_NAME}:${tag}"
+    docker tag "$IMAGE_FULL" "${REPO}/${IMAGE_NAME}:${tag}"
 done
+echo "Tagged: ${REPO}/${IMAGE_NAME} with ${TAGS[*]}"
 
-# Push to DockerHub
-if [ "${PUSH_TO_REGISTRY:-false}" = "true" ]; then
+# Push to DockerHub (use PUSH_TO_REGISTRY=true or pass --push flag)
+PUSH="${PUSH_TO_REGISTRY:-${1:-false}}"
+if [ "$PUSH" = "true" ] || [ "$PUSH" = "--push" ]; then
     echo "Pushing to DockerHub..."
-    docker push "${REPO}/${IMAGE_NAME}:${VERSION}"
+    docker push "$IMAGE_FULL"
     for tag in "${TAGS[@]}"; do
         docker push "${REPO}/${IMAGE_NAME}:${tag}"
     done
+    echo "Push complete!"
+else
+    echo "Build complete! (use PUSH_TO_REGISTRY=true ./scripts/build.sh or ./scripts/build.sh --push)"
 fi
-
-echo "Build complete!"
