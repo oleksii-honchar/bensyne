@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 echo "Cleaning development artifacts..."
 
 # Remove virtual environment
+# Don't activate .venv in clean.sh — we're about to delete it
 if [ -d ".venv" ]; then
     rm -rf .venv
 fi

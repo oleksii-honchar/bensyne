@@ -5,10 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-# Activate virtual environment
-if [ -d ".venv" ]; then
-    source .venv/bin/activate
+# Activate virtual environment (required)
+if [ ! -d ".venv" ]; then
+    echo "ERROR: .venv not found. Run: ./scripts/setup.sh"
+    exit 1
 fi
+source .venv/bin/activate
 
 # Set test environment
 export PYTHONPATH="./src:${PYTHONPATH:-}"
@@ -21,17 +23,9 @@ E2E_DATA_DIR="./data/e2e-test"
 # Create test data directory
 mkdir -p "$E2E_DATA_DIR"
 
-# Use venv python for subprocess
-if [ -x "$PROJECT_DIR/.venv/bin/python" ]; then
-    VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
-else
-    echo "ERROR: No virtual environment found. Run: ./scripts/setup.sh"
-    exit 1
-fi
-
-# Start server in background using main.py
+# Start server in background using main.py (activated venv python)
 echo "Starting test server on port $E2E_PORT..."
-"$VENV_PYTHON" main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" --log-level DEBUG &
+.venv/bin/python main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" --log-level DEBUG &
 SERVER_PID=$!
 
 # Function to cleanup on exit

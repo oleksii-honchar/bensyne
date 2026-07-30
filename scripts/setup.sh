@@ -18,18 +18,18 @@ if [ ! -d ".venv" ]; then
     "$PYTHON" -m venv .venv
 fi
 
-# Activate virtual environment
-source .venv/bin/activate
+# Use venv's python directly (avoid PATH/activation issues)
+VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 
 # Upgrade pip
-pip install --upgrade pip
+"$VENV_PYTHON" -m pip install --upgrade pip
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install -r requirements.txt
+"$VENV_PYTHON" -m pip install -r requirements.txt
 
 # Install dev dependencies
-pip install pytest pytest-asyncio httpx black flake8 mypy
+"$VENV_PYTHON" -m pip install pytest pytest-asyncio httpx black flake8 mypy
 
 # Create test data directory
 mkdir -p data/test

@@ -5,10 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-# Activate virtual environment
-if [ -d ".venv" ]; then
-    source .venv/bin/activate
+# Activate virtual environment (required)
+if [ ! -d ".venv" ]; then
+    echo "ERROR: .venv not found. Run: ./scripts/setup.sh"
+    exit 1
 fi
+source .venv/bin/activate
 
 # Set development environment variables
 export MNEMOSYNE_DATA_DIR="./data/dev"
@@ -23,4 +25,4 @@ echo "Starting better-mnemosyne server..."
 echo "Data directory: $MNEMOSYNE_DATA_DIR"
 echo "Press Ctrl+C to stop"
 
-python3.12 main.py --port 3000 --log-level INFO
+python main.py --port 3000 --log-level INFO

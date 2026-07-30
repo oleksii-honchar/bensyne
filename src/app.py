@@ -105,12 +105,22 @@ def register_tools(mcp: FastMCP, router: NamespaceRouter) -> None:
 
 
 def mount_health_routes(mcp: FastMCP, router: NamespaceRouter) -> None:
-    """Mount health check endpoints onto the FastMCP server.
+    """Mount health check endpoints onto the FastMCP server using custom_route.
 
     Args:
         mcp: FastMCP server instance.
         router: Namespace router for health endpoint queries.
     """
-    from src.middleware.health import set_namespace_router
+    from src.middleware.health import (
+        health_handler,
+        health_log_handler,
+        health_ready_handler,
+        set_namespace_router,
+    )
 
     set_namespace_router(router)
+
+    # Register health endpoints as custom HTTP routes
+    mcp.custom_route("/health", methods=["GET"], name="health")(health_handler)
+    mcp.custom_route("/health/ready", methods=["GET"], name="health_ready")(health_ready_handler)
+    mcp.custom_route("/health/log", methods=["GET"], name="health_log")(health_log_handler)

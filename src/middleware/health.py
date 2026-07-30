@@ -103,12 +103,13 @@ async def health_log_handler(request: Request) -> JSONResponse:
 def create_health_app() -> Starlette:
     """Create a Starlette app with health check routes.
 
-    These routes can be mounted into the main FastMCP/Starlette app.
+    These routes are at /health, /health/ready, /health/log — matching the
+    spec. They can be mounted into the main FastMCP/Starlette app.
     """
     return Starlette(
         routes=[
-            Route("/", endpoint=health_handler, methods=["GET"]),
-            Route("/ready", endpoint=health_ready_handler, methods=["GET"]),
-            Route("/log", endpoint=health_log_handler, methods=["GET"]),
+            Route("/health", endpoint=health_handler, methods=["GET"]),
+            Route("/health/ready", endpoint=health_ready_handler, methods=["GET"]),
+            Route("/health/log", endpoint=health_log_handler, methods=["GET"]),
         ],
     )
