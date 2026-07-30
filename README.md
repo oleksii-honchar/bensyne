@@ -2,6 +2,19 @@
 
 Multi-tenant, namespace-aware MCP server for mnemosyne-oss. Dynamically routes memory operations to isolated SQLite bank instances per namespace via streamable HTTP transport (FastMCP).
 
+## Why This Exists
+
+mnemosyne-oss is excellent as a single-agent memory backend — but it has two hard limitations for multi-context deployments:
+
+- **Single database:** All memories go into one SQLite DB. There's no built-in namespace routing, so agent sessions, vaults, projects, and users share the same memory pool.
+- **SSE-only transport:** The built-in MCP server only supports SSE and stdio. It does not support the streamable HTTP transport that modern MCP clients expect.
+
+**Better-mnemosyne solves both:**
+- Embeds mnemosyne-oss directly and adds a namespace router on top — each namespace gets its own SQLite bank (`default`, `agent-sessions`, `obsidian-vault`, etc.), created dynamically on first request.
+- Uses FastMCP to expose the same MCP tools over native streamable HTTP transport.
+
+From the client side, it looks like a standard Mnemosyne MCP server. You just add `namespace: "your-context"` to route memories to the right bank.
+
 ## Overview
 
 Better Mnemosyne replaces the traditional mcp-proxy → stdio bridge architecture with a native streamable HTTP MCP server. It dynamically forks mnemosyne-oss instances per namespace on first request, providing a singular MCP interface for remembering and recalling memories across isolated namespaces.
