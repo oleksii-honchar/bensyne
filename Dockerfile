@@ -22,6 +22,8 @@ EXPOSE 3000
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
+ENV DATA_DIR=/data/mnemosyne/data
+ENV LOG_LEVEL=INFO
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
