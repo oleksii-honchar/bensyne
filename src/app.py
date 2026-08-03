@@ -61,7 +61,7 @@ def register_tools(mcp: FastMCP, router: NamespaceRouter) -> None:
     # Bind router to each handler via wrapper functions (fastmcp @tool requires callable, not partial)
     # FastMCP 3.x generates JSON schema from function signature; use explicit params to match MCP protocol
     @mcp.tool(name="mnemosyne_remember")
-    async def remember(content: str, namespace: str = "default", importance: float | None = None,
+    async def remember(content: str, namespace: str, importance: float | None = None,
                        source: str | None = None, scope: str | None = None, valid_until: str | None = None,
                        extract_entities: bool | None = None, extract: bool | None = None,
                        metadata: dict | None = None, veracity: float | None = None):
@@ -74,15 +74,15 @@ def register_tools(mcp: FastMCP, router: NamespaceRouter) -> None:
         return await handlers.handle_remember(router, args)
 
     @mcp.tool(name="mnemosyne_recall")
-    async def recall(query: str, namespace: str = "default", limit: int = 5):
+    async def recall(query: str, namespace: str, limit: int = 5):
         return await handlers.handle_recall(router, {"query": query, "namespace": namespace, "limit": limit})
 
     @mcp.tool(name="mnemosyne_forget")
-    async def forget(memory_id: str, namespace: str = "default"):
+    async def forget(memory_id: str, namespace: str):
         return await handlers.handle_forget(router, {"memory_id": memory_id, "namespace": namespace})
 
     @mcp.tool(name="mnemosyne_update")
-    async def update(memory_id: str, namespace: str = "default", content: str | None = None,
+    async def update(memory_id: str, namespace: str, content: str | None = None,
                      importance: float | None = None):
         args = {"memory_id": memory_id, "namespace": namespace}
         if content is not None:
@@ -92,16 +92,20 @@ def register_tools(mcp: FastMCP, router: NamespaceRouter) -> None:
         return await handlers.handle_update(router, args)
 
     @mcp.tool(name="mnemosyne_sleep")
-    async def sleep_tool(namespace: str = "default"):
+    async def sleep_tool(namespace: str):
         return await handlers.handle_sleep(router, {"namespace": namespace})
 
     @mcp.tool(name="mnemosyne_stats")
-    async def stats(namespace: str = "default"):
+    async def stats(namespace: str):
         return await handlers.handle_stats(router, {"namespace": namespace})
 
     @mcp.tool(name="mnemosyne_list_namespaces")
     async def list_namespaces():
         return await handlers.handle_list_namespaces(router, {})
+
+    @mcp.tool(name="mnemosyne_register_namespace")
+    async def register_namespace(name: str, description: str):
+        return await handlers.handle_register_namespace(router, {"name": name, "description": description})
 
 
 def mount_health_routes(mcp: FastMCP, router: NamespaceRouter) -> None:

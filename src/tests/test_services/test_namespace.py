@@ -102,9 +102,7 @@ class TestNamespaceRouterGetInstance:
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
             return NamespaceRouter(config=config, bank_manager=bank_manager)
 
-    def test_get_instance_returns_cached_instance_on_second_call(
-        self, router: NamespaceRouter
-    ) -> None:
+    def test_get_instance_returns_cached_instance_on_second_call(self, router: NamespaceRouter) -> None:
         """Second call for same namespace returns the same instance."""
 
         async def run() -> None:
@@ -114,9 +112,7 @@ class TestNamespaceRouterGetInstance:
 
         asyncio.run(run())
 
-    def test_new_instance_created_for_new_namespace(
-        self, router: NamespaceRouter, tmp_path: Path
-    ) -> None:
+    def test_new_instance_created_for_new_namespace(self, router: NamespaceRouter, tmp_path: Path) -> None:
         """First call for a new namespace creates a new instance."""
 
         async def run() -> None:
@@ -170,9 +166,7 @@ class TestNamespaceRouterLRUEviction:
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
             return NamespaceRouter(config=config, bank_manager=bank_manager)
 
-    def test_lru_eviction_works_at_max_instances_limit(
-        self, router: NamespaceRouter
-    ) -> None:
+    def test_lru_eviction_works_at_max_instances_limit(self, router: NamespaceRouter) -> None:
         """When over max_instances, oldest non-default instance is evicted."""
 
         async def run() -> None:
@@ -243,9 +237,7 @@ class TestNamespaceRouterConcurrency:
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
             return NamespaceRouter(config=config, bank_manager=bank_manager)
 
-    def test_simultaneous_requests_same_namespace_no_duplicates(
-        self, router: NamespaceRouter
-    ) -> None:
+    def test_simultaneous_requests_same_namespace_no_duplicates(self, router: NamespaceRouter) -> None:
         """Multiple concurrent get_instance calls for same namespace yield exactly one instance."""
 
         async def run() -> None:
@@ -301,3 +293,61 @@ class TestNamespaceRouterHealthIntegration:
             assert "extra-ns" in router.get_active_namespaces()
 
         asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# NamespaceRegistry wiring — Task 3
+# ---------------------------------------------------------------------------
+
+
+class TestNamespaceRouterRegistryWiring:
+    """NamespaceRouter wires NamespaceRegistry and exposes description methods."""
+
+    @pytest.fixture
+    def router(self, tmp_path: Path) -> NamespaceRouter:
+        mock_instance = _mock_mnemosyne_instance()
+        with _patch_mnemosyne_class(mock_instance):
+            config = InstancePoolConfig(
+                max_instances=5,
+                eviction_timeout=300,
+                data_dir=str(tmp_path),
+                default_bank="default",
+            )
+            bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
+            return NamespaceRouter(config=config, bank_manager=bank_manager)
+
+    def test_router_has_registry_instance(self, router: NamespaceRouter) -> None:
+        """Router creates a NamespaceRegistry instance in __init__."""
+        from src.services.namespace.registry import NamespaceRegistry
+
+        assert hasattr(router, "registry")
+        assert isinstance(router.registry, NamespaceRegistry)
+
+    def test_get_namespace_description_for_default(self, router: NamespaceRouter) -> None:
+        """get_namespace_description returns default namespace description immediately."""
+        desc = router.get_namespace_description("default")
+        assert desc is not None
+        assert "Default personal memory" in desc
+
+    def test_get_namespace_description_for_registered(self, router: NamespaceRouter) -> None:
+        """get_namespace_description returns description for a registered namespace."""
+        router.register_namespace("project-x", "Project X memories")
+        desc = router.get_namespace_description("project-x")
+        assert desc == "Project X memories"
+
+    def test_get_namespace_description_for_unknown(self, router: NamespaceRouter) -> None:
+        """get_namespace_description returns None for unregistered namespace."""
+        desc = router.get_namespace_description("nonexistent")
+        assert desc is None
+
+    def test_register_namespace_delegates_to_registry(self, router: NamespaceRouter) -> None:
+        """register_namespace method delegates to registry.register()."""
+        router.register_namespace("new-ns", "New namespace description")
+        assert router.registry.get("new-ns") == "New namespace description"
+
+    def test_register_namespace_idempotent(self, router: NamespaceRouter) -> None:
+        """register_namespace is idempotent — calling twice updates description."""
+        router.register_namespace("ns1", "first")
+        assert router.get_namespace_description("ns1") == "first"
+        router.register_namespace("ns1", "second")
+        assert router.get_namespace_description("ns1") == "second"

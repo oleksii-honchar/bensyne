@@ -14,6 +14,7 @@ from src.domain.models import InstancePoolConfig
 from src.infrastructure.mnemosyne.bank_manager import BankManager
 from src.infrastructure.mnemosyne.client import MnemosyneClient
 from src.services.namespace.pool import evict_if_over_limit
+from src.services.namespace.registry import NamespaceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class NamespaceRouter:
     def __init__(self, config: InstancePoolConfig, bank_manager: BankManager) -> None:
         self.config = config
         self.bank_manager = bank_manager
+        self.registry = NamespaceRegistry()
         self.instances: Dict[str, MnemosyneClient] = {}
         self._lock: Optional[Lock] = None
 
@@ -59,7 +61,11 @@ class NamespaceRouter:
         Returns:
             MnemosyneClient instance for the namespace.
         """
-        logger.debug("[router] get_instance called for namespace=%s, current_instances=%s", namespace, list(self.instances.keys()))
+        logger.debug(
+            "[router] get_instance called for namespace=%s, current_instances=%s",
+            namespace,
+            list(self.instances.keys()),
+        )
 
         # First check (before lock) — fast path for cached instances
         if namespace in self.instances:
@@ -87,3 +93,23 @@ class NamespaceRouter:
     def get_active_namespaces(self) -> Set[str]:
         """Return set of active namespace names for health endpoint."""
         return set(self.instances.keys())
+
+    def get_namespace_description(self, namespace: str) -> str | None:
+        """Get description for a namespace from the registry.
+
+        Args:
+            namespace: The namespace name.
+
+        Returns:
+            Description string or None if not registered.
+        """
+        return self.registry.get(namespace)
+
+    def register_namespace(self, name: str, description: str) -> None:
+        """Register or update a namespace description (delegates to registry).
+
+        Args:
+            name: Namespace name.
+            description: Human-readable description.
+        """
+        self.registry.register(name, description)

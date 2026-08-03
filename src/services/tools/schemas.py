@@ -3,8 +3,7 @@
 NAMESPACE_PARAM = {
     "namespace": {
         "type": "string",
-        "description": "Memory namespace for isolation. Defaults to 'default' if not provided.",
-        "default": "default",
+        "description": "Memory namespace for isolation. This parameter is required.",
     }
 }
 
@@ -19,7 +18,7 @@ REMEMBER_SCHEMA = {
             "source": {"type": "string", "description": "Source tag (e.g., user, tool, system). Default 'mcp'.", "default": "mcp"},
             **NAMESPACE_PARAM,
         },
-        "required": ["content"],
+        "required": ["content", "namespace"],
     },
 }
 
@@ -33,7 +32,7 @@ RECALL_SCHEMA = {
             "limit": {"type": "integer", "description": "Max results. Default 5.", "default": 5},
             **NAMESPACE_PARAM,
         },
-        "required": ["query"],
+        "required": ["query", "namespace"],
     },
 }
 
@@ -46,7 +45,7 @@ FORGET_SCHEMA = {
             "memory_id": {"type": "string", "description": "ID of the memory to delete"},
             **NAMESPACE_PARAM,
         },
-        "required": ["memory_id"],
+        "required": ["memory_id", "namespace"],
     },
 }
 
@@ -61,7 +60,7 @@ UPDATE_SCHEMA = {
             "importance": {"type": "number", "description": "New importance from 0.0 to 1.0 (optional)"},
             **NAMESPACE_PARAM,
         },
-        "required": ["memory_id"],
+        "required": ["memory_id", "namespace"],
     },
 }
 
@@ -73,6 +72,7 @@ SLEEP_SCHEMA = {
         "properties": {
             **NAMESPACE_PARAM,
         },
+        "required": ["namespace"],
     },
 }
 
@@ -84,6 +84,7 @@ STATS_SCHEMA = {
         "properties": {
             **NAMESPACE_PARAM,
         },
+        "required": ["namespace"],
     },
 }
 
@@ -96,6 +97,19 @@ LIST_NAMESPACES_SCHEMA = {
     },
 }
 
+REGISTER_NAMESPACE_SCHEMA = {
+    "name": "mnemosyne_register_namespace",
+    "description": "Register a new memory namespace with a description. Use to create named namespaces for isolating different memory contexts (e.g., projects, users, domains).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Namespace name (e.g., 'project-alpha', 'user-123')."},
+            "description": {"type": "string", "description": "Human-readable description of the namespace purpose."},
+        },
+        "required": ["name", "description"],
+    },
+}
+
 ALL_TOOL_SCHEMAS = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -104,4 +118,5 @@ ALL_TOOL_SCHEMAS = [
     SLEEP_SCHEMA,
     STATS_SCHEMA,
     LIST_NAMESPACES_SCHEMA,
+    REGISTER_NAMESPACE_SCHEMA,
 ]

@@ -128,26 +128,26 @@ class TestIsolatedNamespaces:
 class TestDefaultFallback:
     """Requests without namespace fall back to 'default'."""
 
-    def test_default_fallback(self, mcp_client: httpx.Client) -> None:
-        """Store without namespace, find in default."""
+    def test_default_namespace_is_valid(self, mcp_client: httpx.Client) -> None:
+        """Store and recall using explicit 'default' namespace — still works."""
         _, session_id = mcp_init(mcp_client)
 
-        # Store without namespace — should go to default
+        # Store with explicit "default" namespace
         remember_result = mcp_call_tool(
             mcp_client,
             "mnemosyne_remember",
-            {"content": "default namespace memory"},
+            {"content": "default namespace memory", "namespace": "default"},
             request_id=20,
             session_id=session_id,
         )
         assert remember_result["namespace"] == "default"
         memory_id = remember_result["memory_id"]
 
-        # Recall without namespace — should find in default
+        # Recall with explicit "default" namespace — should find it
         recall_result = mcp_call_tool(
             mcp_client,
             "mnemosyne_recall",
-            {"query": "default namespace memory"},
+            {"query": "default namespace memory", "namespace": "default"},
             request_id=21,
             session_id=session_id,
         )
