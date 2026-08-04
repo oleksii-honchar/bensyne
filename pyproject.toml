@@ -1,37 +1,37 @@
 [project]
 name = "better-mnemosyne"
-version = "1.0.0"
+version = "1.1.0"
 description = "Multi-tenant namespace-aware MCP server for mnemosyne-oss"
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp==3.4.5",
-    "starlette>=1.0.1,<2.0.0",
-    "uvicorn>=0.32.0,<1.0.0",
-    "mnemosyne-memory[mcp]>=3.14.0,<4.0.0",
-    "pyyaml>=6.0.2,<7.0.0",
-    "python-dotenv>=1.0.0,<2.0.0",
+  "fastmcp==3.4.5",
+  "mnemosyne-memory[mcp]>=3.14.0,<4.0.0",
+  "python-dotenv>=1.0.0,<2.0.0",
+  "pyyaml>=6.0.2,<7.0.0",
+  "starlette>=1.0.1,<2.0.0",
+  "uvicorn>=0.32.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.4,<9.0.0",
-    "pytest-asyncio>=0.25.0,<1.0.0",
-    "httpx>=0.28.1,<1.0.0",
-    "black>=24.10.0,<25.0.0",
-    "flake8>=7.1.1,<8.0.0",
-    "mypy>=1.14.1,<2.0.0",
+  "pytest>=8.3.4,<9.0.0",
+  "pytest-asyncio>=0.25.0,<1.0.0",
+  "httpx>=0.28.1,<1.0.0",
+  "black>=24.10.0,<25.0.0",
+  "flake8>=7.1.1,<8.0.0",
+  "mypy>=1.14.1,<2.0.0",
 ]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["src/tests"]
-
-[tool.black]
-line-length = 120
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 where = ["src"]
