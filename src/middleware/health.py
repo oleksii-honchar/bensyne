@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 if TYPE_CHECKING:
-    from src.services.namespace_router import NamespaceRouter
+    from src.services.bank_router import MemoryBankRouter
 
 # ---------------------------------------------------------------------------
 # Global state for health tracking
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 _default_instance_ready = False
 _log_entries: Deque[str] = deque(maxlen=100)
-_namespace_router: NamespaceRouter | None = None
+_memory_bank_router: MemoryBankRouter | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,10 @@ def mark_default_instance_ready() -> None:
     _add_log("default_instance", "Default instance marked as ready")
 
 
-def set_namespace_router(router: NamespaceRouter) -> None:
-    """Register the namespace router for health endpoint instance/namespace info."""
-    global _namespace_router
-    _namespace_router = router
+def set_memory_bank_router(router: MemoryBankRouter) -> None:
+    """Register the memory bank router for health endpoint instance/bank info."""
+    global _memory_bank_router
+    _memory_bank_router = router
 
 
 def _add_log(source: str, message: str) -> None:
@@ -52,18 +52,18 @@ def _add_log(source: str, message: str) -> None:
 async def health_handler(request: Request) -> JSONResponse:
     """GET /health — returns overall health status with instance count."""
     instances = 0
-    namespaces: List[str] = []
+    banks: List[str] = []
 
-    if _namespace_router is not None:
-        instances = _namespace_router.get_active_instances()
-        namespaces = list(_namespace_router.get_active_namespaces())
+    if _memory_bank_router is not None:
+        instances = _memory_bank_router.get_active_instances()
+        banks = list(_memory_bank_router.get_active_banks())
 
     return JSONResponse(
         status_code=200,
         content={
             "status": "healthy",
             "instances": instances,
-            "namespaces": namespaces,
+            "banks": banks,
         },
     )
 

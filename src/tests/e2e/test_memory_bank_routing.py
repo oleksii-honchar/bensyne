@@ -1,6 +1,6 @@
-"""E2E tests for namespace routing and data isolation.
+"""E2E tests for memory bank routing and data isolation.
 
-Verifies multiple namespaces, data isolation between them, and default fallback.
+Verifies multiple memory banks, data isolation between them, and the default bank.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def mcp_init(client: httpx.Client) -> tuple[dict, str]:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "e2e-ns-test", "version": "1.0.0"},
+                "clientInfo": {"name": "e2e-bank-test", "version": "1.0.0"},
             },
         },
     )
@@ -76,117 +76,117 @@ def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request
 # ---------------------------------------------------------------------------
 
 
-class TestIsolatedNamespaces:
-    """Memories stored in one namespace are not visible in another."""
+class TestIsolatedMemoryBanks:
+    """Memories stored in one memory bank are not visible in another."""
 
-    def test_isolated_namespaces(self, mcp_client: httpx.Client) -> None:
-        """Store in namespace A, verify not found in namespace B."""
+    def test_isolated_memory_banks(self, mcp_client: httpx.Client) -> None:
+        """Store in memory bank A, verify not found in memory bank B."""
         _, session_id = mcp_init(mcp_client)
 
-        # Store unique content in namespace A
+        # Store unique content in memory bank A
         mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "secret of namespace A", "namespace": "e2e-ns-a"},
+            "memory_remember",
+            {"content": "secret of memory bank A", "memory_bank": "e2e-bank-a"},
             request_id=10,
             session_id=session_id,
         )
 
-        # Store unique content in namespace B
+        # Store unique content in memory bank B
         mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "secret of namespace B", "namespace": "e2e-ns-b"},
+            "memory_remember",
+            {"content": "secret of memory bank B", "memory_bank": "e2e-bank-b"},
             request_id=11,
             session_id=session_id,
         )
 
-        # Recall from namespace A should NOT find namespace B's content
+        # Recall from memory bank A should NOT find memory bank B's content
         recall_a = mcp_call_tool(
             mcp_client,
-            "mnemosyne_recall",
-            {"query": "secret of namespace B", "namespace": "e2e-ns-a"},
+            "memory_recall",
+            {"query": "secret of memory bank B", "memory_bank": "e2e-bank-a"},
             request_id=12,
             session_id=session_id,
         )
         # Filter results for exact phrase match
-        found = any("secret of namespace B" in r.get("content", "") for r in recall_a["results"])
-        assert not found, "Namespace A should not see namespace B's memories"
+        found = any("secret of memory bank B" in r.get("content", "") for r in recall_a["results"])
+        assert not found, "Memory bank A should not see memory bank B's memories"
 
-        # Recall from namespace B should NOT find namespace A's content
+        # Recall from memory bank B should NOT find memory bank A's content
         recall_b = mcp_call_tool(
             mcp_client,
-            "mnemosyne_recall",
-            {"query": "secret of namespace A", "namespace": "e2e-ns-b"},
+            "memory_recall",
+            {"query": "secret of memory bank A", "memory_bank": "e2e-bank-b"},
             request_id=13,
             session_id=session_id,
         )
-        found = any("secret of namespace A" in r.get("content", "") for r in recall_b["results"])
-        assert not found, "Namespace B should not see namespace A's memories"
+        found = any("secret of memory bank A" in r.get("content", "") for r in recall_b["results"])
+        assert not found, "Memory bank B should not see memory bank A's memories"
 
 
-class TestDefaultFallback:
-    """Requests without namespace fall back to 'default'."""
+class TestDefaultBankFallback:
+    """The 'default' memory bank is always available."""
 
-    def test_default_namespace_is_valid(self, mcp_client: httpx.Client) -> None:
-        """Store and recall using explicit 'default' namespace — still works."""
+    def test_default_memory_bank_is_valid(self, mcp_client: httpx.Client) -> None:
+        """Store and recall using explicit 'default' memory bank — still works."""
         _, session_id = mcp_init(mcp_client)
 
-        # Store with explicit "default" namespace
+        # Store with explicit "default" memory bank
         remember_result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "default namespace memory", "namespace": "default"},
+            "memory_remember",
+            {"content": "default memory bank memory", "memory_bank": "default"},
             request_id=20,
             session_id=session_id,
         )
-        assert remember_result["namespace"] == "default"
+        assert remember_result["memory_bank"] == "default"
         memory_id = remember_result["memory_id"]
 
-        # Recall with explicit "default" namespace — should find it
+        # Recall with explicit "default" memory bank — should find it
         recall_result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_recall",
-            {"query": "default namespace memory", "namespace": "default"},
+            "memory_recall",
+            {"query": "default memory bank memory", "memory_bank": "default"},
             request_id=21,
             session_id=session_id,
         )
-        assert recall_result["namespace"] == "default"
+        assert recall_result["memory_bank"] == "default"
         matching = [r for r in recall_result["results"] if r.get("id") == memory_id]
         assert len(matching) == 1
 
 
-class TestConcurrentNamespaces:
-    """Multiple namespaces active simultaneously."""
+class TestConcurrentMemoryBanks:
+    """Multiple memory banks active simultaneously."""
 
-    def test_concurrent_namespaces(self, mcp_client: httpx.Client) -> None:
-        """Use multiple namespaces simultaneously, all return correct data."""
+    def test_concurrent_memory_banks(self, mcp_client: httpx.Client) -> None:
+        """Use multiple memory banks simultaneously, all return correct data."""
         _, session_id = mcp_init(mcp_client)
 
-        namespaces = ["e2e-conc-1", "e2e-conc-2", "e2e-conc-3"]
+        banks = ["e2e-conc-1", "e2e-conc-2", "e2e-conc-3"]
         memory_ids: dict[str, str] = {}
 
-        # Store in each namespace
-        for i, ns in enumerate(namespaces, start=30):
+        # Store in each memory bank
+        for i, bank in enumerate(banks, start=30):
             result = mcp_call_tool(
                 mcp_client,
-                "mnemosyne_remember",
-                {"content": f"concurrent memory for {ns}", "namespace": ns},
+                "memory_remember",
+                {"content": f"concurrent memory for {bank}", "memory_bank": bank},
                 request_id=i,
                 session_id=session_id,
             )
-            assert result["namespace"] == ns
-            memory_ids[ns] = result["memory_id"]
+            assert result["memory_bank"] == bank
+            memory_ids[bank] = result["memory_id"]
 
-        # Recall from each namespace
-        for i, ns in enumerate(namespaces, start=40):
+        # Recall from each memory bank
+        for i, bank in enumerate(banks, start=40):
             recall = mcp_call_tool(
                 mcp_client,
-                "mnemosyne_recall",
-                {"query": f"concurrent memory for {ns}", "namespace": ns},
+                "memory_recall",
+                {"query": f"concurrent memory for {bank}", "memory_bank": bank},
                 request_id=i,
                 session_id=session_id,
             )
-            assert recall["namespace"] == ns
-            matching = [r for r in recall["results"] if r.get("id") == memory_ids[ns]]
-            assert len(matching) == 1, f"Expected memory in namespace {ns}"
+            assert recall["memory_bank"] == bank
+            matching = [r for r in recall["results"] if r.get("id") == memory_ids[bank]]
+            assert len(matching) == 1, f"Expected memory in memory bank {bank}"

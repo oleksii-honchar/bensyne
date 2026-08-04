@@ -13,24 +13,24 @@ logger = logging.getLogger(__name__)
 
 
 class MnemosyneClient:
-    """Wraps mnemosyne.Mnemosyne for a single bank/namespace.
+    """Wraps mnemosyne.Mnemosyne for a single memory bank.
 
     Implements IMnemosyneClient by delegating to the underlying Mnemosyne instance.
     Tracks created_at for LRU eviction in the instance pool.
     """
 
-    def __init__(self, namespace: str, bank_manager: BankManager) -> None:
-        self.namespace = namespace
+    def __init__(self, memory_bank: str, bank_manager: BankManager) -> None:
+        self.memory_bank = memory_bank
         self.created_at = time.time()
         self._bank_manager = bank_manager
 
         # Lazy import to avoid pulling in mnemosyne at import time
         from mnemosyne.core.memory import Mnemosyne
 
-        db_path = bank_manager.get_bank_db_path(namespace)
-        logger.info("[MnemosyneClient] Initializing: namespace=%s, bank=%s, db_path=%s", namespace, namespace, db_path)
-        self._instance = Mnemosyne(bank=namespace, db_path=str(db_path))
-        logger.info("[MnemosyneClient] Created instance: namespace=%s, db_path=%s", namespace, self._instance.db_path)
+        db_path = bank_manager.get_bank_db_path(memory_bank)
+        logger.info("[MnemosyneClient] Initializing: memory_bank=%s, db_path=%s", memory_bank, db_path)
+        self._instance = Mnemosyne(bank=memory_bank, db_path=str(db_path))
+        logger.info("[MnemosyneClient] Created instance: memory_bank=%s, db_path=%s", memory_bank, self._instance.db_path)
 
     # ------------------------------------------------------------------
     # IMnemosyneClient implementation

@@ -12,7 +12,7 @@ import pytest
 from src.domain.exceptions import ValidationError
 from src.domain.models import InstancePoolConfig
 from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.services.namespace.router import NamespaceRouter
+from src.services.bank.router import MemoryBankRouter
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +48,8 @@ def _patch_mnemosyne_class(mock_instance: MagicMock) -> Any:
 
 
 @pytest.fixture
-def router(tmp_path: Path) -> NamespaceRouter:
-    """Create a NamespaceRouter with mocked mnemosyne — patch persists across tests."""
+def router(tmp_path: Path) -> MemoryBankRouter:
+    """Create a MemoryBankRouter with mocked mnemosyne — patch persists across tests."""
     mock_instance = _mock_mnemosyne_instance()
 
     # Patch mnemosyne.core.memory.Mnemosyne class directly in sys.modules
@@ -71,7 +71,7 @@ def router(tmp_path: Path) -> NamespaceRouter:
             default_bank="default",
         )
         bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-        router = NamespaceRouter(config=config, bank_manager=bank_manager)
+        router = MemoryBankRouter(config=config, bank_manager=bank_manager)
         router._mock_instance = mock_instance  # expose for test assertions
         yield router
 
@@ -82,66 +82,82 @@ def router(tmp_path: Path) -> NamespaceRouter:
 
 
 class TestToolSchemas:
-    """Tool schemas include namespace parameter as required (no default)."""
+    """Tool schemas include memory_bank parameter as required (no default)."""
 
-    def test_remember_schema_namespace_required_no_default(self) -> None:
+    def test_remember_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import REMEMBER_SCHEMA
 
         params = REMEMBER_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in REMEMBER_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in REMEMBER_SCHEMA["parameters"]["required"]
 
-    def test_recall_schema_namespace_required_no_default(self) -> None:
+    def test_recall_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import RECALL_SCHEMA
 
         params = RECALL_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in RECALL_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in RECALL_SCHEMA["parameters"]["required"]
 
-    def test_forget_schema_namespace_required_no_default(self) -> None:
+    def test_forget_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import FORGET_SCHEMA
 
         params = FORGET_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in FORGET_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in FORGET_SCHEMA["parameters"]["required"]
 
-    def test_update_schema_namespace_required_no_default(self) -> None:
+    def test_update_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import UPDATE_SCHEMA
 
         params = UPDATE_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in UPDATE_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in UPDATE_SCHEMA["parameters"]["required"]
 
-    def test_sleep_schema_namespace_required_no_default(self) -> None:
+    def test_sleep_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import SLEEP_SCHEMA
 
         params = SLEEP_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in SLEEP_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in SLEEP_SCHEMA["parameters"]["required"]
 
-    def test_stats_schema_namespace_required_no_default(self) -> None:
+    def test_stats_schema_memory_bank_required_no_default(self) -> None:
         from src.services.tools.schemas import STATS_SCHEMA
 
         params = STATS_SCHEMA["parameters"]["properties"]
-        assert "namespace" in params
-        assert "default" not in params["namespace"]
-        assert "namespace" in STATS_SCHEMA["parameters"]["required"]
+        assert "memory_bank" in params
+        assert "default" not in params["memory_bank"]
+        assert "memory_bank" in STATS_SCHEMA["parameters"]["required"]
 
-    def test_namespace_param_description_says_required(self) -> None:
-        from src.services.tools.schemas import NAMESPACE_PARAM
+    def test_memory_bank_param_description_says_required(self) -> None:
+        from src.services.tools.schemas import MEMORY_BANK_PARAM
 
-        assert "required" in NAMESPACE_PARAM["namespace"]["description"].lower()
+        assert "required" in MEMORY_BANK_PARAM["memory_bank"]["description"].lower()
 
-    def test_list_namespaces_schema_no_namespace_param(self) -> None:
-        from src.services.tools.schemas import LIST_NAMESPACES_SCHEMA
+    def test_list_banks_schema_no_memory_bank_param(self) -> None:
+        from src.services.tools.schemas import LIST_BANKS_SCHEMA
 
-        params = LIST_NAMESPACES_SCHEMA["parameters"]["properties"]
-        assert "namespace" not in params
+        params = LIST_BANKS_SCHEMA["parameters"]["properties"]
+        assert "memory_bank" not in params
+
+    def test_all_tool_schemas_use_memory_names(self) -> None:
+        """All tool schemas expose memory_* tool names (contract)."""
+        from src.services.tools.schemas import ALL_TOOL_SCHEMAS
+
+        names = {schema["name"] for schema in ALL_TOOL_SCHEMAS}
+        assert names == {
+            "memory_remember",
+            "memory_recall",
+            "memory_forget",
+            "memory_update",
+            "memory_sleep",
+            "memory_stats",
+            "memory_list_banks",
+            "memory_register_bank",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -150,40 +166,40 @@ class TestToolSchemas:
 
 
 class TestHandleRemember:
-    """remember handler stores to correct namespace bank."""
+    """remember handler stores to correct memory bank."""
 
-    def test_remember_stores_to_correct_namespace_bank(self, router: NamespaceRouter) -> None:
+    def test_remember_stores_to_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_remember
 
         async def run() -> None:
-            result = await handle_remember(router, {"content": "test memory", "namespace": "test-ns"})
+            result = await handle_remember(router, {"content": "test memory", "memory_bank": "test-ns"})
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
             assert "test-ns" in router.instances
 
         asyncio.run(run())
 
-    def test_remember_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_remember_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_remember
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_remember(router, {"content": "test memory"})
 
         asyncio.run(run())
 
-    def test_remember_raises_validation_error_without_content(self, router: NamespaceRouter) -> None:
+    def test_remember_raises_validation_error_without_content(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_remember
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="content is required"):
-                await handle_remember(router, {"namespace": "test-ns"})
+                await handle_remember(router, {"memory_bank": "test-ns"})
 
         asyncio.run(run())
 
-    def test_remember_passes_extra_params(self, router: NamespaceRouter) -> None:
+    def test_remember_passes_extra_params(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_remember
 
         async def run() -> None:
@@ -191,7 +207,7 @@ class TestHandleRemember:
                 router,
                 {
                     "content": "test",
-                    "namespace": "test-ns",
+                    "memory_bank": "test-ns",
                     "importance": 0.8,
                     "source": "user",
                 },
@@ -212,36 +228,36 @@ class TestHandleRemember:
 
 
 class TestHandleRecall:
-    """recall handler queries correct namespace bank."""
+    """recall handler queries correct memory bank."""
 
-    def test_recall_queries_correct_namespace_bank(self, router: NamespaceRouter) -> None:
+    def test_recall_queries_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_recall
 
         async def run() -> None:
-            result = await handle_recall(router, {"query": "test", "namespace": "test-ns"})
+            result = await handle_recall(router, {"query": "test", "memory_bank": "test-ns"})
 
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
             assert len(result["results"]) == 1
             assert result["results"][0]["id"] == "mem_abc123"
             assert "test-ns" in router.instances
 
         asyncio.run(run())
 
-    def test_recall_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_recall_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_recall
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_recall(router, {"query": "test"})
 
         asyncio.run(run())
 
-    def test_recall_raises_validation_error_without_query(self, router: NamespaceRouter) -> None:
+    def test_recall_raises_validation_error_without_query(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_recall
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="query is required"):
-                await handle_recall(router, {"namespace": "test-ns"})
+                await handle_recall(router, {"memory_bank": "test-ns"})
 
         asyncio.run(run())
 
@@ -252,35 +268,35 @@ class TestHandleRecall:
 
 
 class TestHandleForget:
-    """forget handler deletes from correct namespace bank."""
+    """forget handler deletes from correct memory bank."""
 
-    def test_forget_deletes_from_correct_namespace(self, router: NamespaceRouter) -> None:
+    def test_forget_deletes_from_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_forget
 
         async def run() -> None:
-            result = await handle_forget(router, {"memory_id": "mem_abc123", "namespace": "test-ns"})
+            result = await handle_forget(router, {"memory_id": "mem_abc123", "memory_bank": "test-ns"})
 
             assert result["status"] == "deleted"
             assert result["memory_id"] == "mem_abc123"
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
 
         asyncio.run(run())
 
-    def test_forget_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_forget_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_forget
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_forget(router, {"memory_id": "mem_abc123"})
 
         asyncio.run(run())
 
-    def test_forget_raises_validation_error_without_memory_id(self, router: NamespaceRouter) -> None:
+    def test_forget_raises_validation_error_without_memory_id(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_forget
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="memory_id is required"):
-                await handle_forget(router, {"namespace": "test-ns"})
+                await handle_forget(router, {"memory_bank": "test-ns"})
 
         asyncio.run(run())
 
@@ -291,37 +307,37 @@ class TestHandleForget:
 
 
 class TestHandleUpdate:
-    """update handler updates in correct namespace bank."""
+    """update handler updates in correct memory bank."""
 
-    def test_update_updates_in_correct_namespace(self, router: NamespaceRouter) -> None:
+    def test_update_updates_in_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_update
 
         async def run() -> None:
             result = await handle_update(
                 router,
-                {"memory_id": "mem_abc123", "content": "updated", "namespace": "test-ns"},
+                {"memory_id": "mem_abc123", "content": "updated", "memory_bank": "test-ns"},
             )
 
             assert result["status"] == "updated"
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
 
         asyncio.run(run())
 
-    def test_update_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_update_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_update
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_update(router, {"memory_id": "mem_abc123", "importance": 0.9})
 
         asyncio.run(run())
 
-    def test_update_raises_validation_error_without_memory_id(self, router: NamespaceRouter) -> None:
+    def test_update_raises_validation_error_without_memory_id(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_update
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="memory_id is required"):
-                await handle_update(router, {"namespace": "test-ns"})
+                await handle_update(router, {"memory_bank": "test-ns"})
 
         asyncio.run(run())
 
@@ -332,24 +348,24 @@ class TestHandleUpdate:
 
 
 class TestHandleSleep:
-    """sleep handler consolidates in correct namespace bank."""
+    """sleep handler consolidates in correct memory bank."""
 
-    def test_sleep_consolidates_in_correct_namespace(self, router: NamespaceRouter) -> None:
+    def test_sleep_consolidates_in_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_sleep
 
         async def run() -> None:
-            result = await handle_sleep(router, {"namespace": "test-ns"})
+            result = await handle_sleep(router, {"memory_bank": "test-ns"})
 
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
             assert result["status"] == "ok"
 
         asyncio.run(run())
 
-    def test_sleep_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_sleep_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_sleep
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_sleep(router, {})
 
         asyncio.run(run())
@@ -361,53 +377,53 @@ class TestHandleSleep:
 
 
 class TestHandleStats:
-    """stats handler returns stats from correct namespace bank."""
+    """stats handler returns stats from correct memory bank."""
 
-    def test_stats_returns_from_correct_namespace(self, router: NamespaceRouter) -> None:
+    def test_stats_returns_from_correct_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_stats
 
         async def run() -> None:
-            result = await handle_stats(router, {"namespace": "test-ns"})
+            result = await handle_stats(router, {"memory_bank": "test-ns"})
 
-            assert result["namespace"] == "test-ns"
+            assert result["memory_bank"] == "test-ns"
             assert result["stats"]["working"] == 5
 
         asyncio.run(run())
 
-    def test_stats_raises_validation_error_without_namespace(self, router: NamespaceRouter) -> None:
+    def test_stats_raises_validation_error_without_memory_bank(self, router: MemoryBankRouter) -> None:
         from src.services.tools.handlers import handle_stats
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_stats(router, {})
 
         asyncio.run(run())
 
 
 # ---------------------------------------------------------------------------
-# List Namespaces handler
+# List Banks handler
 # ---------------------------------------------------------------------------
 
 
-class TestHandleListNamespaces:
-    """list_namespaces returns all active namespaces."""
+class TestHandleListBanks:
+    """list_banks returns all active banks."""
 
-    def test_list_namespaces_returns_all_active_namespaces(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_returns_all_active_banks(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
             # Pre-create some instances
             await router.get_instance("ns1")
             await router.get_instance("ns2")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            assert len(result["namespaces"]) == 3
-            names = {ns["name"] for ns in result["namespaces"]}
+            assert len(result["banks"]) == 3
+            names = {ns["name"] for ns in result["banks"]}
             assert names == {"default", "ns1", "ns2"}
 
             # Each entry has required fields
-            for ns in result["namespaces"]:
+            for ns in result["banks"]:
                 assert "name" in ns
                 assert "bank" in ns
                 assert "status" in ns
@@ -415,28 +431,28 @@ class TestHandleListNamespaces:
 
         asyncio.run(run())
 
-    def test_list_namespaces_no_namespace_param_needed(self) -> None:
-        from src.services.tools.schemas import LIST_NAMESPACES_SCHEMA
+    def test_list_banks_no_memory_bank_param_needed(self) -> None:
+        from src.services.tools.schemas import LIST_BANKS_SCHEMA
 
-        # Schema should not require namespace parameter
-        params = LIST_NAMESPACES_SCHEMA["parameters"]
+        # Schema should not require memory_bank parameter
+        params = LIST_BANKS_SCHEMA["parameters"]
         assert params["type"] == "object"
-        assert "namespace" not in params.get("properties", {})
+        assert "memory_bank" not in params.get("properties", {})
 
-    def test_list_namespaces_includes_description_from_registry(self, router: NamespaceRouter) -> None:
-        """Each namespace entry includes description field from registry."""
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_includes_description_from_registry(self, router: MemoryBankRouter) -> None:
+        """Each bank entry includes description field from registry."""
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
-            # Register a custom namespace description
-            router.register_namespace("custom-ns", "My custom description")
+            # Register a custom bank description
+            router.register_bank("custom-ns", "My custom description")
             await router.get_instance("custom-ns")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
             # Find entries
-            default_ns = next(ns for ns in result["namespaces"] if ns["name"] == "default")
-            custom_ns = next(ns for ns in result["namespaces"] if ns["name"] == "custom-ns")
+            default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
+            custom_ns = next(ns for ns in result["banks"] if ns["name"] == "custom-ns")
 
             # Default has hardcoded description
             assert "description" in default_ns
@@ -448,9 +464,9 @@ class TestHandleListNamespaces:
 
         asyncio.run(run())
 
-    def test_list_namespaces_includes_memory_count_from_stats(self, router: NamespaceRouter) -> None:
-        """Each namespace entry includes memory_count from client.stats()."""
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_includes_memory_count_from_stats(self, router: MemoryBankRouter) -> None:
+        """Each bank entry includes memory_count from client.stats()."""
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
             # Mock stats returns working + episodic counts
@@ -458,18 +474,18 @@ class TestHandleListNamespaces:
 
             await router.get_instance("counted-ns")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            counted_ns = next(ns for ns in result["namespaces"] if ns["name"] == "counted-ns")
+            counted_ns = next(ns for ns in result["banks"] if ns["name"] == "counted-ns")
 
             assert "memory_count" in counted_ns
             assert counted_ns["memory_count"] == 15
 
         asyncio.run(run())
 
-    def test_list_namespaces_memory_count_handles_missing_keys(self, router: NamespaceRouter) -> None:
+    def test_list_banks_memory_count_handles_missing_keys(self, router: MemoryBankRouter) -> None:
         """memory_count sums available keys, handles missing working/episodic gracefully."""
-        from src.services.tools.handlers import handle_list_namespaces
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
             # Stats with different key names or missing keys
@@ -477,9 +493,9 @@ class TestHandleListNamespaces:
 
             await router.get_instance("sparse-ns")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            sparse_ns = next(ns for ns in result["namespaces"] if ns["name"] == "sparse-ns")
+            sparse_ns = next(ns for ns in result["banks"] if ns["name"] == "sparse-ns")
 
             # Should not crash, memory_count should be 0 when expected keys missing
             assert "memory_count" in sparse_ns
@@ -487,19 +503,19 @@ class TestHandleListNamespaces:
 
         asyncio.run(run())
 
-    def test_list_namespaces_response_shape_has_all_required_fields(self, router: NamespaceRouter) -> None:
-        """Response shape: {namespaces: [{name, bank, description, memory_count}, ...]}."""
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_response_shape_has_all_required_fields(self, router: MemoryBankRouter) -> None:
+        """Response shape: {banks: [{name, bank, description, memory_count}, ...]}."""
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
             await router.get_instance("shape-ns")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            assert "namespaces" in result
-            assert isinstance(result["namespaces"], list)
+            assert "banks" in result
+            assert isinstance(result["banks"], list)
 
-            for ns in result["namespaces"]:
+            for ns in result["banks"]:
                 assert "name" in ns
                 assert isinstance(ns["name"], str)
                 assert "bank" in ns
@@ -511,30 +527,30 @@ class TestHandleListNamespaces:
 
         asyncio.run(run())
 
-    def test_list_namespaces_default_always_appears_with_hardcoded_description(self, router: NamespaceRouter) -> None:
-        """Default namespace always appears with its hardcoded description."""
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_default_always_appears_with_hardcoded_description(self, router: MemoryBankRouter) -> None:
+        """Default bank always appears with its hardcoded description."""
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            default_ns = next(ns for ns in result["namespaces"] if ns["name"] == "default")
+            default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
 
             assert default_ns["description"] == "Default personal memory — general conversation context, preferences, and facts"
 
         asyncio.run(run())
 
-    def test_list_namespaces_unregistered_namespace_has_none_description(self, router: NamespaceRouter) -> None:
-        """Namespaces without registered description show None or empty description."""
-        from src.services.tools.handlers import handle_list_namespaces
+    def test_list_banks_unregistered_bank_has_none_description(self, router: MemoryBankRouter) -> None:
+        """Banks without registered description show None or empty description."""
+        from src.services.tools.handlers import handle_list_banks
 
         async def run() -> None:
             # Create instance without registering description
             await router.get_instance("unregistered-ns")
 
-            result = await handle_list_namespaces(router, {})
+            result = await handle_list_banks(router, {})
 
-            unreg_ns = next(ns for ns in result["namespaces"] if ns["name"] == "unregistered-ns")
+            unreg_ns = next(ns for ns in result["banks"] if ns["name"] == "unregistered-ns")
 
             # Should have description field (None or empty string acceptable)
             assert "description" in unreg_ns
@@ -542,50 +558,50 @@ class TestHandleListNamespaces:
         asyncio.run(run())
 
 
-class TestRegisterNamespaceSchema:
-    """register_namespace schema has name and description as required fields."""
+class TestRegisterBankSchema:
+    """register_bank schema has name and description as required fields."""
 
-    def test_register_namespace_schema_exists(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_exists(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        assert REGISTER_NAMESPACE_SCHEMA is not None
+        assert REGISTER_BANK_SCHEMA is not None
 
-    def test_register_namespace_schema_has_correct_name(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_has_correct_name(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        assert REGISTER_NAMESPACE_SCHEMA["name"] == "mnemosyne_register_namespace"
+        assert REGISTER_BANK_SCHEMA["name"] == "memory_register_bank"
 
-    def test_register_namespace_schema_has_description(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_has_description(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        assert "description" in REGISTER_NAMESPACE_SCHEMA
-        assert len(REGISTER_NAMESPACE_SCHEMA["description"]) > 0
+        assert "description" in REGISTER_BANK_SCHEMA
+        assert len(REGISTER_BANK_SCHEMA["description"]) > 0
 
-    def test_register_namespace_schema_has_name_parameter(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_has_name_parameter(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        params = REGISTER_NAMESPACE_SCHEMA["parameters"]["properties"]
+        params = REGISTER_BANK_SCHEMA["parameters"]["properties"]
         assert "name" in params
         assert params["name"]["type"] == "string"
 
-    def test_register_namespace_schema_has_description_parameter(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_has_description_parameter(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        params = REGISTER_NAMESPACE_SCHEMA["parameters"]["properties"]
+        params = REGISTER_BANK_SCHEMA["parameters"]["properties"]
         assert "description" in params
         assert params["description"]["type"] == "string"
 
-    def test_register_namespace_schema_requires_name_and_description(self) -> None:
-        from src.services.tools.schemas import REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_requires_name_and_description(self) -> None:
+        from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        required = REGISTER_NAMESPACE_SCHEMA["parameters"]["required"]
+        required = REGISTER_BANK_SCHEMA["parameters"]["required"]
         assert "name" in required
         assert "description" in required
 
-    def test_register_namespace_schema_in_all_tool_schemas(self) -> None:
-        from src.services.tools.schemas import ALL_TOOL_SCHEMAS, REGISTER_NAMESPACE_SCHEMA
+    def test_register_bank_schema_in_all_tool_schemas(self) -> None:
+        from src.services.tools.schemas import ALL_TOOL_SCHEMAS, REGISTER_BANK_SCHEMA
 
-        assert REGISTER_NAMESPACE_SCHEMA in ALL_TOOL_SCHEMAS
+        assert REGISTER_BANK_SCHEMA in ALL_TOOL_SCHEMAS
 
 
 # ---------------------------------------------------------------------------
@@ -597,7 +613,7 @@ class TestToolCallIntegration:
     """Full tool call round-trip via MCP protocol."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
 
         with patch.dict(
@@ -617,53 +633,53 @@ class TestToolCallIntegration:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            router = NamespaceRouter(config=config, bank_manager=bank_manager)
+            router = MemoryBankRouter(config=config, bank_manager=bank_manager)
             router._mock_instance = mock_instance
             yield router
 
-    def test_full_remember_recall_round_trip(self, router: NamespaceRouter) -> None:
-        """Remember then recall in same namespace returns the memory."""
+    def test_full_remember_recall_round_trip(self, router: MemoryBankRouter) -> None:
+        """Remember then recall in same memory bank returns the memory."""
         from src.services.tools.handlers import handle_remember, handle_recall
 
         async def run() -> None:
             # Remember
             remember_result = await handle_remember(
                 router,
-                {"content": "user prefers dark mode", "namespace": "user-123"},
+                {"content": "user prefers dark mode", "memory_bank": "user-123"},
             )
             assert remember_result["status"] == "stored"
-            assert remember_result["namespace"] == "user-123"
+            assert remember_result["memory_bank"] == "user-123"
 
             # Recall
             recall_result = await handle_recall(
                 router,
-                {"query": "dark mode", "namespace": "user-123"},
+                {"query": "dark mode", "memory_bank": "user-123"},
             )
-            assert recall_result["namespace"] == "user-123"
+            assert recall_result["memory_bank"] == "user-123"
             assert len(recall_result["results"]) == 1
 
         asyncio.run(run())
 
-    def test_namespace_isolation_between_remember_and_recall(
-        self, router: NamespaceRouter
+    def test_memory_bank_isolation_between_remember_and_recall(
+        self, router: MemoryBankRouter
     ) -> None:
-        """Memories stored in one namespace are not visible in another."""
+        """Memories stored in one memory bank are not visible in another."""
         from src.services.tools.handlers import handle_remember
 
         async def run() -> None:
             # Store in ns-a
-            await handle_remember(router, {"content": "ns-a secret", "namespace": "ns-a"})
+            await handle_remember(router, {"content": "ns-a secret", "memory_bank": "ns-a"})
 
             # Store in ns-b
-            await handle_remember(router, {"content": "ns-b secret", "namespace": "ns-b"})
+            await handle_remember(router, {"content": "ns-b secret", "memory_bank": "ns-b"})
 
-            # Verify different clients per namespace
+            # Verify different clients per memory bank
             assert router.instances["ns-a"] is not router.instances["ns-b"]
 
         asyncio.run(run())
 
-    def test_mcp_response_format_matches_spec(self, router: NamespaceRouter) -> None:
-        """Response format matches MCP spec with namespace field included."""
+    def test_mcp_response_format_matches_spec(self, router: MemoryBankRouter) -> None:
+        """Response format matches MCP spec with memory_bank field included."""
         from src.services.tools.handlers import (
             handle_remember,
             handle_recall,
@@ -675,45 +691,45 @@ class TestToolCallIntegration:
 
         async def run() -> None:
             # remember response
-            r = await handle_remember(router, {"content": "test", "namespace": "spec-ns"})
+            r = await handle_remember(router, {"content": "test", "memory_bank": "spec-ns"})
             assert "status" in r
             assert "memory_id" in r
-            assert "namespace" in r
+            assert "memory_bank" in r
             assert isinstance(r["status"], str)
             assert isinstance(r["memory_id"], str)
-            assert isinstance(r["namespace"], str)
+            assert isinstance(r["memory_bank"], str)
 
             # recall response
-            r = await handle_recall(router, {"query": "test", "namespace": "spec-ns"})
+            r = await handle_recall(router, {"query": "test", "memory_bank": "spec-ns"})
             assert "results" in r
-            assert "namespace" in r
+            assert "memory_bank" in r
             assert isinstance(r["results"], list)
 
             # forget response
-            r = await handle_forget(router, {"memory_id": "x", "namespace": "spec-ns"})
+            r = await handle_forget(router, {"memory_id": "x", "memory_bank": "spec-ns"})
             assert "status" in r
             assert "memory_id" in r
-            assert "namespace" in r
+            assert "memory_bank" in r
 
             # update response
-            r = await handle_update(router, {"memory_id": "x", "namespace": "spec-ns"})
+            r = await handle_update(router, {"memory_id": "x", "memory_bank": "spec-ns"})
             assert "status" in r
             assert "memory_id" in r
-            assert "namespace" in r
+            assert "memory_bank" in r
 
             # sleep response
-            r = await handle_sleep(router, {"namespace": "spec-ns"})
-            assert "namespace" in r
+            r = await handle_sleep(router, {"memory_bank": "spec-ns"})
+            assert "memory_bank" in r
 
             # stats response
-            r = await handle_stats(router, {"namespace": "spec-ns"})
+            r = await handle_stats(router, {"memory_bank": "spec-ns"})
             assert "stats" in r
-            assert "namespace" in r
+            assert "memory_bank" in r
 
         asyncio.run(run())
 
-    def test_namespace_required_no_fallback_to_default(self, router: NamespaceRouter) -> None:
-        """All handlers raise ValidationError when namespace not provided (no fallback)."""
+    def test_memory_bank_required_no_fallback_to_default(self, router: MemoryBankRouter) -> None:
+        """All handlers raise ValidationError when memory_bank not provided (no fallback)."""
         from src.services.tools.handlers import (
             handle_remember,
             handle_recall,
@@ -724,59 +740,59 @@ class TestToolCallIntegration:
         )
 
         async def run() -> None:
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_remember(router, {"content": "x"})
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_recall(router, {"query": "x"})
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_forget(router, {"memory_id": "x"})
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_update(router, {"memory_id": "x"})
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_sleep(router, {})
-            with pytest.raises(ValidationError, match="namespace parameter is required"):
+            with pytest.raises(ValidationError, match="memory_bank parameter is required"):
                 await handle_stats(router, {})
 
         asyncio.run(run())
 
 
 # ---------------------------------------------------------------------------
-# Register Namespace handler
+# Register Bank handler
 # ---------------------------------------------------------------------------
 
 
-class TestHandleRegisterNamespace:
-    """register_namespace handler validates args and registers via router."""
+class TestHandleRegisterBank:
+    """register_bank handler validates args and registers via router."""
 
-    def test_register_namespace_success(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_success(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
-            result = await handle_register_namespace(
+            result = await handle_register_bank(
                 router,
-                {"name": "my-ns", "description": "My custom namespace"},
+                {"name": "my-ns", "description": "My custom bank"},
             )
 
             assert result["status"] == "registered"
             assert result["name"] == "my-ns"
             # Verify registry was updated
-            assert router.registry.get("my-ns") == "My custom namespace"
+            assert router.registry.get("my-ns") == "My custom bank"
 
         asyncio.run(run())
 
-    def test_register_namespace_idempotent_updates_description(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_idempotent_updates_description(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
             # First registration
-            await handle_register_namespace(
+            await handle_register_bank(
                 router,
                 {"name": "my-ns", "description": "Original description"},
             )
             assert router.registry.get("my-ns") == "Original description"
 
             # Second registration with same name updates description
-            result = await handle_register_namespace(
+            result = await handle_register_bank(
                 router,
                 {"name": "my-ns", "description": "Updated description"},
             )
@@ -786,38 +802,38 @@ class TestHandleRegisterNamespace:
 
         asyncio.run(run())
 
-    def test_register_namespace_raises_when_name_missing(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_raises_when_name_missing(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="name is required"):
-                await handle_register_namespace(router, {"description": "no name"})
+                await handle_register_bank(router, {"description": "no name"})
 
         asyncio.run(run())
 
-    def test_register_namespace_raises_when_description_missing(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_raises_when_description_missing(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="description is required"):
-                await handle_register_namespace(router, {"name": "no-desc"})
+                await handle_register_bank(router, {"name": "no-desc"})
 
         asyncio.run(run())
 
-    def test_register_namespace_raises_when_both_missing(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_raises_when_both_missing(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
             with pytest.raises(ValidationError, match="name is required"):
-                await handle_register_namespace(router, {})
+                await handle_register_bank(router, {})
 
         asyncio.run(run())
 
-    def test_register_namespace_returns_correct_shape(self, router: NamespaceRouter) -> None:
-        from src.services.tools.handlers import handle_register_namespace
+    def test_register_bank_returns_correct_shape(self, router: MemoryBankRouter) -> None:
+        from src.services.tools.handlers import handle_register_bank
 
         async def run() -> None:
-            result = await handle_register_namespace(
+            result = await handle_register_bank(
                 router,
                 {"name": "test-ns", "description": "Test"},
             )

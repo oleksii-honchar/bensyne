@@ -10,26 +10,26 @@ if TYPE_CHECKING:
 
 
 class BankManager:
-    """Resolves SQLite database paths per bank/namespace.
+    """Resolves SQLite database paths per memory bank.
 
     Path rules (ADR-005):
       - Default bank: {data_dir}/mnemosyne.db
-      - Custom bank:  {data_dir}/banks/{namespace}/mnemosyne.db
+      - Custom bank:  {data_dir}/banks/{memory_bank}/mnemosyne.db
     """
 
     def __init__(self, data_dir: str, default_bank: str = "default") -> None:
         self.data_dir = Path(data_dir)
         self.default_bank = default_bank
 
-    def get_bank_db_path(self, namespace: str) -> Path:
-        """Return the SQLite path for the given bank namespace.
+    def get_bank_db_path(self, memory_bank: str) -> Path:
+        """Return the SQLite path for the given memory bank.
 
         Ensures the parent directory exists (mkdir -p).
         """
-        if namespace == self.default_bank:
+        if memory_bank == self.default_bank:
             path = self.data_dir / "mnemosyne.db"
         else:
-            path = self.data_dir / "banks" / namespace / "mnemosyne.db"
+            path = self.data_dir / "banks" / memory_bank / "mnemosyne.db"
 
         path.parent.mkdir(parents=True, exist_ok=True)
         return path

@@ -25,12 +25,12 @@ class TestBankManagerPaths:
         return BankManager(data_dir=str(tmp_path), default_bank="default")
 
     def test_default_bank_returns_root_db(self, bank_manager: BankManager, tmp_path: Path) -> None:
-        """Default namespace resolves to {data_dir}/mnemosyne.db."""
+        """Default memory bank resolves to {data_dir}/mnemosyne.db."""
         path = bank_manager.get_bank_db_path("default")
         assert path == tmp_path / "mnemosyne.db"
 
     def test_custom_bank_returns_nested_db(self, bank_manager: BankManager, tmp_path: Path) -> None:
-        """Custom namespace resolves to {data_dir}/banks/{namespace}/mnemosyne.db."""
+        """Custom memory bank resolves to {data_dir}/banks/{memory_bank}/mnemosyne.db."""
         path = bank_manager.get_bank_db_path("obsidian-vault")
         assert path == tmp_path / "banks" / "obsidian-vault" / "mnemosyne.db"
 
@@ -109,9 +109,9 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="test-bank", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="test-bank", bank_manager=bank_manager)
 
-            assert client.namespace == "test-bank"
+            assert client.memory_bank == "test-bank"
             assert client._instance is mock_instance
 
     def test_tracks_created_at_timestamp(self, tmp_path: Path) -> None:
@@ -132,7 +132,7 @@ class TestMnemosyneClientCreation:
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
             before = time.time()
-            client = MnemosyneClient(namespace="test-bank", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="test-bank", bank_manager=bank_manager)
             after = time.time()
 
             assert before <= client.created_at <= after
@@ -153,7 +153,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.remember("test content", source="test")
 
@@ -180,7 +180,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.recall("hello", limit=5)
 
@@ -206,7 +206,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.forget("mem_123")
 
@@ -229,7 +229,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.update("mem_123", content="updated", importance=0.8)
 
@@ -257,7 +257,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.sleep()
 
@@ -281,7 +281,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.stats()
 
@@ -305,7 +305,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.get("mem_123")
 
@@ -328,7 +328,7 @@ class TestMnemosyneClientCreation:
             from src.infrastructure.mnemosyne.client import MnemosyneClient
 
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            client = MnemosyneClient(namespace="default", bank_manager=bank_manager)
+            client = MnemosyneClient(memory_bank="default", bank_manager=bank_manager)
 
             result = client.get("nonexistent")
 

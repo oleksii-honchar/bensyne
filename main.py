@@ -1,5 +1,5 @@
 #!/usr/bin/env python3.12
-"""Better Mnemosyne — multi-tenant namespace-aware MCP server."""
+"""Better Mnemosyne — multi-tenant memory-bank-aware MCP server."""
 
 from __future__ import annotations
 
@@ -32,25 +32,25 @@ if _env_path.exists():
 
 from src.infrastructure.config.manager import ConfigManager
 from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.services.namespace.router import NamespaceRouter
+from src.services.bank.router import MemoryBankRouter
 from src.app import create_application
 from src.middleware.health import mark_default_instance_ready
 from src.utils.logging import setup_logging
 
 
-async def shutdown_handler(signum: int, router: NamespaceRouter) -> None:
+async def shutdown_handler(signum: int, router: MemoryBankRouter) -> None:
     """Graceful shutdown handler.
 
     Args:
         signum: Signal number received.
-        router: Namespace router to clean up.
+        router: Memory bank router to clean up.
     """
     logger = logging.getLogger("better-mnemosyne")
     logger.info("Received signal %d, shutting down...", signum)
 
     # Clean up instances
-    for namespace, instance in list(router.instances.items()):
-        logger.info("Cleaning up instance: %s", namespace)
+    for memory_bank, instance in list(router.instances.items()):
+        logger.info("Cleaning up instance: %s", memory_bank)
 
     sys.exit(0)
 
@@ -58,7 +58,7 @@ async def shutdown_handler(signum: int, router: NamespaceRouter) -> None:
 def main() -> None:
     """Main entry point for the Better Mnemosyne server."""
     parser = argparse.ArgumentParser(
-        description="Better Mnemosyne — multi-tenant namespace-aware MCP server"
+        description="Better Mnemosyne — multi-tenant memory-bank-aware MCP server"
     )
     parser.add_argument("--port", type=int, help="Port to listen on")
     parser.add_argument("--data-dir", type=str, help="Data directory for databases")
@@ -100,8 +100,8 @@ def main() -> None:
         default_bank=config.instance_pool.default_bank,
     )
 
-    # Step 4: Create NamespaceRouter — creates default instance at boot
-    router = NamespaceRouter(
+    # Step 4: Create MemoryBankRouter — creates default instance at boot
+    router = MemoryBankRouter(
         config=config.instance_pool,
         bank_manager=bank_manager,
     )

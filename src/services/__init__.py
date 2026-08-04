@@ -1,1 +1,1 @@
-"""Service layer — namespace routing and MCP tools."""
+"""Service layer — memory bank routing and MCP tools."""

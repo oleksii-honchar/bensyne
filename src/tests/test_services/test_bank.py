@@ -1,4 +1,4 @@
-"""Namespace router and instance pool tests."""
+"""Memory bank router and instance pool tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 from src.domain.models import InstancePoolConfig
 from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.services.namespace.router import NamespaceRouter
+from src.services.bank.router import MemoryBankRouter
 
 
 # ---------------------------------------------------------------------------
@@ -46,15 +46,15 @@ def _patch_mnemosyne_class(mock_instance: MagicMock) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# NamespaceRouter creation and default instance
+# MemoryBankRouter creation and default instance
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterCreation:
-    """NamespaceRouter initializes with default instance at boot."""
+class TestMemoryBankRouterCreation:
+    """MemoryBankRouter initializes with default instance at boot."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
             config = InstancePoolConfig(
@@ -64,21 +64,21 @@ class TestNamespaceRouterCreation:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_default_instance_created_at_boot(self, router: NamespaceRouter) -> None:
+    def test_default_instance_created_at_boot(self, router: MemoryBankRouter) -> None:
         """Default instance exists immediately after router creation."""
         assert "default" in router.instances
 
-    def test_default_instance_is_mnemosyne_client(self, router: NamespaceRouter) -> None:
+    def test_default_instance_is_mnemosyne_client(self, router: MemoryBankRouter) -> None:
         """Default instance is a MnemosyneClient."""
         from src.infrastructure.mnemosyne.client import MnemosyneClient
 
         assert isinstance(router.instances["default"], MnemosyneClient)
 
-    def test_default_instance_namespace(self, router: NamespaceRouter) -> None:
-        """Default instance has namespace 'default'."""
-        assert router.instances["default"].namespace == "default"
+    def test_default_instance_memory_bank(self, router: MemoryBankRouter) -> None:
+        """Default instance has memory_bank 'default'."""
+        assert router.instances["default"].memory_bank == "default"
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +86,11 @@ class TestNamespaceRouterCreation:
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterGetInstance:
-    """NamespaceRouter.get_instance returns cached instance on second call."""
+class TestMemoryBankRouterGetInstance:
+    """MemoryBankRouter.get_instance returns cached instance on second call."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
             config = InstancePoolConfig(
@@ -100,10 +100,10 @@ class TestNamespaceRouterGetInstance:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_get_instance_returns_cached_instance_on_second_call(self, router: NamespaceRouter) -> None:
-        """Second call for same namespace returns the same instance."""
+    def test_get_instance_returns_cached_instance_on_second_call(self, router: MemoryBankRouter) -> None:
+        """Second call for same memory bank returns the same instance."""
 
         async def run() -> None:
             first = await router.get_instance("default")
@@ -112,8 +112,8 @@ class TestNamespaceRouterGetInstance:
 
         asyncio.run(run())
 
-    def test_new_instance_created_for_new_namespace(self, router: NamespaceRouter, tmp_path: Path) -> None:
-        """First call for a new namespace creates a new instance."""
+    def test_new_instance_created_for_new_memory_bank(self, router: MemoryBankRouter, tmp_path: Path) -> None:
+        """First call for a new memory bank creates a new instance."""
 
         async def run() -> None:
             # Before: only default exists
@@ -125,11 +125,11 @@ class TestNamespaceRouterGetInstance:
             # Now both exist
             assert "test-ns" in router.instances
             assert len(router.instances) == 2
-            assert instance.namespace == "test-ns"
+            assert instance.memory_bank == "test-ns"
 
         asyncio.run(run())
 
-    def test_get_instance_updates_last_accessed(self, router: NamespaceRouter) -> None:
+    def test_get_instance_updates_last_accessed(self, router: MemoryBankRouter) -> None:
         """get_instance updates last_accessed timestamp."""
 
         async def run() -> None:
@@ -149,11 +149,11 @@ class TestNamespaceRouterGetInstance:
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterLRUEviction:
+class TestMemoryBankRouterLRUEviction:
     """LRU eviction works at max_instances limit."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         """Router with max_instances=3 (default + 2 allowed)."""
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
@@ -164,9 +164,9 @@ class TestNamespaceRouterLRUEviction:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_lru_eviction_works_at_max_instances_limit(self, router: NamespaceRouter) -> None:
+    def test_lru_eviction_works_at_max_instances_limit(self, router: MemoryBankRouter) -> None:
         """When over max_instances, oldest non-default instance is evicted."""
 
         async def run() -> None:
@@ -197,8 +197,8 @@ class TestNamespaceRouterLRUEviction:
 
         asyncio.run(run())
 
-    def test_default_namespace_never_evicted(self, router: NamespaceRouter) -> None:
-        """Default namespace is never evicted, even when over limit."""
+    def test_default_bank_never_evicted(self, router: MemoryBankRouter) -> None:
+        """Default memory bank is never evicted, even when over limit."""
 
         async def run() -> None:
             # Fill up to max_instances
@@ -206,7 +206,7 @@ class TestNamespaceRouterLRUEviction:
             await router.get_instance("ns2")
             assert len(router.instances) == 3  # default + ns1 + ns2
 
-            # Keep adding namespaces — default must survive
+            # Keep adding banks — default must survive
             await router.get_instance("ns3")
             await router.get_instance("ns4")
             await router.get_instance("ns5")
@@ -221,11 +221,11 @@ class TestNamespaceRouterLRUEviction:
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterConcurrency:
-    """Simultaneous requests for same namespace don't create duplicates."""
+class TestMemoryBankRouterConcurrency:
+    """Simultaneous requests for same memory bank don't create duplicates."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
             config = InstancePoolConfig(
@@ -235,10 +235,10 @@ class TestNamespaceRouterConcurrency:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_simultaneous_requests_same_namespace_no_duplicates(self, router: NamespaceRouter) -> None:
-        """Multiple concurrent get_instance calls for same namespace yield exactly one instance."""
+    def test_simultaneous_requests_same_memory_bank_no_duplicates(self, router: MemoryBankRouter) -> None:
+        """Multiple concurrent get_instance calls for same memory bank yield exactly one instance."""
 
         async def run() -> None:
             # Fire 20 concurrent requests for "concurrent-ns"
@@ -248,7 +248,7 @@ class TestNamespaceRouterConcurrency:
             # All results point to the same instance
             assert all(r is results[0] for r in results)
 
-            # Only one entry in instances dict for this namespace
+            # Only one entry in instances dict for this memory bank
             assert "concurrent-ns" in router.instances
             assert isinstance(router.instances["concurrent-ns"], object)
 
@@ -256,15 +256,15 @@ class TestNamespaceRouterConcurrency:
 
 
 # ---------------------------------------------------------------------------
-# Health integration — get_active_instances and get_active_namespaces
+# Health integration — get_active_instances and get_active_banks
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterHealthIntegration:
-    """Router exposes instance count and namespace list for health endpoint."""
+class TestMemoryBankRouterHealthIntegration:
+    """Router exposes instance count and memory bank list for health endpoint."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
             config = InstancePoolConfig(
@@ -274,37 +274,37 @@ class TestNamespaceRouterHealthIntegration:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_get_active_instances_returns_count(self, router: NamespaceRouter) -> None:
+    def test_get_active_instances_returns_count(self, router: MemoryBankRouter) -> None:
         """get_active_instances returns the number of active instances."""
         assert router.get_active_instances() == 1  # default only
 
-    def test_get_active_namespaces_returns_names(self, router: NamespaceRouter) -> None:
-        """get_active_namespaces returns namespace names."""
-        namespaces = router.get_active_namespaces()
-        assert "default" in namespaces
+    def test_get_active_banks_returns_names(self, router: MemoryBankRouter) -> None:
+        """get_active_banks returns memory bank names."""
+        banks = router.get_active_banks()
+        assert "default" in banks
 
-    def test_health_methods_update_after_creation(self, router: NamespaceRouter) -> None:
+    def test_health_methods_update_after_creation(self, router: MemoryBankRouter) -> None:
 
         async def run() -> None:
             await router.get_instance("extra-ns")
             assert router.get_active_instances() == 2
-            assert "extra-ns" in router.get_active_namespaces()
+            assert "extra-ns" in router.get_active_banks()
 
         asyncio.run(run())
 
 
 # ---------------------------------------------------------------------------
-# NamespaceRegistry wiring — Task 3
+# MemoryBankRegistry wiring
 # ---------------------------------------------------------------------------
 
 
-class TestNamespaceRouterRegistryWiring:
-    """NamespaceRouter wires NamespaceRegistry and exposes description methods."""
+class TestMemoryBankRouterRegistryWiring:
+    """MemoryBankRouter wires MemoryBankRegistry and exposes description methods."""
 
     @pytest.fixture
-    def router(self, tmp_path: Path) -> NamespaceRouter:
+    def router(self, tmp_path: Path) -> MemoryBankRouter:
         mock_instance = _mock_mnemosyne_instance()
         with _patch_mnemosyne_class(mock_instance):
             config = InstancePoolConfig(
@@ -314,40 +314,40 @@ class TestNamespaceRouterRegistryWiring:
                 default_bank="default",
             )
             bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            return NamespaceRouter(config=config, bank_manager=bank_manager)
+            return MemoryBankRouter(config=config, bank_manager=bank_manager)
 
-    def test_router_has_registry_instance(self, router: NamespaceRouter) -> None:
-        """Router creates a NamespaceRegistry instance in __init__."""
-        from src.services.namespace.registry import NamespaceRegistry
+    def test_router_has_registry_instance(self, router: MemoryBankRouter) -> None:
+        """Router creates a MemoryBankRegistry instance in __init__."""
+        from src.services.bank.registry import MemoryBankRegistry
 
         assert hasattr(router, "registry")
-        assert isinstance(router.registry, NamespaceRegistry)
+        assert isinstance(router.registry, MemoryBankRegistry)
 
-    def test_get_namespace_description_for_default(self, router: NamespaceRouter) -> None:
-        """get_namespace_description returns default namespace description immediately."""
-        desc = router.get_namespace_description("default")
+    def test_get_bank_description_for_default(self, router: MemoryBankRouter) -> None:
+        """get_bank_description returns default memory bank description immediately."""
+        desc = router.get_bank_description("default")
         assert desc is not None
         assert "Default personal memory" in desc
 
-    def test_get_namespace_description_for_registered(self, router: NamespaceRouter) -> None:
-        """get_namespace_description returns description for a registered namespace."""
-        router.register_namespace("project-x", "Project X memories")
-        desc = router.get_namespace_description("project-x")
+    def test_get_bank_description_for_registered(self, router: MemoryBankRouter) -> None:
+        """get_bank_description returns description for a registered memory bank."""
+        router.register_bank("project-x", "Project X memories")
+        desc = router.get_bank_description("project-x")
         assert desc == "Project X memories"
 
-    def test_get_namespace_description_for_unknown(self, router: NamespaceRouter) -> None:
-        """get_namespace_description returns None for unregistered namespace."""
-        desc = router.get_namespace_description("nonexistent")
+    def test_get_bank_description_for_unknown(self, router: MemoryBankRouter) -> None:
+        """get_bank_description returns None for unregistered memory bank."""
+        desc = router.get_bank_description("nonexistent")
         assert desc is None
 
-    def test_register_namespace_delegates_to_registry(self, router: NamespaceRouter) -> None:
-        """register_namespace method delegates to registry.register()."""
-        router.register_namespace("new-ns", "New namespace description")
-        assert router.registry.get("new-ns") == "New namespace description"
+    def test_register_bank_delegates_to_registry(self, router: MemoryBankRouter) -> None:
+        """register_bank method delegates to registry.register()."""
+        router.register_bank("new-ns", "New bank description")
+        assert router.registry.get("new-ns") == "New bank description"
 
-    def test_register_namespace_idempotent(self, router: NamespaceRouter) -> None:
-        """register_namespace is idempotent — calling twice updates description."""
-        router.register_namespace("ns1", "first")
-        assert router.get_namespace_description("ns1") == "first"
-        router.register_namespace("ns1", "second")
-        assert router.get_namespace_description("ns1") == "second"
+    def test_register_bank_idempotent(self, router: MemoryBankRouter) -> None:
+        """register_bank is idempotent — calling twice updates description."""
+        router.register_bank("ns1", "first")
+        assert router.get_bank_description("ns1") == "first"
+        router.register_bank("ns1", "second")
+        assert router.get_bank_description("ns1") == "second"

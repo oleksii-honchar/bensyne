@@ -4,17 +4,17 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.domain.models import NamespaceInfo, InstanceInfo, ToolResponse
-from src.domain.exceptions import NamespaceError, InstanceError, ValidationError
+from src.domain.models import MemoryBankInfo, InstanceInfo, ToolResponse
+from src.domain.exceptions import MemoryBankError, InstanceError, ValidationError
 
 
-class TestNamespaceInfo:
-    """Tests for NamespaceInfo dataclass."""
+class TestMemoryBankInfo:
+    """Tests for MemoryBankInfo dataclass."""
 
-    def test_create_namespace_info_with_all_fields(self):
-        """NamespaceInfo can be created with all fields."""
+    def test_create_memory_bank_info_with_all_fields(self):
+        """MemoryBankInfo can be created with all fields."""
         now = datetime.now(timezone.utc).isoformat()
-        info = NamespaceInfo(
+        info = MemoryBankInfo(
             name="obsidian-vault",
             bank="obsidian-vault",
             status="active",
@@ -30,9 +30,9 @@ class TestNamespaceInfo:
         assert info.created_at == now
         assert info.last_accessed == now
 
-    def test_create_default_namespace_info(self):
-        """NamespaceInfo can be created with default namespace values."""
-        info = NamespaceInfo(
+    def test_create_default_memory_bank_info(self):
+        """MemoryBankInfo can be created with default memory bank values."""
+        info = MemoryBankInfo(
             name="default",
             bank="default",
             status="active",
@@ -46,9 +46,9 @@ class TestNamespaceInfo:
         assert info.status == "active"
         assert info.memory_count == 0
 
-    def test_namespace_info_evicted_status(self):
-        """NamespaceInfo can represent an evicted namespace."""
-        info = NamespaceInfo(
+    def test_memory_bank_info_evicted_status(self):
+        """MemoryBankInfo can represent an evicted memory bank."""
+        info = MemoryBankInfo(
             name="temp-ns",
             bank="temp-ns",
             status="evicted",
@@ -60,9 +60,9 @@ class TestNamespaceInfo:
         assert info.status == "evicted"
         assert info.memory_count == 100
 
-    def test_namespace_info_serialization(self):
-        """NamespaceInfo can be serialized to dict."""
-        info = NamespaceInfo(
+    def test_memory_bank_info_serialization(self):
+        """MemoryBankInfo can be serialized to dict."""
+        info = MemoryBankInfo(
             name="test-ns",
             bank="test-ns",
             status="active",
@@ -92,36 +92,36 @@ class TestInstanceInfo:
         last_accessed = 1722326700.0
 
         info = InstanceInfo(
-            namespace="obsidian-vault",
+            memory_bank="obsidian-vault",
             db_path="/data/mnemosyne/data/banks/obsidian-vault/mnemosyne.db",
             status="active",
             created_at=created_at,
             last_accessed=last_accessed,
         )
 
-        assert info.namespace == "obsidian-vault"
+        assert info.memory_bank == "obsidian-vault"
         assert info.db_path == "/data/mnemosyne/data/banks/obsidian-vault/mnemosyne.db"
         assert info.status == "active"
         assert info.created_at == created_at
         assert info.last_accessed == last_accessed
 
     def test_create_default_instance_info(self):
-        """InstanceInfo can be created for default namespace."""
+        """InstanceInfo can be created for default memory bank."""
         info = InstanceInfo(
-            namespace="default",
+            memory_bank="default",
             db_path="/data/mnemosyne/data/mnemosyne.db",
             status="active",
             created_at=1722326400.0,
             last_accessed=1722326400.0,
         )
 
-        assert info.namespace == "default"
+        assert info.memory_bank == "default"
         assert info.db_path == "/data/mnemosyne/data/mnemosyne.db"
 
     def test_instance_info_serialization(self):
         """InstanceInfo can be serialized to dict."""
         info = InstanceInfo(
-            namespace="test",
+            memory_bank="test",
             db_path="/data/mnemosyne/data/banks/test/mnemosyne.db",
             status="active",
             created_at=1722326400.0,
@@ -131,7 +131,7 @@ class TestInstanceInfo:
         data = info.to_dict()
 
         assert data == {
-            "namespace": "test",
+            "memory_bank": "test",
             "db_path": "/data/mnemosyne/data/banks/test/mnemosyne.db",
             "status": "active",
             "created_at": 1722326400.0,
@@ -147,12 +147,12 @@ class TestToolResponse:
         response = ToolResponse(
             status="ok",
             data={"result": "success"},
-            namespace="default",
+            memory_bank="default",
         )
 
         assert response.status == "ok"
         assert response.data == {"result": "success"}
-        assert response.namespace == "default"
+        assert response.memory_bank == "default"
         assert response.error is None
 
     def test_tool_response_stored_status(self):
@@ -160,30 +160,30 @@ class TestToolResponse:
         response = ToolResponse(
             status="stored",
             data={"memory_id": "abc123"},
-            namespace="obsidian-vault",
+            memory_bank="obsidian-vault",
         )
 
         assert response.status == "stored"
         assert response.data["memory_id"] == "abc123"
-        assert response.namespace == "obsidian-vault"
+        assert response.memory_bank == "obsidian-vault"
 
     def test_tool_response_error_status(self):
         """ToolResponse can represent an error."""
         response = ToolResponse(
             status="error",
-            namespace="test-ns",
-            error="Namespace not found",
+            memory_bank="test-ns",
+            error="Memory bank not found",
         )
 
         assert response.status == "error"
-        assert response.error == "Namespace not found"
+        assert response.error == "Memory bank not found"
         assert response.data is None
 
     def test_tool_response_no_data(self):
         """ToolResponse can have no data payload."""
         response = ToolResponse(
             status="ok",
-            namespace="default",
+            memory_bank="default",
         )
 
         assert response.data is None
@@ -193,7 +193,7 @@ class TestToolResponse:
         response = ToolResponse(
             status="stored",
             data={"memory_id": "xyz789"},
-            namespace="test-ns",
+            memory_bank="test-ns",
         )
 
         data = response.to_dict()
@@ -201,34 +201,34 @@ class TestToolResponse:
         assert data == {
             "status": "stored",
             "data": {"memory_id": "xyz789"},
-            "namespace": "test-ns",
+            "memory_bank": "test-ns",
             "error": None,
         }
 
 
-class TestNamespaceError:
-    """Tests for NamespaceError exception."""
+class TestMemoryBankError:
+    """Tests for MemoryBankError exception."""
 
-    def test_namespace_error_with_message(self):
-        """NamespaceError raises with expected message."""
-        with pytest.raises(NamespaceError) as exc_info:
-            raise NamespaceError("Namespace 'invalid-ns' not found")
+    def test_memory_bank_error_with_message(self):
+        """MemoryBankError raises with expected message."""
+        with pytest.raises(MemoryBankError) as exc_info:
+            raise MemoryBankError("Memory bank 'invalid-ns' not found")
 
-        assert str(exc_info.value) == "Namespace 'invalid-ns' not found"
+        assert str(exc_info.value) == "Memory bank 'invalid-ns' not found"
 
-    def test_namespace_error_is_domain_error(self):
-        """NamespaceError is a subclass of Exception."""
-        assert issubclass(NamespaceError, Exception)
+    def test_memory_bank_error_is_domain_error(self):
+        """MemoryBankError is a subclass of Exception."""
+        assert issubclass(MemoryBankError, Exception)
 
-    def test_namespace_error_not_found_variant(self):
-        """NamespaceError can represent not-found scenarios."""
-        with pytest.raises(NamespaceError, match="not found"):
-            raise NamespaceError("Namespace 'missing' not found")
+    def test_memory_bank_error_not_found_variant(self):
+        """MemoryBankError can represent not-found scenarios."""
+        with pytest.raises(MemoryBankError, match="not found"):
+            raise MemoryBankError("Memory bank 'missing' not found")
 
-    def test_namespace_error_invalid_name_variant(self):
-        """NamespaceError can represent invalid name scenarios."""
-        with pytest.raises(NamespaceError, match="Invalid"):
-            raise NamespaceError("Invalid namespace name: 'ns with spaces'")
+    def test_memory_bank_error_invalid_name_variant(self):
+        """MemoryBankError can represent invalid name scenarios."""
+        with pytest.raises(MemoryBankError, match="Invalid"):
+            raise MemoryBankError("Invalid memory bank name: 'ns with spaces'")
 
 
 class TestInstanceError:
@@ -237,9 +237,9 @@ class TestInstanceError:
     def test_instance_error_with_message(self):
         """InstanceError raises with expected message."""
         with pytest.raises(InstanceError) as exc_info:
-            raise InstanceError("Failed to create instance for namespace 'test'")
+            raise InstanceError("Failed to create instance for memory bank 'test'")
 
-        assert str(exc_info.value) == "Failed to create instance for namespace 'test'"
+        assert str(exc_info.value) == "Failed to create instance for memory bank 'test'"
 
     def test_instance_error_is_domain_error(self):
         """InstanceError is a subclass of Exception."""
@@ -270,10 +270,10 @@ class TestValidationError:
         """ValidationError is a subclass of Exception."""
         assert issubclass(ValidationError, Exception)
 
-    def test_validation_error_bad_namespace_name(self):
-        """ValidationError can represent bad namespace names."""
-        with pytest.raises(ValidationError, match="namespace"):
-            raise ValidationError("Invalid namespace name: must be alphanumeric with hyphens")
+    def test_validation_error_bad_memory_bank_name(self):
+        """ValidationError can represent bad memory bank names."""
+        with pytest.raises(ValidationError, match="bank"):
+            raise ValidationError("Invalid memory bank name: must be alphanumeric with hyphens")
 
     def test_validation_error_missing_required_fields(self):
         """ValidationError can represent missing required fields."""

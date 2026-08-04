@@ -43,15 +43,15 @@ class IMnemosyneClient(ABC):
         ...
 
 
-class INamespaceRouter(ABC):
-    """Interface for namespace routing."""
+class IMemoryBankRouter(ABC):
+    """Interface for memory bank routing."""
 
     @abstractmethod
-    async def get_instance(self, namespace: str) -> IMnemosyneClient:
-        """Get or create Mnemosyne client for the given namespace."""
+    async def get_instance(self, memory_bank: str) -> IMnemosyneClient:
+        """Get or create Mnemosyne client for the given memory bank."""
         ...
 
     @abstractmethod
-    async def list_namespaces(self) -> List[str]:
-        """List all active namespace names."""
+    async def list_banks(self) -> List[str]:
+        """List all active memory bank names."""
         ...

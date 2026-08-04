@@ -106,86 +106,86 @@ class TestLogToolCallDecorator:
         logger.addHandler(handler)
         return stream
 
-    def test_logs_entry_with_namespace(self, logger: logging.Logger) -> None:
-        """Decorator logs entry with namespace."""
+    def test_logs_entry_with_memory_bank(self, logger: logging.Logger) -> None:
+        """Decorator logs entry with memory_bank."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str, value: int) -> int:
+        def my_func(memory_bank: str, value: int) -> int:
             return value
 
         stream = self._capture_logs(logger)
-        my_func(namespace="ns1", value=42)
+        my_func(memory_bank="ns1", value=42)
 
         log_output = stream.getvalue()
-        assert "test_tool called: namespace=ns1" in log_output
+        assert "test_tool called: memory_bank=ns1" in log_output
 
     def test_logs_arguments_at_debug(self, logger: logging.Logger) -> None:
         """Decorator logs arguments at DEBUG level."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str, value: int) -> int:
+        def my_func(memory_bank: str, value: int) -> int:
             return value
 
         stream = self._capture_logs(logger)
-        my_func(namespace="ns1", value=42)
+        my_func(memory_bank="ns1", value=42)
 
         log_output = stream.getvalue()
         assert "test_tool arguments:" in log_output
-        assert "namespace=ns1" in log_output or "value=42" in log_output
+        assert "memory_bank=ns1" in log_output or "value=42" in log_output
 
     def test_logs_routing(self, logger: logging.Logger) -> None:
-        """Decorator logs routing to namespace."""
+        """Decorator logs routing to memory_bank."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str) -> str:
-            return namespace
+        def my_func(memory_bank: str) -> str:
+            return memory_bank
 
         stream = self._capture_logs(logger)
-        my_func(namespace="ns1")
+        my_func(memory_bank="ns1")
 
         log_output = stream.getvalue()
-        assert "test_tool: routing to namespace=ns1" in log_output
+        assert "test_tool: routing to memory_bank=ns1" in log_output
 
     def test_logs_instance_management(self, logger: logging.Logger) -> None:
         """Decorator logs instance management."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str) -> str:
-            return namespace
+        def my_func(memory_bank: str) -> str:
+            return memory_bank
 
         stream = self._capture_logs(logger)
-        my_func(namespace="ns1")
+        my_func(memory_bank="ns1")
 
         log_output = stream.getvalue()
-        assert "test_tool: getting instance for namespace=ns1" in log_output
+        assert "test_tool: getting instance for memory_bank=ns1" in log_output
 
     def test_logs_completion(self, logger: logging.Logger) -> None:
         """Decorator logs completion."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str) -> str:
+        def my_func(memory_bank: str) -> str:
             return "ok"
 
         stream = self._capture_logs(logger)
-        my_func(namespace="ns1")
+        my_func(memory_bank="ns1")
 
         log_output = stream.getvalue()
-        assert "test_tool completed: namespace=ns1" in log_output
+        assert "test_tool completed: memory_bank=ns1" in log_output
 
     def test_logs_error_when_function_raises(self, logger: logging.Logger) -> None:
         """Decorator logs errors when function raises."""
 
         @log_tool_call("test_tool")
-        def my_func(namespace: str) -> None:
+        def my_func(memory_bank: str) -> None:
             raise ValueError("boom")
 
         stream = self._capture_logs(logger)
 
         with pytest.raises(ValueError, match="boom"):
-            my_func(namespace="ns1")
+            my_func(memory_bank="ns1")
 
         log_output = stream.getvalue()
-        assert "test_tool failed: namespace=ns1" in log_output
+        assert "test_tool failed: memory_bank=ns1" in log_output
         assert "error=" in log_output
         assert "boom" in log_output
 
@@ -193,32 +193,32 @@ class TestLogToolCallDecorator:
         """Decorator supports async functions."""
 
         @log_tool_call("async_tool")
-        async def my_async_func(namespace: str) -> str:
+        async def my_async_func(memory_bank: str) -> str:
             await asyncio.sleep(0)
             return "done"
 
         stream = self._capture_logs(logger)
-        result = await my_async_func(namespace="ns1")
+        result = await my_async_func(memory_bank="ns1")
 
         assert result == "done"
         log_output = stream.getvalue()
-        assert "async_tool called: namespace=ns1" in log_output
-        assert "async_tool completed: namespace=ns1" in log_output
+        assert "async_tool called: memory_bank=ns1" in log_output
+        assert "async_tool completed: memory_bank=ns1" in log_output
 
     async def test_async_logs_error_when_function_raises(self, logger: logging.Logger) -> None:
         """Decorator logs errors for async functions that raise."""
 
         @log_tool_call("async_tool")
-        async def my_async_func(namespace: str) -> None:
+        async def my_async_func(memory_bank: str) -> None:
             await asyncio.sleep(0)
             raise RuntimeError("async boom")
 
         stream = self._capture_logs(logger)
 
         with pytest.raises(RuntimeError, match="async boom"):
-            await my_async_func(namespace="ns1")
+            await my_async_func(memory_bank="ns1")
 
         log_output = stream.getvalue()
-        assert "async_tool failed: namespace=ns1" in log_output
+        assert "async_tool failed: memory_bank=ns1" in log_output
         assert "error=" in log_output
         assert "async boom" in log_output

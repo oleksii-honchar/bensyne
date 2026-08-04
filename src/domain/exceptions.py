@@ -1,8 +1,8 @@
 """Custom exceptions."""
 
 
-class NamespaceError(Exception):
-    """Raised for namespace-related issues (not found, invalid name)."""
+class MemoryBankError(Exception):
+    """Raised for memory-bank-related issues (not found, invalid name)."""
 
     pass
 
@@ -14,6 +14,6 @@ class InstanceError(Exception):
 
 
 class ValidationError(Exception):
-    """Raised for invalid input (bad namespace name, missing required fields)."""
+    """Raised for invalid input (bad memory bank name, missing required fields)."""
 
     pass

@@ -5,19 +5,19 @@ from __future__ import annotations
 from src.domain.exceptions import ValidationError
 
 
-def require_namespace(arguments: dict) -> str:
-    """Extract namespace from arguments, raising ValidationError if missing or empty.
+def require_memory_bank(arguments: dict) -> str:
+    """Extract memory_bank from arguments, raising ValidationError if missing or empty.
 
     Args:
         arguments: MCP tool call arguments dict.
 
     Returns:
-        The namespace string.
+        The memory_bank string.
 
     Raises:
-        ValidationError: If namespace key is missing, None, or empty string.
+        ValidationError: If memory_bank key is missing, None, or empty string.
     """
-    namespace = arguments.get("namespace")
-    if not namespace:
-        raise ValidationError("namespace parameter is required")
-    return namespace
+    memory_bank = arguments.get("memory_bank")
+    if not memory_bank:
+        raise ValidationError("memory_bank parameter is required")
+    return memory_bank

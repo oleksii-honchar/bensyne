@@ -44,8 +44,8 @@ class AppConfig:
 
 
 @dataclass(frozen=True)
-class NamespaceInfo:
-    """Namespace information for list_namespaces and registry state."""
+class MemoryBankInfo:
+    """Memory bank information for list_banks and registry state."""
 
     name: str
     bank: str
@@ -70,7 +70,7 @@ class NamespaceInfo:
 class InstanceInfo:
     """Instance information for a running Mnemosyne instance."""
 
-    namespace: str
+    memory_bank: str
     db_path: str
     status: str
     created_at: float
@@ -79,7 +79,7 @@ class InstanceInfo:
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
-            "namespace": self.namespace,
+            "memory_bank": self.memory_bank,
             "db_path": self.db_path,
             "status": self.status,
             "created_at": self.created_at,
@@ -93,7 +93,7 @@ class ToolResponse:
 
     status: str
     data: Optional[dict] = None
-    namespace: str = "default"
+    memory_bank: str = "default"
     error: Optional[str] = None
 
     def to_dict(self) -> dict:
@@ -101,6 +101,6 @@ class ToolResponse:
         return {
             "status": self.status,
             "data": self.data,
-            "namespace": self.namespace,
+            "memory_bank": self.memory_bank,
             "error": self.error,
         }

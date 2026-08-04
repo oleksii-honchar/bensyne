@@ -56,8 +56,8 @@ class TestHealthEndpoint:
         assert isinstance(data["instances"], int)
         assert data["instances"] >= 0
 
-    def test_health_returns_namespaces_list(self, health_app) -> None:
-        """GET /health includes namespaces array."""
+    def test_health_returns_banks_list(self, health_app) -> None:
+        """GET /health includes banks array."""
         from starlette.testclient import TestClient
 
         client = TestClient(health_app)
@@ -65,8 +65,8 @@ class TestHealthEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert "namespaces" in data
-        assert isinstance(data["namespaces"], list)
+        assert "banks" in data
+        assert isinstance(data["banks"], list)
 
 
 class TestHealthReadyEndpoint:

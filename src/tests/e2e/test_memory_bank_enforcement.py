@@ -1,7 +1,7 @@
-"""E2E tests for namespace enforcement.
+"""E2E tests for memory bank enforcement.
 
-Verifies that all memory tools reject calls without namespace parameter,
-and accept calls with namespace parameter.
+Verifies that all memory tools reject calls without memory_bank parameter,
+and accept calls with memory_bank parameter.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def mcp_init(client: httpx.Client) -> tuple[dict, str]:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "e2e-ns-enforcement-test", "version": "1.0.0"},
+                "clientInfo": {"name": "e2e-bank-enforcement-test", "version": "1.0.0"},
             },
         },
     )
@@ -129,167 +129,167 @@ def assert_mcp_error(result: dict, tool_name: str, expected_message_substring: s
 
 
 # ---------------------------------------------------------------------------
-# Tests — namespace NOT provided
+# Tests — memory_bank NOT provided
 # ---------------------------------------------------------------------------
 
 
-class TestRememberWithoutNamespace:
-    """mnemosyne_remember requires namespace parameter."""
+class TestRememberWithoutMemoryBank:
+    """memory_remember requires memory_bank parameter."""
 
-    def test_remember_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling remember without namespace returns error."""
+    def test_remember_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling remember without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "test memory without namespace"},
+            "memory_remember",
+            {"content": "test memory without memory bank"},
             request_id=10,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_remember", "namespace")
+        assert_mcp_error(result, "memory_remember", "memory_bank")
 
 
-class TestRecallWithoutNamespace:
-    """mnemosyne_recall requires namespace parameter."""
+class TestRecallWithoutMemoryBank:
+    """memory_recall requires memory_bank parameter."""
 
-    def test_recall_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling recall without namespace returns error."""
+    def test_recall_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling recall without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_recall",
-            {"query": "test query without namespace"},
+            "memory_recall",
+            {"query": "test query without memory bank"},
             request_id=20,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_recall", "namespace")
+        assert_mcp_error(result, "memory_recall", "memory_bank")
 
 
-class TestForgetWithoutNamespace:
-    """mnemosyne_forget requires namespace parameter."""
+class TestForgetWithoutMemoryBank:
+    """memory_forget requires memory_bank parameter."""
 
-    def test_forget_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling forget without namespace returns error."""
+    def test_forget_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling forget without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_forget",
+            "memory_forget",
             {"memory_id": "fake-memory-id"},
             request_id=30,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_forget", "namespace")
+        assert_mcp_error(result, "memory_forget", "memory_bank")
 
 
-class TestUpdateWithoutNamespace:
-    """mnemosyne_update requires namespace parameter."""
+class TestUpdateWithoutMemoryBank:
+    """memory_update requires memory_bank parameter."""
 
-    def test_update_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling update without namespace returns error."""
+    def test_update_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling update without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_update",
+            "memory_update",
             {"memory_id": "fake-memory-id", "content": "updated"},
             request_id=40,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_update", "namespace")
+        assert_mcp_error(result, "memory_update", "memory_bank")
 
 
-class TestSleepWithoutNamespace:
-    """mnemosyne_sleep requires namespace parameter."""
+class TestSleepWithoutMemoryBank:
+    """memory_sleep requires memory_bank parameter."""
 
-    def test_sleep_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling sleep without namespace returns error."""
+    def test_sleep_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling sleep without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_sleep",
+            "memory_sleep",
             {},
             request_id=50,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_sleep", "namespace")
+        assert_mcp_error(result, "memory_sleep", "memory_bank")
 
 
-class TestStatsWithoutNamespace:
-    """mnemosyne_stats requires namespace parameter."""
+class TestStatsWithoutMemoryBank:
+    """memory_stats requires memory_bank parameter."""
 
-    def test_stats_without_namespace_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling stats without namespace returns error."""
+    def test_stats_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
+        """Calling stats without memory_bank returns error."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool_raw(
             mcp_client,
-            "mnemosyne_stats",
+            "memory_stats",
             {},
             request_id=60,
             session_id=session_id,
         )
-        assert_mcp_error(result, "mnemosyne_stats", "namespace")
+        assert_mcp_error(result, "memory_stats", "memory_bank")
 
 
 # ---------------------------------------------------------------------------
-# Tests — namespace IS provided (should succeed)
+# Tests — memory_bank IS provided (should succeed)
 # ---------------------------------------------------------------------------
 
 
-class TestRememberWithNamespace:
-    """mnemosyne_remember succeeds with namespace parameter."""
+class TestRememberWithMemoryBank:
+    """memory_remember succeeds with memory_bank parameter."""
 
-    def test_remember_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling remember with namespace stores memory."""
+    def test_remember_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling remember with memory_bank stores memory."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "test memory with namespace", "namespace": "e2e-ns-enforcement"},
+            "memory_remember",
+            {"content": "test memory with memory bank", "memory_bank": "e2e-bank-enforcement"},
             request_id=70,
             session_id=session_id,
         )
         assert result["status"] == "stored"
-        assert result["namespace"] == "e2e-ns-enforcement"
+        assert result["memory_bank"] == "e2e-bank-enforcement"
         assert "memory_id" in result
 
 
-class TestRecallWithNamespace:
-    """mnemosyne_recall succeeds with namespace parameter."""
+class TestRecallWithMemoryBank:
+    """memory_recall succeeds with memory_bank parameter."""
 
-    def test_recall_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling recall with namespace returns results."""
+    def test_recall_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling recall with memory_bank returns results."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_recall",
-            {"query": "test query", "namespace": "e2e-ns-enforcement"},
+            "memory_recall",
+            {"query": "test query", "memory_bank": "e2e-bank-enforcement"},
             request_id=80,
             session_id=session_id,
         )
-        assert result["namespace"] == "e2e-ns-enforcement"
+        assert result["memory_bank"] == "e2e-bank-enforcement"
         assert "results" in result
 
 
-class TestForgetWithNamespace:
-    """mnemosyne_forget succeeds with namespace parameter."""
+class TestForgetWithMemoryBank:
+    """memory_forget succeeds with memory_bank parameter."""
 
-    def test_forget_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling forget with namespace deletes memory."""
+    def test_forget_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling forget with memory_bank deletes memory."""
         _, session_id = mcp_init(mcp_client)
-        ns = "e2e-ns-enforcement-forget"
+        bank = "e2e-bank-enforcement-forget"
 
         # Store first
         remember_result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "to forget", "namespace": ns},
+            "memory_remember",
+            {"content": "to forget", "memory_bank": bank},
             request_id=90,
             session_id=session_id,
         )
@@ -298,28 +298,28 @@ class TestForgetWithNamespace:
         # Then forget
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_forget",
-            {"memory_id": memory_id, "namespace": ns},
+            "memory_forget",
+            {"memory_id": memory_id, "memory_bank": bank},
             request_id=91,
             session_id=session_id,
         )
         assert result["status"] == "deleted"
-        assert result["namespace"] == ns
+        assert result["memory_bank"] == bank
 
 
-class TestUpdateWithNamespace:
-    """mnemosyne_update succeeds with namespace parameter."""
+class TestUpdateWithMemoryBank:
+    """memory_update succeeds with memory_bank parameter."""
 
-    def test_update_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling update with namespace updates memory."""
+    def test_update_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling update with memory_bank updates memory."""
         _, session_id = mcp_init(mcp_client)
-        ns = "e2e-ns-enforcement-update"
+        bank = "e2e-bank-enforcement-update"
 
         # Store first
         remember_result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "original", "namespace": ns},
+            "memory_remember",
+            {"content": "original", "memory_bank": bank},
             request_id=100,
             session_id=session_id,
         )
@@ -328,49 +328,49 @@ class TestUpdateWithNamespace:
         # Then update
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_update",
-            {"memory_id": memory_id, "content": "updated", "namespace": ns},
+            "memory_update",
+            {"memory_id": memory_id, "content": "updated", "memory_bank": bank},
             request_id=101,
             session_id=session_id,
         )
         assert result["status"] == "updated"
-        assert result["namespace"] == ns
+        assert result["memory_bank"] == bank
 
 
-class TestSleepWithNamespace:
-    """mnemosyne_sleep succeeds with namespace parameter."""
+class TestSleepWithMemoryBank:
+    """memory_sleep succeeds with memory_bank parameter."""
 
-    def test_sleep_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling sleep with namespace runs consolidation."""
+    def test_sleep_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling sleep with memory_bank runs consolidation."""
         _, session_id = mcp_init(mcp_client)
-        ns = "e2e-ns-enforcement-sleep"
+        bank = "e2e-bank-enforcement-sleep"
 
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_sleep",
-            {"namespace": ns},
+            "memory_sleep",
+            {"memory_bank": bank},
             request_id=110,
             session_id=session_id,
         )
-        assert result["namespace"] == ns
+        assert result["memory_bank"] == bank
         assert isinstance(result, dict)
 
 
-class TestStatsWithNamespace:
-    """mnemosyne_stats succeeds with namespace parameter."""
+class TestStatsWithMemoryBank:
+    """memory_stats succeeds with memory_bank parameter."""
 
-    def test_stats_with_namespace_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling stats with namespace returns statistics."""
+    def test_stats_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
+        """Calling stats with memory_bank returns statistics."""
         _, session_id = mcp_init(mcp_client)
-        ns = "e2e-ns-enforcement-stats"
+        bank = "e2e-bank-enforcement-stats"
 
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_stats",
-            {"namespace": ns},
+            "memory_stats",
+            {"memory_bank": bank},
             request_id=120,
             session_id=session_id,
         )
-        assert result["namespace"] == ns
+        assert result["memory_bank"] == bank
         assert "stats" in result
         assert isinstance(result["stats"], dict)

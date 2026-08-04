@@ -19,7 +19,7 @@ class TestCreateApplication:
     def mock_router(self) -> MagicMock:
         router = MagicMock()
         router.get_active_instances.return_value = 1
-        router.get_active_namespaces.return_value = {"default"}
+        router.get_active_banks.return_value = {"default"}
         return router
 
     def test_create_application_returns_mcp_server(self, mock_config, mock_router) -> None:
@@ -88,11 +88,11 @@ class TestRegisterTools:
 
     def test_register_tools_registers_all_tools(self) -> None:
         """register_tools registers all expected tool names."""
-        from src.services.namespace.router import NamespaceRouter
+        from src.services.bank.router import MemoryBankRouter
         from src.services.tools import handlers
 
         mock_mcp = MagicMock()
-        mock_router = MagicMock(spec=NamespaceRouter)
+        mock_router = MagicMock(spec=MemoryBankRouter)
 
         from src.app import register_tools
 
@@ -100,7 +100,7 @@ class TestRegisterTools:
 
         # Verify tool registration calls — each tool should be registered
         # Check that mcp.tool was called for each handler
-        assert mock_mcp.tool.call_count >= 6  # remember, recall, forget, update, sleep, stats + list_namespaces
+        assert mock_mcp.tool.call_count >= 6  # remember, recall, forget, update, sleep, stats + list_banks
 
 
 class TestMountHealthRoutes:
@@ -111,7 +111,7 @@ class TestMountHealthRoutes:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        with patch("src.middleware.health.set_namespace_router") as mock_set_router:
+        with patch("src.middleware.health.set_memory_bank_router") as mock_set_router:
             from src.app import mount_health_routes
 
             mount_health_routes(mock_mcp, mock_router)
@@ -141,7 +141,7 @@ class TestMainEntryPoints:
              patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
              patch("src.utils.logging.setup_logging") as mock_setup_logging, \
              patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
-             patch("src.services.namespace.router.NamespaceRouter") as MockNamespaceRouter, \
+             patch("src.services.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
              patch("src.app.create_application") as mock_create_app, \
              patch("src.middleware.health.mark_default_instance_ready"), \
              patch("asyncio.get_event_loop") as mock_get_loop, \
@@ -159,7 +159,7 @@ class TestMainEntryPoints:
             mock_setup_logging.return_value = MagicMock()
 
             mock_router_instance = MagicMock()
-            MockNamespaceRouter.return_value = mock_router_instance
+            MockMemoryBankRouter.return_value = mock_router_instance
 
             mock_app = MagicMock()
             mock_create_app.return_value = mock_app
@@ -223,7 +223,7 @@ class TestMainEntryPoints:
              patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
              patch("src.utils.logging.setup_logging") as mock_setup_logging, \
              patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
-             patch("src.services.namespace.router.NamespaceRouter") as MockNamespaceRouter, \
+             patch("src.services.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
              patch("src.app.create_application") as mock_create_app, \
              patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready, \
              patch("asyncio.get_event_loop") as mock_get_loop, \
@@ -233,7 +233,7 @@ class TestMainEntryPoints:
             mock_setup_logging.return_value = MagicMock()
 
             mock_router_instance = MagicMock()
-            MockNamespaceRouter.return_value = mock_router_instance
+            MockMemoryBankRouter.return_value = mock_router_instance
 
             mock_app = MagicMock()
             mock_create_app.return_value = mock_app
@@ -254,7 +254,7 @@ class TestMainEntryPoints:
             assert MockConfigManager.called
             assert mock_setup_logging.called
             assert MockBankManager.called
-            assert MockNamespaceRouter.called
+            assert MockMemoryBankRouter.called
             assert mock_create_app.called
             assert mock_mark_ready.called
 
@@ -290,22 +290,22 @@ class TestApplicationIntegration:
 
     def test_app_integration_health_endpoint(self) -> None:
         """Full app creation with mocked dependencies allows health check."""
-        from src.middleware.health import create_health_app, mark_default_instance_ready, set_namespace_router
+        from src.middleware.health import create_health_app, mark_default_instance_ready, set_memory_bank_router
         from starlette.testclient import TestClient
 
         # Reset health state
         import src.middleware.health as health_module
         health_module._default_instance_ready = False
-        health_module._namespace_router = None
+        health_module._memory_bank_router = None
 
         # Create mock router — methods must return proper types
         mock_router = MagicMock()
         mock_router.get_active_instances.return_value = 1
-        mock_router.get_active_namespaces.return_value = {"default"}
+        mock_router.get_active_banks.return_value = {"default"}
 
         # Set up health app with router
         health_app = create_health_app()
-        set_namespace_router(mock_router)
+        set_memory_bank_router(mock_router)
         mark_default_instance_ready()
 
         client = TestClient(health_app)
@@ -316,7 +316,7 @@ class TestApplicationIntegration:
         data = response.json()
         assert data["status"] == "healthy"
         assert data["instances"] == 1
-        assert "default" in data["namespaces"]
+        assert "default" in data["banks"]
 
         # Test /health/ready returns 200
         response = client.get("/health/ready")

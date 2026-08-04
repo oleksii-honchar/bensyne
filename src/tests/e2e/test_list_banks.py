@@ -1,6 +1,6 @@
-"""E2E tests for list_namespaces tool.
+"""E2E tests for list_banks tool.
 
-Verifies list_namespaces reflects active namespaces via actual MCP protocol.
+Verifies list_banks reflects active memory banks via actual MCP protocol.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def mcp_init(client: httpx.Client) -> tuple[dict, str]:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "e2e-list-ns-test", "version": "1.0.0"},
+                "clientInfo": {"name": "e2e-list-banks-test", "version": "1.0.0"},
             },
         },
     )
@@ -76,35 +76,35 @@ def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request
 # ---------------------------------------------------------------------------
 
 
-class TestListNamespaces:
-    """list_namespaces reflects active namespaces."""
+class TestListBanks:
+    """list_banks reflects active memory banks."""
 
     def test_lists_default(self, mcp_client: httpx.Client) -> None:
-        """Verify default namespace is listed at start."""
+        """Verify default memory bank is listed at start."""
         _, session_id = mcp_init(mcp_client)
 
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_list_namespaces",
+            "memory_list_banks",
             {},
             request_id=10,
             session_id=session_id,
         )
-        assert "namespaces" in result
-        names = {ns["name"] for ns in result["namespaces"]}
-        assert "default" in names, "Default namespace should always be listed"
+        assert "banks" in result
+        names = {bank["name"] for bank in result["banks"]}
+        assert "default" in names, "Default memory bank should always be listed"
 
-    def test_lists_new_namespace(self, mcp_client: httpx.Client) -> None:
-        """After using a new namespace, verify it appears in list_namespaces."""
+    def test_lists_new_bank(self, mcp_client: httpx.Client) -> None:
+        """After using a new memory bank, verify it appears in list_banks."""
         _, session_id = mcp_init(mcp_client)
 
-        new_ns = "e2e-list-new-ns"
+        new_bank = "e2e-list-new-bank"
 
-        # Use the new namespace
+        # Use the new memory bank
         mcp_call_tool(
             mcp_client,
-            "mnemosyne_remember",
-            {"content": "activating namespace", "namespace": new_ns},
+            "memory_remember",
+            {"content": "activating memory bank", "memory_bank": new_bank},
             request_id=20,
             session_id=session_id,
         )
@@ -112,17 +112,17 @@ class TestListNamespaces:
         # Verify it appears
         result = mcp_call_tool(
             mcp_client,
-            "mnemosyne_list_namespaces",
+            "memory_list_banks",
             {},
             request_id=21,
             session_id=session_id,
         )
-        names = {ns["name"] for ns in result["namespaces"]}
-        assert new_ns in names, f"Namespace {new_ns} should appear after first use"
+        names = {bank["name"] for bank in result["banks"]}
+        assert new_bank in names, f"Memory bank {new_bank} should appear after first use"
 
         # Verify each entry has required fields
-        for ns in result["namespaces"]:
-            assert "name" in ns
-            assert "bank" in ns
-            assert "status" in ns
-            assert "memory_count" in ns
+        for bank in result["banks"]:
+            assert "name" in bank
+            assert "bank" in bank
+            assert "status" in bank
+            assert "memory_count" in bank

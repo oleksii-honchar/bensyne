@@ -1,1 +1,1 @@
-"""Better Mnemosyne — Multi-tenant namespace-aware MCP server."""
+"""Better Mnemosyne — Multi-tenant memory-bank-aware MCP server."""

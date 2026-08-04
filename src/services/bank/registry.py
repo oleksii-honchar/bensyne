@@ -1,4 +1,4 @@
-"""Namespace registry — in-memory mapping of namespace name to description."""
+"""Memory bank registry — in-memory mapping of memory bank name to description."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ DEFAULT_DESCRIPTIONS: Dict[str, str] = {
 }
 
 
-class NamespaceRegistry:
-    """In-memory registry mapping namespace names to descriptions.
+class MemoryBankRegistry:
+    """In-memory registry mapping memory bank names to descriptions.
 
     Initialized with DEFAULT_DESCRIPTIONS. Supports register (upsert) and get operations.
     """
@@ -19,29 +19,29 @@ class NamespaceRegistry:
         self._descriptions: Dict[str, str] = dict(DEFAULT_DESCRIPTIONS)
 
     def register(self, name: str, description: str) -> None:
-        """Register or update a namespace description (idempotent upsert).
+        """Register or update a memory bank description (idempotent upsert).
 
         Args:
-            name: Namespace name.
-            description: Human-readable description of the namespace.
+            name: Memory bank name.
+            description: Human-readable description of the memory bank.
         """
         self._descriptions[name] = description
 
     def get(self, name: str) -> str | None:
-        """Get description for a namespace, or None if not registered.
+        """Get description for a memory bank, or None if not registered.
 
         Args:
-            name: Namespace name.
+            name: Memory bank name.
 
         Returns:
             Description string or None.
         """
         return self._descriptions.get(name)
 
-    def list_namespaces(self) -> List[str]:
-        """Return all registered namespace names.
+    def list_banks(self) -> List[str]:
+        """Return all registered memory bank names.
 
         Returns:
-            List of namespace name strings.
+            List of memory bank name strings.
         """
         return list(self._descriptions.keys())

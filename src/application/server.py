@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 if TYPE_CHECKING:
-    from src.services.namespace_router import NamespaceRouter
+    from src.services.bank_router import MemoryBankRouter
 
 # FastMCP may not be installed (requires Python 3.10+); guard import
 try:
@@ -57,21 +57,21 @@ def create_server() -> FastMCP:
 def run_server(
     host: str = "0.0.0.0",
     port: int = 3000,
-    namespace_router: NamespaceRouter | None = None,
+    memory_bank_router: MemoryBankRouter | None = None,
 ) -> None:
     """Run the FastMCP server with streamable HTTP transport.
 
     Args:
         host: Bind address (default: 0.0.0.0)
         port: Port number (default: 3000)
-        namespace_router: Optional router for health endpoint instance info
+        memory_bank_router: Optional router for health endpoint instance info
     """
     import uvicorn
 
-    from src.middleware.health import set_namespace_router
+    from src.middleware.health import set_memory_bank_router
 
-    if namespace_router is not None:
-        set_namespace_router(namespace_router)
+    if memory_bank_router is not None:
+        set_memory_bank_router(memory_bank_router)
 
     mcp = create_server()
 

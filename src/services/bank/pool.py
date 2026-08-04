@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_NAMESPACE = "default"
+DEFAULT_BANK = "default"
 
 
 def evict_if_over_limit(
@@ -22,7 +22,7 @@ def evict_if_over_limit(
 ) -> None:
     """Evict oldest (first created) non-default instance when over max limit.
 
-    This is a synchronous helper used by NamespaceRouter after acquiring its lock.
+    This is a synchronous helper used by MemoryBankRouter after acquiring its lock.
 
     Args:
         instances: The instances dictionary managed by the router.
@@ -31,7 +31,7 @@ def evict_if_over_limit(
     while len(instances) > config.max_instances:
         # Find oldest non-default instance by created_at
         non_default = {
-            k: v for k, v in instances.items() if k != DEFAULT_NAMESPACE
+            k: v for k, v in instances.items() if k != DEFAULT_BANK
         }
 
         if not non_default:
