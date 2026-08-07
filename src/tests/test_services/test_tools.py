@@ -165,6 +165,223 @@ class TestToolSchemas:
 # ---------------------------------------------------------------------------
 
 
+class TestHandleRememberDedup:
+    """Deduplication integration in handle_remember."""
+
+    def test_dedup_returns_deduplicated_when_hash_exists(self, router: MemoryBankRouter) -> None:
+        """When fileHash exists in index, return deduplicated status without calling remember."""
+        from src.services.tools.handlers import handle_remember
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.lookup.return_value = "mem_existing_001"
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "test memory",
+                        "memory_bank": "test-ns",
+                        "metadata": {"fileHash": "sha256_abc123"},
+                    },
+                )
+
+            assert result["status"] == "deduplicated"
+            assert result["memory_id"] == "mem_existing_001"
+            assert result["memory_bank"] == "test-ns"
+            # remember() should NOT have been called
+            router._mock_instance.remember.assert_not_called()
+            # store() should NOT have been called (no new memory created)
+            mock_hash_index.store.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_dedup_stores_and_indexes_new_hash(self, router: MemoryBankRouter) -> None:
+        """When fileHash is new, store memory and index the hash."""
+        from src.services.tools.handlers import handle_remember
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.lookup.return_value = None
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "new memory",
+                        "memory_bank": "test-ns",
+                        "metadata": {"fileHash": "sha256_new_hash"},
+                    },
+                )
+
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_abc123"
+            # remember() was called
+            router._mock_instance.remember.assert_called_once()
+            # hash was indexed after successful storage
+            mock_hash_index.store.assert_called_once_with("sha256_new_hash", "mem_abc123")
+
+        asyncio.run(run())
+
+    def test_dedup_pure_memory_bypasses_dedup(self, router: MemoryBankRouter) -> None:
+        """When no fileHash in metadata, normal flow unchanged — no hash index interaction."""
+        from src.services.tools.handlers import handle_remember
+
+        async def run() -> None:
+            result = await handle_remember(
+                router,
+                {
+                    "content": "pure text memory",
+                    "memory_bank": "test-ns",
+                },
+            )
+
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_abc123"
+            router._mock_instance.remember.assert_called_once()
+
+        asyncio.run(run())
+
+    def test_dedup_pure_memory_with_other_metadata(self, router: MemoryBankRouter) -> None:
+        """Memory with metadata but no fileHash bypasses dedup."""
+        from src.services.tools.handlers import handle_remember
+
+        async def run() -> None:
+            result = await handle_remember(
+                router,
+                {
+                    "content": "memory with other metadata",
+                    "memory_bank": "test-ns",
+                    "metadata": {"source": "api", "tags": ["important"]},
+                },
+            )
+
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_abc123"
+            router._mock_instance.remember.assert_called_once()
+
+        asyncio.run(run())
+
+    def test_dedup_hash_index_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
+        """When HashIndex raises, log warning and continue with normal remember flow."""
+        from src.services.tools.handlers import handle_remember
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                side_effect=RuntimeError("DB locked"),
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "test memory",
+                        "memory_bank": "test-ns",
+                        "metadata": {"fileHash": "sha256_abc123"},
+                    },
+                )
+
+            # Should still store normally despite hash index error
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_abc123"
+            router._mock_instance.remember.assert_called_once()
+
+        asyncio.run(run())
+
+    def test_dedup_hash_index_store_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
+        """When hash index store fails after remember, memory is still stored."""
+        from src.services.tools.handlers import handle_remember
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.lookup.return_value = None
+        mock_hash_index.store.side_effect = RuntimeError("Write failed")
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "test memory",
+                        "memory_bank": "test-ns",
+                        "metadata": {"fileHash": "sha256_abc123"},
+                    },
+                )
+
+            # Memory stored despite index failure
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_abc123"
+            router._mock_instance.remember.assert_called_once()
+
+        asyncio.run(run())
+
+    def test_dedup_hash_index_created_with_correct_db_path(self, router: MemoryBankRouter) -> None:
+        """HashIndex is created with data/{memory_bank}/hash_index.db path."""
+        from src.services.tools.handlers import handle_remember
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.lookup.return_value = None
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ) as mock_hash_index_cls:
+                await handle_remember(
+                    router,
+                    {
+                        "content": "test",
+                        "memory_bank": "my-bank",
+                        "metadata": {"fileHash": "sha256_abc"},
+                    },
+                )
+
+            # HashIndex should be created with correct path
+            mock_hash_index_cls.assert_called_once()
+            call_args = mock_hash_index_cls.call_args[0][0]
+            assert "my-bank" in str(call_args)
+            assert "hash_index.db" in str(call_args)
+
+        asyncio.run(run())
+
+    def test_dedup_remember_returns_dict_result(self, router: MemoryBankRouter) -> None:
+        """When _instance.remember returns a raw string, client wraps it; dedup indexes correctly."""
+        from src.services.tools.handlers import handle_remember
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.lookup.return_value = None
+        # _instance.remember returns raw memory_id; client wraps in dict
+        router._mock_instance.remember.return_value = "mem_raw_result"
+
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "test",
+                        "memory_bank": "test-ns",
+                        "metadata": {"fileHash": "sha256_abc"},
+                    },
+                )
+
+            # Client wraps: {"memory_id": "mem_raw_result", "status": "stored"}
+            assert result["status"] == "stored"
+            assert result["memory_id"] == "mem_raw_result"
+            mock_hash_index.store.assert_called_once_with("sha256_abc", "mem_raw_result")
+
+        asyncio.run(run())
+
+
 class TestHandleRemember:
     """remember handler stores to correct memory bank."""
 
@@ -297,6 +514,132 @@ class TestHandleForget:
         async def run() -> None:
             with pytest.raises(ValidationError, match="memory_id is required"):
                 await handle_forget(router, {"memory_bank": "test-ns"})
+
+        asyncio.run(run())
+
+    def test_forget_removes_hash_index_entry_on_success(self, router: MemoryBankRouter) -> None:
+        """When forget succeeds, hash index entry is removed for the memory_id."""
+        from src.services.tools.handlers import handle_forget
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.remove.return_value = "sha256_removed_hash"
+
+        async def run() -> None:
+            # Configure mock instance to return deleted status
+            router._mock_instance.forget.return_value = True
+
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_forget(
+                    router,
+                    {"memory_id": "mem_to_forget", "memory_bank": "test-ns"},
+                )
+
+            assert result["status"] == "deleted"
+            assert result["memory_id"] == "mem_to_forget"
+            # Hash index remove was called with the memory_id
+            mock_hash_index.remove.assert_called_once_with("mem_to_forget")
+
+        asyncio.run(run())
+
+    def test_forget_hash_index_removal_is_non_fatal(self, router: MemoryBankRouter) -> None:
+        """When hash index removal fails, forget still succeeds with warning."""
+        from src.services.tools.handlers import handle_forget
+
+        mock_hash_index = MagicMock()
+        mock_hash_index.remove.side_effect = RuntimeError("DB locked")
+
+        async def run() -> None:
+            # Configure mock instance to return deleted status
+            router._mock_instance.forget.return_value = True
+
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_forget(
+                    router,
+                    {"memory_id": "mem_to_forget", "memory_bank": "test-ns"},
+                )
+
+            # Forget still succeeds despite hash index error
+            assert result["status"] == "deleted"
+            assert result["memory_id"] == "mem_to_forget"
+
+        asyncio.run(run())
+
+    def test_forget_hash_index_not_found_is_non_fatal(self, router: MemoryBankRouter) -> None:
+        """When no hash index entry exists for the memory_id, forget still succeeds."""
+        from src.services.tools.handlers import handle_forget
+
+        mock_hash_index = MagicMock()
+        # remove() returns None when no entry found
+        mock_hash_index.remove.return_value = None
+
+        async def run() -> None:
+            router._mock_instance.forget.return_value = True
+
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_forget(
+                    router,
+                    {"memory_id": "mem_no_hash", "memory_bank": "test-ns"},
+                )
+
+            assert result["status"] == "deleted"
+            assert result["memory_id"] == "mem_no_hash"
+            mock_hash_index.remove.assert_called_once_with("mem_no_hash")
+
+        asyncio.run(run())
+
+    def test_forget_hash_index_creation_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
+        """When HashIndex creation fails, forget still succeeds."""
+        from src.services.tools.handlers import handle_forget
+
+        async def run() -> None:
+            router._mock_instance.forget.return_value = True
+
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                side_effect=RuntimeError("Cannot create index"),
+            ):
+                result = await handle_forget(
+                    router,
+                    {"memory_id": "mem_to_forget", "memory_bank": "test-ns"},
+                )
+
+            # Forget still succeeds
+            assert result["status"] == "deleted"
+            assert result["memory_id"] == "mem_to_forget"
+
+        asyncio.run(run())
+
+    def test_forget_skips_hash_cleanup_when_not_deleted(self, router: MemoryBankRouter) -> None:
+        """When forget returns not_found, hash index cleanup is skipped."""
+        from src.services.tools.handlers import handle_forget
+
+        mock_hash_index = MagicMock()
+
+        async def run() -> None:
+            # Configure mock instance to return not_found
+            router._mock_instance.forget.return_value = False
+
+            with patch(
+                "src.services.tools.handlers.HashIndex",
+                return_value=mock_hash_index,
+            ):
+                result = await handle_forget(
+                    router,
+                    {"memory_id": "mem_not_found", "memory_bank": "test-ns"},
+                )
+
+            assert result["status"] == "not_found"
+            # Hash index should NOT be accessed when forget didn't succeed
+            mock_hash_index.remove.assert_not_called()
 
         asyncio.run(run())
 

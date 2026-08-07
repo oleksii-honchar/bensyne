@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.domain.exceptions import ValidationError
+from src.services.tools.dedup_index import HashIndex
+from src.services.tools.deduplication import (
+    extract_file_hash,
+    find_memory_by_hash,
+    index_file_hash,
+)
 from src.services.tools.validation import require_memory_bank
 from src.utils.logging import log_tool_call
 
 if TYPE_CHECKING:
     from src.services.bank.router import MemoryBankRouter
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +43,50 @@ async def handle_remember(router: MemoryBankRouter, arguments: dict) -> dict:
         if key in arguments:
             kwargs[key] = arguments[key]
 
+    # Deduplication: check hash index before creating a new memory
+    file_hash = extract_file_hash(arguments)
+    hash_index: Optional[HashIndex] = None
+    if file_hash:
+        try:
+            db_path = Path("data") / memory_bank / "hash_index.db"
+            hash_index = HashIndex(db_path)
+        except Exception:
+            logger.warning(
+                "[memory_remember] Failed to create hash index for bank=%s, skipping dedup",
+                memory_bank,
+                exc_info=True,
+            )
+
+        if hash_index:
+            existing_memory_id = find_memory_by_hash(hash_index, file_hash)
+            if existing_memory_id:
+                logger.debug(
+                    "[memory_remember] Deduplicated hash=%s → existing memory_id=%s",
+                    file_hash,
+                    existing_memory_id,
+                )
+                return {
+                    "status": "deduplicated",
+                    "memory_id": existing_memory_id,
+                    "memory_bank": memory_bank,
+                }
+
     result = instance.remember(**kwargs)
     # client.remember() returns {"memory_id": ..., "status": ...}
     memory_id = result.get("memory_id") if isinstance(result, dict) else result
+
+    # Index the hash after successful memory creation
+    if file_hash and memory_id and hash_index:
+        try:
+            index_file_hash(hash_index, file_hash, str(memory_id))
+        except Exception:
+            logger.warning(
+                "[memory_remember] Failed to index hash=%s for memory_id=%s",
+                file_hash,
+                memory_id,
+                exc_info=True,
+            )
+
     return {
         "status": result.get("status", "stored") if isinstance(result, dict) else "stored",
         "memory_id": memory_id,
@@ -78,6 +125,17 @@ async def handle_forget(router: MemoryBankRouter, arguments: dict) -> dict:
 
     instance = await router.get_instance(memory_bank)
     result = instance.forget(memory_id=memory_id)
+
+    # Clean up hash index entry after successful forget (non-fatal)
+    if result.get("status") == "deleted":
+        try:
+            db_path = Path("data") / memory_bank / "hash_index.db"
+            hash_index = HashIndex(db_path)
+            file_hash = hash_index.remove(memory_id)
+            if file_hash:
+                logger.debug("[memory_forget] Removed hash index entry: hash=%s", file_hash)
+        except Exception as e:
+            logger.warning("[memory_forget] Failed to remove hash index entry: %s", str(e))
 
     return {
         "status": result.get("status", "deleted"),
