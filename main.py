@@ -1,5 +1,5 @@
 #!/usr/bin/env python3.12
-"""Better Mnemosyne — multi-tenant memory-bank-aware MCP server."""
+"""Bensyne — multi-tenant memory-bank-aware MCP server."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ async def shutdown_handler(signum: int, router: MemoryBankRouter) -> None:
         signum: Signal number received.
         router: Memory bank router to clean up.
     """
-    logger = logging.getLogger("better-mnemosyne")
+    logger = logging.getLogger("bensyne")
     logger.info("Received signal %d, shutting down...", signum)
 
     # Clean up instances
@@ -56,9 +56,9 @@ async def shutdown_handler(signum: int, router: MemoryBankRouter) -> None:
 
 
 def main() -> None:
-    """Main entry point for the Better Mnemosyne server."""
+    """Main entry point for the Bensyne server."""
     parser = argparse.ArgumentParser(
-        description="Better Mnemosyne — multi-tenant memory-bank-aware MCP server"
+        description="Bensyne — multi-tenant memory-bank-aware MCP server"
     )
     parser.add_argument("--port", type=int, help="Port to listen on")
     parser.add_argument("--data-dir", type=str, help="Data directory for databases")
@@ -90,7 +90,7 @@ def main() -> None:
     import os
     os.environ["LOG_LEVEL"] = config.logging.level
     logger = setup_logging(log_file=config.logging.log_file)
-    logger.info("Starting better-mnemosyne")
+    logger.info("Starting Bensyne")
     logger.info("Config: port=%d, data_dir=%s, log_level=%s, log_file=%s",
                 config.server.port, config.instance_pool.data_dir,
                 config.logging.level, config.logging.log_file)

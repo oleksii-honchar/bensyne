@@ -10,7 +10,7 @@ VERSION=$(python3.12 -c "import tomllib; print(tomllib.load(open('pyproject.toml
 
 # Docker config
 REPO="${DOCKER_REPO:-tuiteraz}"
-IMAGE_NAME="${DOCKER_IMAGE:-better-mnemosyne}"
+IMAGE_NAME="${DOCKER_IMAGE:-bensyne}"
 
 # Tags: numeric (X.X.X) and latest
 TAGS=("${VERSION}" "latest")

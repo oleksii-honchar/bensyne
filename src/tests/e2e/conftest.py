@@ -1,6 +1,6 @@
 """E2E test fixtures.
 
-Starts the better-mnemosyne server in a subprocess, waits for readiness,
+Starts the Bensyne server in a subprocess, waits for readiness,
 and provides an HTTP client for sending MCP requests via streamable HTTP transport.
 """
 

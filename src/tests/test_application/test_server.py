@@ -16,7 +16,7 @@ class TestServerCreation:
         import src.application.server as server_module
 
         mock_fastmcp_instance = MagicMock()
-        mock_fastmcp_instance.name = "better-mnemosyne"
+        mock_fastmcp_instance.name = "bensyne"
         mock_fastmcp_instance.version = "1.0.0"
 
         # Patch _FastMCP on the already-loaded module, then reload to pick it up
@@ -28,7 +28,7 @@ class TestServerCreation:
         mcp_server = server_module.create_server()
 
         assert mcp_server is not None
-        assert mcp_server.name == "better-mnemosyne"
+        assert mcp_server.name == "bensyne"
         assert mcp_server.version == "1.0.0"
 
 

@@ -1,6 +1,8 @@
-# Better Mnemosyne
+# Bensyne
 
 Multi-tenant, namespace-aware MCP server for mnemosyne-oss. Dynamically routes memory operations to isolated SQLite bank instances per namespace via streamable HTTP transport (FastMCP).
+
+bensyne = BEtter mNemoSYNE (sound like benzin)
 
 ## Why This Exists
 
@@ -17,13 +19,13 @@ From the client side, it looks like a standard Mnemosyne MCP server. You just ad
 
 ## Overview
 
-Better Mnemosyne replaces the traditional mcp-proxy → stdio bridge architecture with a native streamable HTTP MCP server. It dynamically forks mnemosyne-oss instances per namespace on first request, providing a singular MCP interface for remembering and recalling memories across isolated namespaces.
+Bensyne replaces the traditional mcp-proxy → stdio bridge architecture with a native streamable HTTP MCP server. It dynamically forks mnemosyne-oss instances per namespace on first request, providing a singular MCP interface for remembering and recalling memories across isolated namespaces.
 
 ### Architecture
 
 ```
 ┌─────────────┐     MCP (streamable HTTP)     ┌──────────────────────────────────────┐
-│   Client    │ ◄──────────────────────────►  │        Better Mnemosyne              │
+│   Client    │ ◄──────────────────────────►  │        Bensyne              │
 │  (Agent/    │                               │                                      │
 │   Tool)     │                               │  ┌────────────────────────────────┐  │
 └─────────────┘                               │  │      Namespace Router          │  │
@@ -64,10 +66,10 @@ Better Mnemosyne replaces the traditional mcp-proxy → stdio bridge architectur
 ```bash
 # Pull and run with persistent data volume
 docker run -d \
-  --name better-mnemosyne \
+   --name bensyne \
   -p 3000:3000 \
   -v /data/mnemosyne/data:/data/mnemosyne/data \
-  tuiteraz/better-mnemosyne:latest
+   tuiteraz/bensyne:latest
 
 # Verify health
 curl http://localhost:3000/health
@@ -95,7 +97,7 @@ docker-compose -f docker-compose.dev.yml up -d
 
 ```bash
 # Clone and enter project
-cd /path/to/better-mnemosyne
+cd /path/to/bensyne
 
 # Run setup script (creates .venv, installs dependencies)
 ./scripts/setup.sh
@@ -133,17 +135,17 @@ pytest src/tests/ -v
 ./scripts/build.sh
 
 # Or manually
-docker build -t better-mnemosyne .
+docker build -t bensyne .
 ```
 
 ### Run Container
 
 ```bash
 # Basic run with data volume
-docker run -p 3000:3000 -v ./data:/data/mnemosyne/data better-mnemosyne
+docker run -p 3000:3000 -v ./data:/data/mnemosyne/data bensyne
 
 # With custom port and log level
-docker run -p 3001:3000 better-mnemosyne python main.py --port 3000 --log-level DEBUG
+docker run -p 3001:3000 bensyne python main.py --port 3000 --log-level DEBUG
 ```
 
 ### Docker Compose (Production)
@@ -154,8 +156,8 @@ See `docker-compose.yml`:
 version: '3.8'
 
 services:
-  better-mnemosyne:
-    image: tuiteraz/better-mnemosyne:latest
+  bensyne:
+    image: tuiteraz/bensyne:latest
     ports:
       - "3000:3000"
     volumes:
@@ -307,7 +309,7 @@ Edit `config/default.yaml`:
 
 ```yaml
 server:
-  name: "better-mnemosyne"
+  name: "bensyne"
   version: "1.0.0"
   transport: "streamable-http"
   host: "0.0.0.0"
@@ -406,7 +408,7 @@ Configure your MCP client (e.g., Claude Desktop, Cursor, VS Code extension) with
 ```json
 {
   "mcpServers": {
-    "better-mnemosyne": {
+    "bensyne": {
       "url": "http://localhost:3000/mcp"
     }
   }
@@ -468,7 +470,7 @@ mkdir -p /data/mnemosyne/data
 chmod 755 /data/mnemosyne/data
 
 # In Docker, ensure volume mount has correct permissions
-docker run -v $(pwd)/data:/data/mnemosyne/data better-mnemosyne
+docker run -v $(pwd)/data:/data/mnemosyne/data bensyne
 ```
 
 ### Server Not Responding

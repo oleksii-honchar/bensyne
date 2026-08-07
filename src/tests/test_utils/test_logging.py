@@ -21,7 +21,7 @@ class TestSetupLogging:
 
         logger = setup_logging()
 
-        assert logger.name == "better-mnemosyne"
+        assert logger.name == "bensyne"
         assert logger.level == logging.INFO
 
     def test_log_level_debug(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,13 +56,13 @@ class TestSetupLogging:
 
         assert logger.level == logging.INFO
 
-    def test_logger_name_is_better_mnemosyne(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Logger name is 'better-mnemosyne'."""
+    def test_logger_name_is_bensyne(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Logger name is 'bensyne'."""
         monkeypatch.delenv("LOG_LEVEL", raising=False)
 
         logger = setup_logging()
 
-        assert logger.name == "better-mnemosyne"
+        assert logger.name == "bensyne"
 
     def test_stream_and_file_handlers(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Both StreamHandler and RotatingFileHandler are always present."""
@@ -80,7 +80,7 @@ class TestSetupLogging:
         """Log file is created and contains log output."""
         monkeypatch.setenv("LOG_LEVEL", "INFO")
 
-        logger = logging.getLogger("better-mnemosyne")
+        logger = logging.getLogger("bensyne")
         for h in logger.handlers[:]:
             logger.removeHandler(h)
 
@@ -98,7 +98,7 @@ class TestSetupLogging:
         """Parent directories for log file are created if missing."""
         monkeypatch.setenv("LOG_LEVEL", "INFO")
 
-        logger = logging.getLogger("better-mnemosyne")
+        logger = logging.getLogger("bensyne")
         for h in logger.handlers[:]:
             logger.removeHandler(h)
 
@@ -110,10 +110,10 @@ class TestSetupLogging:
     def test_default_log_file_path(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default log file uses ~/.local/share/bensyne/logs/better-mnemosyne.log."""
+        """Default log file uses ~/.local/share/bensyne/logs/bensyne.log."""
         monkeypatch.delenv("LOG_LEVEL", raising=False)
 
-        logger = logging.getLogger("better-mnemosyne")
+        logger = logging.getLogger("bensyne")
         for h in logger.handlers[:]:
             logger.removeHandler(h)
 
@@ -129,7 +129,7 @@ class TestSetupLogging:
         monkeypatch.delenv("LOG_LEVEL", raising=False)
 
         logger = setup_logging()
-        caplog.set_level(logging.INFO, logger="better-mnemosyne")
+        caplog.set_level(logging.INFO, logger="bensyne")
 
         logger.info("test message")
 
@@ -137,7 +137,7 @@ class TestSetupLogging:
         log_message = log_record.getMessage()
         assert log_message == "test message"
         assert log_record.levelname == "INFO"
-        assert log_record.name == "better-mnemosyne"
+        assert log_record.name == "bensyne"
 
 
 class TestLogToolCallDecorator:

@@ -8,7 +8,7 @@ tags: []
 
 # Architecture Decision Records
 
-Curated list of architectural decisions for better-mnemosyne MCP server.
+Curated list of architectural decisions for Bensyne MCP server.
 
 ## Nodes
 

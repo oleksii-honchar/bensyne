@@ -38,7 +38,7 @@ if [ -n "$EXISTING_PID" ]; then
 fi
 
 # Start server using main.py (env vars provide defaults, CLI overrides)
-echo "Starting better-mnemosyne server..."
+echo "Starting Bensyne server..."
 echo "Data directory: $MNEMOSYNE_DATA_DIR"
 echo "Press Ctrl+C to stop"
 

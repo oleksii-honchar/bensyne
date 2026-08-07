@@ -8,7 +8,7 @@ tags: []
 
 # Better-Mnemosyne Vault
 
-Durable knowledge vault for better-mnemosyne MCP server — namespace management, memory lifecycle, and operational decisions.
+Durable knowledge vault for Bensyne MCP server — namespace management, memory lifecycle, and operational decisions.
 
 ## Indexes
 

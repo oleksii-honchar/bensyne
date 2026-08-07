@@ -8,7 +8,7 @@ tags: []
 
 # Atomic Memories
 
-Durable facts, gotchas, and operational learnings for better-mnemosyne MCP server.
+Durable facts, gotchas, and operational learnings for Bensyne MCP server.
 
 ## Nodes
 

@@ -8,7 +8,7 @@ tags: []
 
 # Operational Runbooks
 
-How-to guides for operating better-mnemosyne MCP server.
+How-to guides for operating Bensyne MCP server.
 
 ## Nodes
 

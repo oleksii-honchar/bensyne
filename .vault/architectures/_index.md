@@ -8,7 +8,7 @@ tags: []
 
 # Architectures
 
-C4 architecture diagrams and structural documentation for better-mnemosyne MCP server.
+C4 architecture diagrams and structural documentation for Bensyne MCP server.
 
 ## Nodes
 

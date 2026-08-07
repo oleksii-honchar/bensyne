@@ -1,8 +1,8 @@
 version: '3.8'
 
 services:
-  better-mnemosyne:
-    image: tuiteraz/better-mnemosyne:latest
+  bensyne:
+    image: tuiteraz/bensyne:latest
     ports:
       - "3000:3000"
     volumes:

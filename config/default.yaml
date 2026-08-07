@@ -1,5 +1,5 @@
 server:
-  name: "better-mnemosyne"
+  name: "bensyne"
   version: "1.0.0"
   transport: "streamable-http"
   host: "0.0.0.0"

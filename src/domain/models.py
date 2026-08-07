@@ -8,7 +8,7 @@ from typing import Optional
 class ServerConfig:
     """Server configuration."""
 
-    name: str = "better-mnemosyne"
+    name: str = "bensyne"
     version: str = "1.0.0"
     transport: str = "streamable-http"
     host: str = "0.0.0.0"

@@ -8,7 +8,7 @@ tags: []
 
 # Domain Concepts
 
-Core domain terminology and mental models for better-mnemosyne MCP server.
+Core domain terminology and mental models for Bensyne MCP server.
 
 ## Nodes
 

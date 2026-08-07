@@ -1,1 +1,1 @@
-"""Better Mnemosyne — Multi-tenant memory-bank-aware MCP server."""
+"""Bensyne — Multi-tenant memory-bank-aware MCP server."""

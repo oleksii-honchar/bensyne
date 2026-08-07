@@ -16,7 +16,7 @@ def config_dir(tmp_path: Path) -> Path:
     default_yaml.write_text(
         """
 server:
-  name: "better-mnemosyne"
+  name: "bensyne"
   version: "1.0.0"
   transport: "streamable-http"
   host: "0.0.0.0"
@@ -112,7 +112,7 @@ class TestConfigManager:
         cfg = manager.load()
 
         assert isinstance(cfg, AppConfig)
-        assert cfg.server.name == "better-mnemosyne"
+        assert cfg.server.name == "bensyne"
         assert cfg.server.version == "1.0.0"
         assert cfg.server.transport == "streamable-http"
         assert cfg.server.host == "0.0.0.0"
@@ -142,7 +142,7 @@ class TestConfigManager:
         default_yaml.write_text(
             """
 server:
-  name: "better-mnemosyne"
+  name: "bensyne"
   version: "1.0.0"
   transport: "streamable-http"
   host: "0.0.0.0"
@@ -183,7 +183,7 @@ instance_pool:
         default_yaml.write_text(
             """
 server:
-  name: "better-mnemosyne"
+  name: "bensyne"
   version: "1.0.0"
   transport: "streamable-http"
   host: "0.0.0.0"

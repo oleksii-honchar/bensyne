@@ -41,7 +41,7 @@ def create_server() -> FastMCP:
         FastMCP server configured with name, version, and health routes.
     """
     version = _load_version()
-    mcp = _FastMCP(name="better-mnemosyne", version=version)
+    mcp = _FastMCP(name="bensyne", version=version)
 
     # Integrate health routes using FastMCP's custom_route API
     from src.middleware.health import health_handler, health_ready_handler, health_log_handler
@@ -50,7 +50,7 @@ def create_server() -> FastMCP:
     mcp.custom_route("/health/ready", methods=["GET"])(health_ready_handler)
     mcp.custom_route("/health/log", methods=["GET"])(health_log_handler)
 
-    logger.info("FastMCP server created: name=better-mnemosyne, version=%s", version)
+    logger.info("FastMCP server created: name=bensyne, version=%s", version)
     return mcp
 
 

@@ -8,7 +8,7 @@ tags: []
 
 # Specifications
 
-Technical specifications and design documents for better-mnemosyne MCP server.
+Technical specifications and design documents for Bensyne MCP server.
 
 ## Nodes
 
