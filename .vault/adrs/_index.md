@@ -2,7 +2,7 @@
 type: index
 title: "Architecture Decision Records"
 createdAt: "2026-08-01T21:31:00Z"
-updatedAt: "2026-08-01T21:31:00Z"
+updatedAt: "2026-08-07T19:01:00Z"
 tags: []
 ---
 
@@ -18,3 +18,11 @@ Curated list of architectural decisions for Bensyne MCP server.
 - [[0002-namespace-parameter-enforcement]] — Make namespace required for all memory tools
 - [[0003-in-memory-namespace-registry]] — In-memory registry for namespace descriptions
 - [[0004-namespace-enforcement-breaking-change]] — Hard enforcement strategy for namespace requirement
+
+### File Hash Deduplication
+
+- [[0005-sqlite-hash-index]] — SQLite HashIndex for file hash deduplication (Mnemosyne lacks triple store API)
+
+### Logging
+
+- [[0006-rotating-file-handler-logging]] — RotatingFileHandler for persistent application logging (10 MB rotation, 3 backups)

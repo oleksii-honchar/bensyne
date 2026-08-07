@@ -42,4 +42,4 @@ echo "Starting Bensyne server..."
 echo "Data directory: $MNEMOSYNE_DATA_DIR"
 echo "Press Ctrl+C to stop"
 
-python main.py --port "$TARGET_PORT" --data-dir "$MNEMOSYNE_DATA_DIR"
+.venv/bin/python main.py --port "$TARGET_PORT" --data-dir "$MNEMOSYNE_DATA_DIR"
