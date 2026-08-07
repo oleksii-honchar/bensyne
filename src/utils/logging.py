@@ -3,10 +3,19 @@
 import asyncio
 import functools
 import logging
+import logging.handlers
 import os
-from typing import Any, Callable, Coroutine, TypeVar
+from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+# Rotation: 10 MB per file, keep 3 backups
+_MAX_LOG_BYTES = 10 * 1024 * 1024  # 10 MB
+_BACKUP_COUNT = 3
+
+# Default log file: ~/.local/share/bensyne/logs/better-mnemosyne.log
+_DEFAULT_LOG_FILE = os.path.expanduser("~/.local/share/bensyne/logs/bensyne.log")
 
 
 def _extract_memory_bank(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
@@ -24,13 +33,17 @@ def _extract_memory_bank(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     return "default"
 
 
-def setup_logging() -> logging.Logger:
+def setup_logging(log_file: str | None = None) -> logging.Logger:
     """Configure application logging.
 
     Reads LOG_LEVEL from environment (default: INFO).
     Accepts: DEBUG, INFO, WARNING, ERROR.
     Format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    Uses StreamHandler only (stdout/stderr, no file handlers).
+    Always writes to file with rotation (10 MB, 3 backups) and stdout.
+    Default log file: ~/.local/share/bensyne/logs/better-mnemosyne.log
+
+    Args:
+        log_file: Optional path to log file. Defaults to ~/.local/share/bensyne/logs/
 
     Returns:
         Logger named "better-mnemosyne".
@@ -40,18 +53,34 @@ def setup_logging() -> logging.Logger:
     if not isinstance(log_level, int):
         log_level = logging.INFO
 
+    effective_log_file = log_file or _DEFAULT_LOG_FILE
+
     logger = logging.getLogger("better-mnemosyne")
     logger.setLevel(log_level)
 
     # Avoid duplicate handlers on repeated calls
     if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setLevel(log_level)
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
         )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+
+        # Console handler — always on
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        # File handler — always on (with rotation)
+        log_path = Path(effective_log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            effective_log_file,
+            maxBytes=_MAX_LOG_BYTES,
+            backupCount=_BACKUP_COUNT,
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     return logger
 

@@ -86,13 +86,14 @@ def main() -> None:
             logging=dataclasses.replace(config.logging, level=args.log_level),
         )
 
-    # Step 2: Setup logging with configured level
+    # Step 2: Setup logging with configured level and file
     import os
     os.environ["LOG_LEVEL"] = config.logging.level
-    logger = setup_logging()
+    logger = setup_logging(log_file=config.logging.log_file)
     logger.info("Starting better-mnemosyne")
-    logger.info("Config: port=%d, data_dir=%s, log_level=%s",
-                config.server.port, config.instance_pool.data_dir, config.logging.level)
+    logger.info("Config: port=%d, data_dir=%s, log_level=%s, log_file=%s",
+                config.server.port, config.instance_pool.data_dir,
+                config.logging.level, config.logging.log_file)
 
     # Step 3: Create BankManager with configured data_dir
     bank_manager = BankManager(

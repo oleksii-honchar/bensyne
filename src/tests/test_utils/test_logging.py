@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -63,15 +64,65 @@ class TestSetupLogging:
 
         assert logger.name == "better-mnemosyne"
 
-    def test_only_stream_handlers(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Logs go to stdout/stderr only — no file handlers."""
+    def test_stream_and_file_handlers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both StreamHandler and RotatingFileHandler are always present."""
         monkeypatch.delenv("LOG_LEVEL", raising=False)
 
         logger = setup_logging()
 
         handler_types = [type(h).__name__ for h in logger.handlers]
-        assert all("StreamHandler" in t for t in handler_types)
-        assert not any("FileHandler" in t for t in handler_types)
+        assert any("StreamHandler" in t for t in handler_types)
+        assert any("FileHandler" in t for t in handler_types)
+
+    def test_log_file_created_and_written(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """Log file is created and contains log output."""
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
+
+        logger = logging.getLogger("better-mnemosyne")
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
+
+        log_file = str(tmp_path / "logs" / "test.log")
+        logger = setup_logging(log_file=log_file)
+
+        logger.info("file logging test")
+
+        log_content = Path(log_file).read_text()
+        assert "file logging test" in log_content
+
+    def test_log_directory_created(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """Parent directories for log file are created if missing."""
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
+
+        logger = logging.getLogger("better-mnemosyne")
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
+
+        log_file = str(tmp_path / "nested" / "logs" / "test.log")
+        logger = setup_logging(log_file=log_file)
+
+        assert Path(log_file).parent.is_dir()
+
+    def test_default_log_file_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default log file uses ~/.local/share/bensyne/logs/better-mnemosyne.log."""
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+
+        logger = logging.getLogger("better-mnemosyne")
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
+
+        logger = setup_logging()
+
+        file_handlers = [h for h in logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+        assert len(file_handlers) == 1
+        expected = os.path.expanduser("~/.local/share/bensyne/logs/bensyne.log")
+        assert file_handlers[0].baseFilename == expected
 
     def test_log_format(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
         """Log format matches specification."""
