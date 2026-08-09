@@ -5,12 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-# Activate virtual environment (required)
-if [ ! -d ".venv" ]; then
-    echo "ERROR: .venv not found. Run: ./scripts/setup.sh"
+# Use venv Python directly (required)
+VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
+if [ ! -x "$VENV_PYTHON" ]; then
+    echo "ERROR: .venv not found or incomplete. Run: ./scripts/setup.sh"
     exit 1
 fi
-source .venv/bin/activate
 
 # Load .env file if it exists (respects env vars already set)
 if [ -f ".env" ]; then
@@ -42,4 +42,4 @@ echo "Starting Bensyne server..."
 echo "Data directory: $MNEMOSYNE_DATA_DIR"
 echo "Press Ctrl+C to stop"
 
-.venv/bin/python main.py --port "$TARGET_PORT" --data-dir "$MNEMOSYNE_DATA_DIR"
+"$VENV_PYTHON" main.py --port "$TARGET_PORT" --data-dir "$MNEMOSYNE_DATA_DIR"

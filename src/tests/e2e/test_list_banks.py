@@ -22,29 +22,11 @@ def _parse_sse_json(text: str) -> dict:
     raise ValueError(f"No SSE data found in response: {text!r}")
 
 
-def mcp_init(client: httpx.Client) -> tuple[dict, str]:
-    """Initialize MCP session and return (response, session_id)."""
-    resp = client.post(
-        "/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "e2e-list-banks-test", "version": "1.0.0"},
-            },
-        },
-    )
-    resp.raise_for_status()
-    session_id = resp.headers.get("mcp-session-id", "")
-    return _parse_sse_json(resp.text), session_id
+def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request_id: int) -> dict:
+    """Call an MCP tool and return the result.
 
-
-def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request_id: int, session_id: str) -> dict:
-    """Call an MCP tool and return the result."""
-    headers = {"Mcp-Session-Id": session_id} if session_id else {}
+    Stateless MCP — no session initialization or session ID headers needed.
+    """
     resp = client.post(
         "/mcp",
         json={
@@ -53,7 +35,6 @@ def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request
             "method": "tools/call",
             "params": {"name": tool_name, "arguments": arguments},
         },
-        headers=headers,
     )
     resp.raise_for_status()
     result = _parse_sse_json(resp.text)
@@ -81,14 +62,11 @@ class TestListBanks:
 
     def test_lists_default(self, mcp_client: httpx.Client) -> None:
         """Verify default memory bank is listed at start."""
-        _, session_id = mcp_init(mcp_client)
-
         result = mcp_call_tool(
             mcp_client,
             "memory_list_banks",
             {},
             request_id=10,
-            session_id=session_id,
         )
         assert "banks" in result
         names = {bank["name"] for bank in result["banks"]}
@@ -96,8 +74,6 @@ class TestListBanks:
 
     def test_lists_new_bank(self, mcp_client: httpx.Client) -> None:
         """After using a new memory bank, verify it appears in list_banks."""
-        _, session_id = mcp_init(mcp_client)
-
         new_bank = "e2e-list-new-bank"
 
         # Use the new memory bank
@@ -106,7 +82,6 @@ class TestListBanks:
             "memory_remember",
             {"content": "activating memory bank", "memory_bank": new_bank},
             request_id=20,
-            session_id=session_id,
         )
 
         # Verify it appears
@@ -115,7 +90,6 @@ class TestListBanks:
             "memory_list_banks",
             {},
             request_id=21,
-            session_id=session_id,
         )
         names = {bank["name"] for bank in result["banks"]}
         assert new_bank in names, f"Memory bank {new_bank} should appear after first use"

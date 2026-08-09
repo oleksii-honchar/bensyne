@@ -5,12 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-# Activate virtual environment (required)
-if [ ! -d ".venv" ]; then
-    echo "ERROR: .venv not found. Run: ./scripts/setup.sh"
+# Use venv Python directly (required)
+VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
+if [ ! -x "$VENV_PYTHON" ]; then
+    echo "ERROR: .venv not found or incomplete. Run: ./scripts/setup.sh"
     exit 1
 fi
-source .venv/bin/activate
 
 # Load .env file if it exists (respects env vars already set)
 if [ -f ".env" ]; then
@@ -31,9 +31,9 @@ E2E_DATA_DIR="${E2E_DATA_DIR:-./data/e2e-test}"
 # Create test data directory
 mkdir -p "$E2E_DATA_DIR"
 
-# Start server in background using main.py (activated venv python)
+# Start server in background using main.py (venv python)
 echo "Starting test server on port $E2E_PORT..."
-.venv/bin/python main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" &
+"$VENV_PYTHON" main.py --port "$E2E_PORT" --data-dir "$E2E_DATA_DIR" &
 SERVER_PID=$!
 
 # Function to cleanup on exit
@@ -67,7 +67,7 @@ fi
 
 # Run e2e tests
 echo "Running end-to-end tests..."
-pytest src/tests/e2e/ -v --tb=short
+"$VENV_PYTHON" -m pytest src/tests/e2e/ -v --tb=short
 
 TEST_RESULT=$?
 

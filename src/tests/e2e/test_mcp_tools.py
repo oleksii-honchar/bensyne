@@ -25,32 +25,11 @@ def _parse_sse_json(text: str) -> dict:
     raise ValueError(f"No SSE data found in response: {text!r}")
 
 
-def mcp_init(client: httpx.Client) -> tuple[dict, str]:
-    """Initialize MCP session and return (response, session_id)."""
-    resp = client.post(
-        "/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "e2e-test", "version": "1.0.0"},
-            },
-        },
-    )
-    resp.raise_for_status()
-    session_id = resp.headers.get("mcp-session-id", "")
-    return _parse_sse_json(resp.text), session_id
-
-
-def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request_id: int, session_id: str) -> dict:
+def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request_id: int) -> dict:
     """Call an MCP tool and return the result.
 
     FastMCP 3.x returns structuredContent when available, otherwise parses text content.
     """
-    headers = {"Mcp-Session-Id": session_id} if session_id else {}
     resp = client.post(
         "/mcp",
         json={
@@ -62,7 +41,6 @@ def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request
                 "arguments": arguments,
             },
         },
-        headers=headers,
     )
     resp.raise_for_status()
     result = _parse_sse_json(resp.text)
@@ -92,7 +70,6 @@ class TestRememberAndRecall:
 
     def test_remember_and_recall(self, mcp_client: httpx.Client) -> None:
         """Store a memory, recall it, verify content is returned."""
-        _, session_id = mcp_init(mcp_client)
         bank = "e2e-tools-test"
 
         # Remember
@@ -101,7 +78,6 @@ class TestRememberAndRecall:
             "memory_remember",
             {"content": "e2e test memory alpha", "memory_bank": bank},
             request_id=10,
-            session_id=session_id,
         )
         assert remember_result["status"] == "stored"
         assert remember_result["memory_bank"] == bank
@@ -114,7 +90,6 @@ class TestRememberAndRecall:
             "memory_recall",
             {"query": "e2e test memory alpha", "memory_bank": bank},
             request_id=11,
-            session_id=session_id,
         )
         assert recall_result["memory_bank"] == bank
         assert "results" in recall_result
@@ -131,7 +106,6 @@ class TestForget:
 
     def test_forget(self, mcp_client: httpx.Client) -> None:
         """Store a memory, delete it, verify it is gone."""
-        _, session_id = mcp_init(mcp_client)
         bank = "e2e-forget-test"
 
         # Remember
@@ -140,7 +114,6 @@ class TestForget:
             "memory_remember",
             {"content": "to be forgotten", "memory_bank": bank},
             request_id=20,
-            session_id=session_id,
         )
         memory_id = remember_result["memory_id"]
 
@@ -150,7 +123,6 @@ class TestForget:
             "memory_forget",
             {"memory_id": memory_id, "memory_bank": bank},
             request_id=21,
-            session_id=session_id,
         )
         assert forget_result["status"] == "deleted"
         assert forget_result["memory_id"] == memory_id
@@ -162,7 +134,6 @@ class TestForget:
             "memory_recall",
             {"query": "to be forgotten", "memory_bank": bank},
             request_id=22,
-            session_id=session_id,
         )
         matching = [r for r in recall_result["results"] if r.get("id") == memory_id]
         assert len(matching) == 0, "Forgotten memory should not appear in recall"
@@ -173,7 +144,6 @@ class TestUpdate:
 
     def test_update(self, mcp_client: httpx.Client) -> None:
         """Store a memory, update its content, verify new content."""
-        _, session_id = mcp_init(mcp_client)
         bank = "e2e-update-test"
 
         # Remember
@@ -182,7 +152,6 @@ class TestUpdate:
             "memory_remember",
             {"content": "original content", "memory_bank": bank},
             request_id=30,
-            session_id=session_id,
         )
         memory_id = remember_result["memory_id"]
 
@@ -192,7 +161,6 @@ class TestUpdate:
             "memory_update",
             {"memory_id": memory_id, "content": "updated content", "memory_bank": bank},
             request_id=31,
-            session_id=session_id,
         )
         assert update_result["status"] == "updated"
         assert update_result["memory_id"] == memory_id
@@ -204,7 +172,6 @@ class TestUpdate:
             "memory_recall",
             {"query": "updated content", "memory_bank": bank},
             request_id=32,
-            session_id=session_id,
         )
         matching = [r for r in recall_result["results"] if r.get("id") == memory_id]
         assert len(matching) == 1, "Updated memory should be found by new content"
@@ -215,7 +182,6 @@ class TestStats:
 
     def test_stats(self, mcp_client: httpx.Client) -> None:
         """Verify stats endpoint returns valid data for a memory bank."""
-        _, session_id = mcp_init(mcp_client)
         bank = "e2e-stats-test"
 
         # Store a memory first
@@ -224,7 +190,6 @@ class TestStats:
             "memory_remember",
             {"content": "stats test memory", "memory_bank": bank},
             request_id=40,
-            session_id=session_id,
         )
 
         # Get stats
@@ -233,7 +198,6 @@ class TestStats:
             "memory_stats",
             {"memory_bank": bank},
             request_id=41,
-            session_id=session_id,
         )
         assert stats_result["memory_bank"] == bank
         assert "stats" in stats_result
@@ -247,7 +211,6 @@ class TestSleep:
 
     def test_sleep(self, mcp_client: httpx.Client) -> None:
         """Verify sleep runs without error on a memory bank."""
-        _, session_id = mcp_init(mcp_client)
         bank = "e2e-sleep-test"
 
         sleep_result = mcp_call_tool(
@@ -255,7 +218,6 @@ class TestSleep:
             "memory_sleep",
             {"memory_bank": bank},
             request_id=50,
-            session_id=session_id,
         )
         assert sleep_result["memory_bank"] == bank
         # sleep should return a result dict (exact shape depends on mnemosyne-oss)
