@@ -78,4 +78,6 @@ def run_server(
     logger.info("Starting FastMCP server on %s:%d with streamable-http transport", host, port)
 
     # Use FastMCP's built-in run method with streamable-http transport
-    mcp.run(transport="streamable-http", host=host, port=port)
+    # Stateless mode eliminates session management overhead — each request
+    # is independent, no session ID headers required.
+    mcp.run(transport="streamable-http", host=host, port=port, stateless_http=True)
