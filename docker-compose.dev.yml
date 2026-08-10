@@ -1,8 +1,17 @@
 version: '3.8'
 
+# Dev: loads .env file for local secrets (MNEMOSYNE_EMBEDDING_API_KEY).
+# Start with: docker compose -f docker-compose.dev.yml up -d
+#
+# Prod: uses Infisical instead.
+# Start with: infisical run --env=prod --path=/bensyne -- docker compose -f docker-compose.yml up -d
+# MNEMOSYNE_EMBEDDING_API_KEY MUST come from Infisical — never hardcode a secret here.
+
 services:
   bensyne:
     build: .
+    env_file:
+      - .env
     ports:
       - "3000:3000"
     volumes:
@@ -12,6 +21,10 @@ services:
     environment:
       - PYTHONPATH=/app/src
       - LOG_LEVEL=DEBUG
+      - MNEMOSYNE_EMBEDDING_MODEL=puma-embed-qwen3-4b
+      - MNEMOSYNE_EMBEDDING_API_URL=https://lite-llm.lan/v1
+      - MNEMOSYNE_EMBEDDING_API_KEY=${MNEMOSYNE_EMBEDDING_API_KEY}
+      - MNEMOSYNE_EMBEDDING_DIM=2560
     command: ["python", "main.py"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]

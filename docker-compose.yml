@@ -1,5 +1,9 @@
 version: '3.8'
 
+# Environment variables are managed via Infisical (prod environment).
+# Start with: infisical run --env=prod --path=/bensyne -- docker compose up -d
+# MNEMOSYNE_EMBEDDING_API_KEY MUST come from Infisical — never hardcode a secret here.
+
 services:
   bensyne:
     image: tuiteraz/bensyne:latest
@@ -7,6 +11,11 @@ services:
       - "3000:3000"
     volumes:
       - /data/mnemosyne/data:/data/mnemosyne/data
+    environment:
+      - MNEMOSYNE_EMBEDDING_MODEL=puma-embed-qwen3-4b
+      - MNEMOSYNE_EMBEDDING_API_URL=https://lite-llm.lan/v1
+      - MNEMOSYNE_EMBEDDING_API_KEY=${MNEMOSYNE_EMBEDDING_API_KEY}
+      - MNEMOSYNE_EMBEDDING_DIM=2560
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
