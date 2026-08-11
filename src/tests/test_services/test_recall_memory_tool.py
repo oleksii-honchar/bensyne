@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.domain.exceptions import ValidationError
-from src.domain.models import InstancePoolConfig
+from src.domain.config_models import InstancePoolConfig
 from src.domain.result import ErrorWithDetails, Result
 from src.services.bank.router import MemoryBankRouter
 

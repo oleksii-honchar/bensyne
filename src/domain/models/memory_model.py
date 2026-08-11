@@ -1,4 +1,4 @@
-"""Memory validation schema using Pydantic."""
+"""Memory validation model using Pydantic."""
 
 from datetime import datetime
 from typing import Optional
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class MemorySchema(BaseModel):
-    """Pydantic schema for memory validation."""
+    """Pydantic model for memory validation."""
 
     id: str
     content: str = Field(min_length=1)

@@ -14,7 +14,6 @@ from typing import Generator, List, Optional
 import pytest
 
 from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.interfaces import FileRepository
 from src.domain.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -83,40 +82,6 @@ def _a_file(
     assert result.is_ok, f"Failed to create test file: {result.errors}"
     return result.value
 
-
-# ---------------------------------------------------------------------------
-# Implementation verification
-# ---------------------------------------------------------------------------
-
-class TestFileRepositorySQLiteIsFileRepository:
-    """FileRepositorySQLite implements FileRepository interface."""
-
-    def test_is_instance_of_file_repository(self, repo: FileRepositorySQLite) -> None:
-        assert isinstance(repo, FileRepository)
-
-    def test_has_save_file_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "save_file")
-        assert callable(repo.save_file)
-
-    def test_has_get_file_by_id_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "get_file_by_id")
-        assert callable(repo.get_file_by_id)
-
-    def test_has_get_file_by_path_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "get_file_by_path")
-        assert callable(repo.get_file_by_path)
-
-    def test_has_list_files_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "list_files")
-        assert callable(repo.list_files)
-
-    def test_has_search_files_by_query_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "search_files_by_query")
-        assert callable(repo.search_files_by_query)
-
-    def test_has_delete_file_method(self, repo: FileRepositorySQLite) -> None:
-        assert hasattr(repo, "delete_file")
-        assert callable(repo.delete_file)
 
 # ---------------------------------------------------------------------------
 # save_file

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.domain.models import AppConfig, InstancePoolConfig, LoggingConfig, ServerConfig
+from src.domain.config_models import AppConfig, InstancePoolConfig, LoggingConfig, ServerConfig
 from src.infrastructure.config.manager import ConfigManager
 
 

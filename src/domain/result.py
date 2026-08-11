@@ -12,6 +12,7 @@ Usage:
     result = Result.ko(errors=[ErrorWithDetails("ERROR_CODE", {})])
 """
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -89,3 +90,14 @@ class Result(Generic[T]):
     def get_errors(self) -> List[ErrorWithDetails]:
         """Get errors from result."""
         return self.errors
+
+    def get_formatted_errors(self) -> str:
+        """Format all errors into a human-readable string.
+
+        Each error is formatted as: error_code: details_json
+        Errors are joined with ", ". Returns empty string when no errors.
+        """
+        return ", ".join(
+            f"{error.error_code}: {json.dumps(error.details)}"
+            for error in self.errors
+        )

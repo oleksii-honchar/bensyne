@@ -1,4 +1,4 @@
-"""File validation schema using Pydantic."""
+"""File validation model using Pydantic."""
 
 from datetime import datetime
 from enum import Enum
@@ -31,7 +31,7 @@ class SourceType(str, Enum):
 
 
 class FileSchema(BaseModel):
-    """Pydantic schema for File entity validation."""
+    """Pydantic model for File entity validation."""
 
     id: str
     path: str = Field(min_length=1)

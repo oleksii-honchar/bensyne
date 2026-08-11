@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import List, Optional
 
 from src.domain.entities.file_relation import Direction, FileRelation, RelationType
-from src.domain.interfaces import FileRelationRepository
 from src.domain.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -57,8 +56,8 @@ def _relation_to_row(relation: FileRelation) -> dict:
 # Repository
 # ---------------------------------------------------------------------------
 
-class FileRelationRepositorySQLite(FileRelationRepository):
-    """SQLite-backed implementation of FileRelationRepository.
+class FileRelationRepositorySQLite:
+    """SQLite-backed FileRelation repository.
 
     Args:
         connection_manager: FileMetadataConnectionManager for connection pooling.

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set
 if TYPE_CHECKING:
     from asyncio import Lock
 
-from src.domain.models import InstancePoolConfig
+from src.domain.config_models import InstancePoolConfig
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.services.bank.pool import evict_if_over_limit
 from src.services.bank.registry import MemoryBankRegistry

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-    from src.domain.models import AppConfig
+    from src.domain.config_models import AppConfig
     from src.services.bank.router import MemoryBankRouter
 
 

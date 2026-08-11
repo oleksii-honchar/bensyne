@@ -17,8 +17,9 @@ from src.infrastructure.mnemosyne.client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.entities.file import File
 from src.domain.entities.file_chunk import FileChunk
-from src.domain.interfaces import FileChunkRepository, FileRepository
 from src.domain.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
 
 
 class FetchFileUseCase(BaseUseCase[dict, dict]):
@@ -27,8 +28,8 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
     def __init__(
         self,
         mnemosyne_client: MnemosyneClient,
-        chunk_repository: FileChunkRepository,
-        file_repository: FileRepository,
+        chunk_repository: FileChunkRepositorySQLite,
+        file_repository: FileRepositorySQLite,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
         super().__init__(logger)

@@ -14,7 +14,6 @@ import pytest
 
 from src.domain.entities.file import File, FileStatus, SourceType
 from src.domain.entities.file_chunk import ContentType, FileChunk
-from src.domain.interfaces import FileChunkRepository
 from src.domain.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -112,36 +111,6 @@ def _a_chunk(
     })
     assert result.is_ok, f"Failed to create test chunk: {result.errors}"
     return result.value
-
-# ---------------------------------------------------------------------------
-# Implementation verification
-# ---------------------------------------------------------------------------
-
-class TestFileChunkRepositorySQLiteIsFileChunkRepository:
-    """FileChunkRepositorySQLite implements FileChunkRepository interface."""
-
-    def test_is_instance_of_file_chunk_repository(self, repo: FileChunkRepositorySQLite) -> None:
-        assert isinstance(repo, FileChunkRepository)
-
-    def test_has_save_chunk_method(self, repo: FileChunkRepositorySQLite) -> None:
-        assert hasattr(repo, "save_chunk")
-        assert callable(repo.save_chunk)
-
-    def test_has_get_chunk_by_id_method(self, repo: FileChunkRepositorySQLite) -> None:
-        assert hasattr(repo, "get_chunk_by_id")
-        assert callable(repo.get_chunk_by_id)
-
-    def test_has_get_chunks_by_file_id_method(self, repo: FileChunkRepositorySQLite) -> None:
-        assert hasattr(repo, "get_chunks_by_file_id")
-        assert callable(repo.get_chunks_by_file_id)
-
-    def test_has_get_chunk_by_memory_id_method(self, repo: FileChunkRepositorySQLite) -> None:
-        assert hasattr(repo, "get_chunk_by_memory_id")
-        assert callable(repo.get_chunk_by_memory_id)
-
-    def test_has_delete_chunk_method(self, repo: FileChunkRepositorySQLite) -> None:
-        assert hasattr(repo, "delete_chunk")
-        assert callable(repo.delete_chunk)
 
 # ---------------------------------------------------------------------------
 # save_chunk

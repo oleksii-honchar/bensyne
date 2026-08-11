@@ -148,6 +148,36 @@ class TestResultProperties:
         assert result.get_errors() == [err]
 
 
+class TestResultGetFormattedErrors:
+    """Result.get_formatted_errors formatting behavior."""
+
+    def test_single_error_formatted(self):
+        err = ErrorWithDetails(error_code="NOT_FOUND", details={"id": "1"})
+        result = Result.ko(errors=[err])
+        assert result.get_formatted_errors() == 'NOT_FOUND: {"id": "1"}'
+
+    def test_multiple_errors_joined_with_comma(self):
+        err1 = ErrorWithDetails(error_code="NOT_FOUND", details={"id": "1"})
+        err2 = ErrorWithDetails(error_code="VALIDATION", details={"field": "name"})
+        result = Result.ko(errors=[err1, err2])
+        assert result.get_formatted_errors() == 'NOT_FOUND: {"id": "1"}, VALIDATION: {"field": "name"}'
+
+    def test_empty_errors_returns_empty_string(self):
+        result = Result.ok("value")
+        assert result.get_formatted_errors() == ""
+
+    def test_empty_details_formatted(self):
+        err = ErrorWithDetails(error_code="SOME_ERROR", details={})
+        result = Result.ko(errors=[err])
+        assert result.get_formatted_errors() == "SOME_ERROR: {}"
+
+    def test_details_with_nested_values(self):
+        err = ErrorWithDetails(error_code="COMPLEX", details={"a": {"b": 2}, "c": [1, 2]})
+        result = Result.ko(errors=[err])
+        expected = 'COMPLEX: {"a": {"b": 2}, "c": [1, 2]}'
+        assert result.get_formatted_errors() == expected
+
+
 class TestDomainEvent:
     """DomainEvent abstract base class behavior."""
 

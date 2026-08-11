@@ -15,7 +15,7 @@ from src.domain.events.file_relation_events import (
     FileRelationUpdatedEvent,
 )
 from src.domain.result import ErrorWithDetails, Result
-from src.domain.schemas.file_relation_schema import Direction, FileRelationSchema, RelationType
+from src.domain.models.file_relation_model import Direction, FileRelationSchema, RelationType
 
 
 @dataclass(frozen=True)

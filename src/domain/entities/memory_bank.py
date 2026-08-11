@@ -7,7 +7,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from src.domain.result import ErrorWithDetails, Result
-from src.domain.schemas.memory_bank_schema import MemoryBankSchema
+from src.domain.models.memory_bank_model import MemoryBankSchema
 
 
 @dataclass(frozen=True)

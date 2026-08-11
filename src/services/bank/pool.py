@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict
 
-from src.domain.models import InstancePoolConfig
+from src.domain.config_models import InstancePoolConfig
 from src.utils.structured_logging import get_logger
 
 if TYPE_CHECKING:

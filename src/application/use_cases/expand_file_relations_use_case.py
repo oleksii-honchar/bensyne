@@ -18,8 +18,8 @@ from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
 from src.domain.entities.file import File
 from src.domain.entities.file_relation import FileRelation, RelationType
-from src.domain.interfaces import FileRelationRepository
 from src.domain.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
 
 
 class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
@@ -34,7 +34,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
         self,
         mnemosyne_client: Callable[[str], Optional[dict]],
         file_service: FileService,
-        relation_repository: FileRelationRepository,
+        relation_repository: FileRelationRepositorySQLite,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
         super().__init__(logger)
@@ -57,7 +57,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         self.logger.info(
             "Expanding file relations",
-            service="expand_file_relations",
+            use_case="expand_file_relations",
             method="execute_internal",
             file_id=file_id,
             relation_types=relation_types,
@@ -72,7 +72,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         self.logger.debug(
             "Source file retrieved",
-            service="expand_file_relations",
+            use_case="expand_file_relations",
             method="execute_internal",
             file_id=file_id,
             file_path=source_file.path,
@@ -92,7 +92,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         self.logger.debug(
             "Relations retrieved",
-            service="expand_file_relations",
+            use_case="expand_file_relations",
             method="execute_internal",
             file_id=file_id,
             relations_count=len(relations),
@@ -105,7 +105,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         self.logger.info(
             "File relations expanded",
-            service="expand_file_relations",
+            use_case="expand_file_relations",
             method="execute_internal",
             file_id=file_id,
             related_files_count=len(related_files),
@@ -184,7 +184,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
             self.logger.info(
                 "Related file expanded",
-                service="expand_file_relations",
+                use_case="expand_file_relations",
                 method="_expand_related_files",
                 target_file_path=f.path,
                 chunks_count=chunks_count,

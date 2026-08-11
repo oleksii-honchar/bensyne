@@ -1,4 +1,4 @@
-"""Memory bank validation schema using Pydantic."""
+"""Memory bank validation model using Pydantic."""
 
 import re
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class MemoryBankSchema(BaseModel):
-    """Pydantic schema for memory bank validation."""
+    """Pydantic model for memory bank validation."""
 
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1)

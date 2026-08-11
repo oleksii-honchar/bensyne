@@ -1,4 +1,4 @@
-"""FileChunk validation schema using Pydantic."""
+"""FileChunk validation model using Pydantic."""
 
 from datetime import datetime
 from enum import Enum
@@ -21,7 +21,7 @@ class ContentType(str, Enum):
 
 
 class FileChunkSchema(BaseModel):
-    """Pydantic schema for FileChunk entity validation."""
+    """Pydantic model for FileChunk entity validation."""
 
     id: str = Field(min_length=1)
     file_id: str = Field(min_length=1)

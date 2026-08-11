@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from src.domain.models import AppConfig, InstancePoolConfig, LoggingConfig, ServerConfig
+from src.domain.config_models import AppConfig, InstancePoolConfig, LoggingConfig, ServerConfig
 
 
 class ConfigManager:

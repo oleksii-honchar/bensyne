@@ -13,7 +13,7 @@ from src.domain.events.file_events import (
     FileUpdatedEvent,
 )
 from src.domain.result import ErrorWithDetails, Result
-from src.domain.schemas.file_schema import FileSchema, FileStatus, SourceType
+from src.domain.models.file_model import FileSchema, FileStatus, SourceType
 
 
 @dataclass(frozen=True)

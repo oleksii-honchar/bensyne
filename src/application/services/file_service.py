@@ -14,8 +14,10 @@ from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
 from src.domain.entities.file import File
 from src.domain.entities.file_chunk import FileChunk
 from src.domain.entities.file_relation import FileRelation, RelationType
-from src.domain.interfaces import FileChunkRepository, FileRelationRepository, FileRepository
 from src.domain.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
+from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
 
 
 class FileService:
@@ -35,9 +37,9 @@ class FileService:
 
     def __init__(
         self,
-        file_repository: FileRepository,
-        chunk_repository: FileChunkRepository,
-        relation_repository: FileRelationRepository,
+        file_repository: FileRepositorySQLite,
+        chunk_repository: FileChunkRepositorySQLite,
+        relation_repository: FileRelationRepositorySQLite,
         logger: structlog.stdlib.BoundLogger,
         memory_client: Optional[object] = None,
     ) -> None:

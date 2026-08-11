@@ -5,10 +5,10 @@ Covers MemorySchema, MemoryBankSchema, and API request/response models.
 
 import pytest
 from pydantic import ValidationError
+from src.domain.models.memory_model import MemorySchema
 
-from src.domain.schemas.memory_schema import MemorySchema
-from src.domain.schemas.memory_bank_schema import MemoryBankSchema
-from src.domain.schemas.api_models import (
+from src.domain.models.memory_bank_model import MemoryBankSchema
+from src.infrastructure.schemas.api_models import (
     MemoryOperationRequest,
     MemoryOperationResponse,
     MemorySearchRequest,

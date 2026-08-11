@@ -14,7 +14,6 @@ import pytest
 
 from src.domain.entities.file import File, FileStatus, SourceType
 from src.domain.entities.file_relation import Direction, FileRelation, RelationType
-from src.domain.interfaces import FileRelationRepository
 from src.domain.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -106,36 +105,6 @@ def _a_relation(
     })
     assert result.is_ok, f"Failed to create test relation: {result.errors}"
     return result.value
-
-# ---------------------------------------------------------------------------
-# Implementation verification
-# ---------------------------------------------------------------------------
-
-class TestFileRelationRepositorySQLiteIsFileRelationRepository:
-    """FileRelationRepositorySQLite implements FileRelationRepository interface."""
-
-    def test_is_instance_of_file_relation_repository(self, repo: FileRelationRepositorySQLite) -> None:
-        assert isinstance(repo, FileRelationRepository)
-
-    def test_has_save_relation_method(self, repo: FileRelationRepositorySQLite) -> None:
-        assert hasattr(repo, "save_relation")
-        assert callable(repo.save_relation)
-
-    def test_has_get_relation_by_id_method(self, repo: FileRelationRepositorySQLite) -> None:
-        assert hasattr(repo, "get_relation_by_id")
-        assert callable(repo.get_relation_by_id)
-
-    def test_has_get_relations_by_file_id_method(self, repo: FileRelationRepositorySQLite) -> None:
-        assert hasattr(repo, "get_relations_by_file_id")
-        assert callable(repo.get_relations_by_file_id)
-
-    def test_has_get_relations_by_type_method(self, repo: FileRelationRepositorySQLite) -> None:
-        assert hasattr(repo, "get_relations_by_type")
-        assert callable(repo.get_relations_by_type)
-
-    def test_has_delete_relation_method(self, repo: FileRelationRepositorySQLite) -> None:
-        assert hasattr(repo, "delete_relation")
-        assert callable(repo.delete_relation)
 
 # ---------------------------------------------------------------------------
 # save_relation

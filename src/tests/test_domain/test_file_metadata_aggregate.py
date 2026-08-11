@@ -15,9 +15,11 @@ from src.domain.events.file_events import (
     FileRelationCreatedEvent,
 )
 from src.domain.result import Result
-from src.domain.schemas.file_schema import FileStatus, SourceType
-from src.domain.schemas.file_chunk_schema import ContentType
-from src.domain.schemas.file_relation_schema import Direction, RelationType
+from src.domain.models.file_model import FileStatus, SourceType
+
+from src.domain.models.file_chunk_model import ContentType
+
+from src.domain.models.file_relation_model import Direction, RelationType
 
 VALID_HASH = "a" * 64
 

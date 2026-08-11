@@ -972,7 +972,7 @@ class TestExpandFileRelationsLogging:
         relation_repo: MagicMock,
         logger: MagicMock,
     ) -> None:
-        """Log entries include service='expand_file_relations' and method."""
+        """Log entries include use_case='expand_file_relations' and method."""
         source = _a_file(id="f1", path="/tmp/source.txt")
         source_agg = _a_aggregate(source)
         file_service.get_file.return_value = Result.ok(source_agg)

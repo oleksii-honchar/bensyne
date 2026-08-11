@@ -15,7 +15,7 @@ from src.domain.events.file_chunk_events import (
     FileChunkUpdatedEvent,
 )
 from src.domain.result import ErrorWithDetails, Result
-from src.domain.schemas.file_chunk_schema import ContentType, FileChunkSchema
+from src.domain.models.file_chunk_model import ContentType, FileChunkSchema
 from src.domain.value_objects.file_hash import FileHash
 
 

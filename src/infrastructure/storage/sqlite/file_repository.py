@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import List, Optional
 
 from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.interfaces import FileRepository
 from src.domain.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -75,8 +74,8 @@ def _file_to_row(file: File) -> dict:
 # Repository
 # ---------------------------------------------------------------------------
 
-class FileRepositorySQLite(FileRepository):
-    """SQLite-backed implementation of FileRepository.
+class FileRepositorySQLite:
+    """SQLite-backed File repository.
 
     Args:
         connection_manager: FileMetadataConnectionManager for connection pooling.

@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import List, Optional
 
 from src.domain.entities.file_chunk import ContentType, FileChunk
-from src.domain.interfaces import FileChunkRepository
 from src.domain.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -61,8 +60,8 @@ def _chunk_to_row(chunk: FileChunk) -> dict:
 # Repository
 # ---------------------------------------------------------------------------
 
-class FileChunkRepositorySQLite(FileChunkRepository):
-    """SQLite-backed implementation of FileChunkRepository.
+class FileChunkRepositorySQLite:
+    """SQLite-backed FileChunk repository.
 
     Args:
         connection_manager: FileMetadataConnectionManager for connection pooling.

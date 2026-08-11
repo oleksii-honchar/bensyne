@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.domain.models import InstancePoolConfig
+from src.domain.config_models import InstancePoolConfig
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.services.bank.router import MemoryBankRouter
 

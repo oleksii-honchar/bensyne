@@ -1,4 +1,4 @@
-"""FileRelation Pydantic schema and enums."""
+"""FileRelation Pydantic model and enums."""
 
 from datetime import datetime
 from enum import Enum
@@ -29,7 +29,7 @@ class Direction(str, Enum):
 
 
 class FileRelationSchema(BaseModel):
-    """Pydantic schema for FileRelation entity validation."""
+    """Pydantic model for FileRelation entity validation."""
 
     id: str
     source_file_id: str = Field(min_length=1)

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.domain.models import MemoryBankInfo, InstanceInfo, ToolResponse
+from src.domain.config_models import MemoryBankInfo, InstanceInfo, ToolResponse
 from src.domain.exceptions import MemoryBankError, InstanceError, ValidationError
 
 

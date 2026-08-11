@@ -26,7 +26,7 @@ from src.domain.events.file_events import (
     FileUpdatedEvent,
 )
 from src.domain.result import ErrorWithDetails, Result
-from src.domain.schemas.file_chunk_schema import ContentType as ChunkContentType
+from src.domain.models.file_chunk_model import ContentType as ChunkContentType
 from src.utils.structured_logging import LoggerMock
 
 NOW = datetime(2026, 1, 1, 0, 0, 0)
