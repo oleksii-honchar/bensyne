@@ -67,13 +67,13 @@ def mcp_call_tool(client: httpx.Client, tool_name: str, arguments: dict, request
 
 
 class TestListBanksWithoutSession:
-    """memory_list_banks works without session initialization."""
+    """listMemoryBanks works without session initialization."""
 
     def test_list_banks_no_session(self, mcp_client: httpx.Client) -> None:
-        """Call memory_list_banks with no prior session init — should succeed."""
+        """Call listMemoryBanks with no prior session init — should succeed."""
         result = mcp_call_tool(
             mcp_client,
-            "memory_list_banks",
+            "listMemoryBanks",
             {},
             request_id=100,
         )
@@ -82,7 +82,7 @@ class TestListBanksWithoutSession:
 
 
 class TestMemoryOpsWithoutSession:
-    """memory_remember + memory_recall sequence works without session initialization."""
+    """rememberMemory + recallMemory sequence works without session initialization."""
 
     def test_remember_and_recall_no_session(self, mcp_client: httpx.Client) -> None:
         """Store a memory, recall it — all without session init."""
@@ -91,7 +91,7 @@ class TestMemoryOpsWithoutSession:
         # Remember
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "stateless mode memory test", "memory_bank": bank},
             request_id=200,
         )
@@ -103,7 +103,7 @@ class TestMemoryOpsWithoutSession:
         # Recall — same request, no session needed
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "stateless mode memory test", "memory_bank": bank},
             request_id=201,
         )
@@ -125,7 +125,7 @@ class TestSequentialCallsWithoutSession:
         # Call 1: list banks
         list_result = mcp_call_tool(
             mcp_client,
-            "memory_list_banks",
+            "listMemoryBanks",
             {},
             request_id=300,
         )
@@ -134,7 +134,7 @@ class TestSequentialCallsWithoutSession:
         # Call 2: remember
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "sequential call one", "memory_bank": bank},
             request_id=301,
         )
@@ -143,7 +143,7 @@ class TestSequentialCallsWithoutSession:
         # Call 3: recall
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "sequential call one", "memory_bank": bank},
             request_id=302,
         )
@@ -153,7 +153,7 @@ class TestSequentialCallsWithoutSession:
         # Call 4: stats
         stats_result = mcp_call_tool(
             mcp_client,
-            "memory_stats",
+            "getMemoryStats",
             {"memory_bank": bank},
             request_id=303,
         )

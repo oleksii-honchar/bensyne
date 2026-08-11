@@ -75,7 +75,7 @@ class TestRememberAndRecall:
         # Remember
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "e2e test memory alpha", "memory_bank": bank},
             request_id=10,
         )
@@ -87,7 +87,7 @@ class TestRememberAndRecall:
         # Recall
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "e2e test memory alpha", "memory_bank": bank},
             request_id=11,
         )
@@ -111,7 +111,7 @@ class TestForget:
         # Remember
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "to be forgotten", "memory_bank": bank},
             request_id=20,
         )
@@ -120,7 +120,7 @@ class TestForget:
         # Forget
         forget_result = mcp_call_tool(
             mcp_client,
-            "memory_forget",
+            "forgetMemory",
             {"memory_id": memory_id, "memory_bank": bank},
             request_id=21,
         )
@@ -131,7 +131,7 @@ class TestForget:
         # Verify gone via recall
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "to be forgotten", "memory_bank": bank},
             request_id=22,
         )
@@ -149,7 +149,7 @@ class TestUpdate:
         # Remember
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "original content", "memory_bank": bank},
             request_id=30,
         )
@@ -158,7 +158,7 @@ class TestUpdate:
         # Update
         update_result = mcp_call_tool(
             mcp_client,
-            "memory_update",
+            "updateMemory",
             {"memory_id": memory_id, "content": "updated content", "memory_bank": bank},
             request_id=31,
         )
@@ -169,7 +169,7 @@ class TestUpdate:
         # Verify via recall
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "updated content", "memory_bank": bank},
             request_id=32,
         )
@@ -187,7 +187,7 @@ class TestStats:
         # Store a memory first
         mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "stats test memory", "memory_bank": bank},
             request_id=40,
         )
@@ -195,7 +195,7 @@ class TestStats:
         # Get stats
         stats_result = mcp_call_tool(
             mcp_client,
-            "memory_stats",
+            "getMemoryStats",
             {"memory_bank": bank},
             request_id=41,
         )
@@ -215,7 +215,7 @@ class TestSleep:
 
         sleep_result = mcp_call_tool(
             mcp_client,
-            "memory_sleep",
+            "sleepMemory",
             {"memory_bank": bank},
             request_id=50,
         )

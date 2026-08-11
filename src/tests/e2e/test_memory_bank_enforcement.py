@@ -112,87 +112,87 @@ def assert_mcp_error(result: dict, tool_name: str, expected_message_substring: s
 
 
 class TestRememberWithoutMemoryBank:
-    """memory_remember requires memory_bank parameter."""
+    """rememberMemory requires memory_bank parameter."""
 
     def test_remember_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling remember without memory_bank returns error."""
+        """Calling rememberMemory without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "test memory without memory bank"},
             request_id=10,
         )
-        assert_mcp_error(result, "memory_remember", "memory_bank")
+        assert_mcp_error(result, "rememberMemory", "memory_bank")
 
 
 class TestRecallWithoutMemoryBank:
-    """memory_recall requires memory_bank parameter."""
+    """recallMemory requires memory_bank parameter."""
 
     def test_recall_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
-        """Calling recall without memory_bank returns error."""
+        """Calling recallMemory without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "test query without memory bank"},
             request_id=20,
         )
-        assert_mcp_error(result, "memory_recall", "memory_bank")
+        assert_mcp_error(result, "recallMemory", "memory_bank")
 
 
 class TestForgetWithoutMemoryBank:
-    """memory_forget requires memory_bank parameter."""
+    """forgetMemory requires memory_bank parameter."""
 
     def test_forget_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
         """Calling forget without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_forget",
+            "forgetMemory",
             {"memory_id": "fake-memory-id"},
             request_id=30,
         )
-        assert_mcp_error(result, "memory_forget", "memory_bank")
+        assert_mcp_error(result, "forgetMemory", "memory_bank")
 
 
 class TestUpdateWithoutMemoryBank:
-    """memory_update requires memory_bank parameter."""
+    """updateMemory requires memory_bank parameter."""
 
     def test_update_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
         """Calling update without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_update",
+            "updateMemory",
             {"memory_id": "fake-memory-id", "content": "updated"},
             request_id=40,
         )
-        assert_mcp_error(result, "memory_update", "memory_bank")
+        assert_mcp_error(result, "updateMemory", "memory_bank")
 
 
 class TestSleepWithoutMemoryBank:
-    """memory_sleep requires memory_bank parameter."""
+    """sleepMemory requires memory_bank parameter."""
 
     def test_sleep_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
         """Calling sleep without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_sleep",
+            "sleepMemory",
             {},
             request_id=50,
         )
-        assert_mcp_error(result, "memory_sleep", "memory_bank")
+        assert_mcp_error(result, "sleepMemory", "memory_bank")
 
 
 class TestStatsWithoutMemoryBank:
-    """memory_stats requires memory_bank parameter."""
+    """getMemoryStats requires memory_bank parameter."""
 
     def test_stats_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
         """Calling stats without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "memory_stats",
+            "getMemoryStats",
             {},
             request_id=60,
         )
-        assert_mcp_error(result, "memory_stats", "memory_bank")
+        assert_mcp_error(result, "getMemoryStats", "memory_bank")
 
 
 # ---------------------------------------------------------------------------
@@ -201,13 +201,13 @@ class TestStatsWithoutMemoryBank:
 
 
 class TestRememberWithMemoryBank:
-    """memory_remember succeeds with memory_bank parameter."""
+    """rememberMemory succeeds with memory_bank parameter."""
 
     def test_remember_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling remember with memory_bank stores memory."""
+        """Calling rememberMemory with memory_bank stores memory."""
         result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "test memory with memory bank", "memory_bank": "e2e-bank-enforcement"},
             request_id=70,
         )
@@ -217,13 +217,13 @@ class TestRememberWithMemoryBank:
 
 
 class TestRecallWithMemoryBank:
-    """memory_recall succeeds with memory_bank parameter."""
+    """recallMemory succeeds with memory_bank parameter."""
 
     def test_recall_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
-        """Calling recall with memory_bank returns results."""
+        """Calling recallMemory with memory_bank returns results."""
         result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "test query", "memory_bank": "e2e-bank-enforcement"},
             request_id=80,
         )
@@ -232,7 +232,7 @@ class TestRecallWithMemoryBank:
 
 
 class TestForgetWithMemoryBank:
-    """memory_forget succeeds with memory_bank parameter."""
+    """forgetMemory succeeds with memory_bank parameter."""
 
     def test_forget_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
         """Calling forget with memory_bank deletes memory."""
@@ -241,7 +241,7 @@ class TestForgetWithMemoryBank:
         # Store first
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "to forget", "memory_bank": bank},
             request_id=90,
         )
@@ -250,7 +250,7 @@ class TestForgetWithMemoryBank:
         # Then forget
         result = mcp_call_tool(
             mcp_client,
-            "memory_forget",
+            "forgetMemory",
             {"memory_id": memory_id, "memory_bank": bank},
             request_id=91,
         )
@@ -259,7 +259,7 @@ class TestForgetWithMemoryBank:
 
 
 class TestUpdateWithMemoryBank:
-    """memory_update succeeds with memory_bank parameter."""
+    """updateMemory succeeds with memory_bank parameter."""
 
     def test_update_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
         """Calling update with memory_bank updates memory."""
@@ -268,7 +268,7 @@ class TestUpdateWithMemoryBank:
         # Store first
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "original", "memory_bank": bank},
             request_id=100,
         )
@@ -277,7 +277,7 @@ class TestUpdateWithMemoryBank:
         # Then update
         result = mcp_call_tool(
             mcp_client,
-            "memory_update",
+            "updateMemory",
             {"memory_id": memory_id, "content": "updated", "memory_bank": bank},
             request_id=101,
         )
@@ -286,7 +286,7 @@ class TestUpdateWithMemoryBank:
 
 
 class TestSleepWithMemoryBank:
-    """memory_sleep succeeds with memory_bank parameter."""
+    """sleepMemory succeeds with memory_bank parameter."""
 
     def test_sleep_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
         """Calling sleep with memory_bank runs consolidation."""
@@ -294,7 +294,7 @@ class TestSleepWithMemoryBank:
 
         result = mcp_call_tool(
             mcp_client,
-            "memory_sleep",
+            "sleepMemory",
             {"memory_bank": bank},
             request_id=110,
         )
@@ -303,7 +303,7 @@ class TestSleepWithMemoryBank:
 
 
 class TestStatsWithMemoryBank:
-    """memory_stats succeeds with memory_bank parameter."""
+    """getMemoryStats succeeds with memory_bank parameter."""
 
     def test_stats_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
         """Calling stats with memory_bank returns statistics."""
@@ -311,7 +311,7 @@ class TestStatsWithMemoryBank:
 
         result = mcp_call_tool(
             mcp_client,
-            "memory_stats",
+            "getMemoryStats",
             {"memory_bank": bank},
             request_id=120,
         )

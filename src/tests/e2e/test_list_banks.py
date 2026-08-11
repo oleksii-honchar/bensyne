@@ -64,7 +64,7 @@ class TestListBanks:
         """Verify default memory bank is listed at start."""
         result = mcp_call_tool(
             mcp_client,
-            "memory_list_banks",
+            "listMemoryBanks",
             {},
             request_id=10,
         )
@@ -79,7 +79,7 @@ class TestListBanks:
         # Use the new memory bank
         mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "activating memory bank", "memory_bank": new_bank},
             request_id=20,
         )
@@ -87,7 +87,7 @@ class TestListBanks:
         # Verify it appears
         result = mcp_call_tool(
             mcp_client,
-            "memory_list_banks",
+            "listMemoryBanks",
             {},
             request_id=21,
         )

@@ -62,7 +62,7 @@ class TestIsolatedMemoryBanks:
         # Store unique content in memory bank A
         mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "secret of memory bank A", "memory_bank": "e2e-bank-a"},
             request_id=10,
         )
@@ -70,7 +70,7 @@ class TestIsolatedMemoryBanks:
         # Store unique content in memory bank B
         mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "secret of memory bank B", "memory_bank": "e2e-bank-b"},
             request_id=11,
         )
@@ -78,7 +78,7 @@ class TestIsolatedMemoryBanks:
         # Recall from memory bank A should NOT find memory bank B's content
         recall_a = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "secret of memory bank B", "memory_bank": "e2e-bank-a"},
             request_id=12,
         )
@@ -89,7 +89,7 @@ class TestIsolatedMemoryBanks:
         # Recall from memory bank B should NOT find memory bank A's content
         recall_b = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "secret of memory bank A", "memory_bank": "e2e-bank-b"},
             request_id=13,
         )
@@ -105,7 +105,7 @@ class TestDefaultBankFallback:
         # Store with explicit "default" memory bank
         remember_result = mcp_call_tool(
             mcp_client,
-            "memory_remember",
+            "rememberMemory",
             {"content": "default memory bank memory", "memory_bank": "default"},
             request_id=20,
         )
@@ -115,7 +115,7 @@ class TestDefaultBankFallback:
         # Recall with explicit "default" memory bank — should find it
         recall_result = mcp_call_tool(
             mcp_client,
-            "memory_recall",
+            "recallMemory",
             {"query": "default memory bank memory", "memory_bank": "default"},
             request_id=21,
         )
@@ -136,7 +136,7 @@ class TestConcurrentMemoryBanks:
         for i, bank in enumerate(banks, start=30):
             result = mcp_call_tool(
                 mcp_client,
-                "memory_remember",
+                "rememberMemory",
                 {"content": f"concurrent memory for {bank}", "memory_bank": bank},
                 request_id=i,
             )
@@ -147,7 +147,7 @@ class TestConcurrentMemoryBanks:
         for i, bank in enumerate(banks, start=40):
             recall = mcp_call_tool(
                 mcp_client,
-                "memory_recall",
+                "recallMemory",
                 {"query": f"concurrent memory for {bank}", "memory_bank": bank},
                 request_id=i,
             )

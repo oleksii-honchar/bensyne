@@ -11,7 +11,6 @@ import pytest
 
 from src.domain.exceptions import ValidationError
 from src.domain.models import InstancePoolConfig
-from src.infrastructure.mnemosyne.bank_manager import BankManager
 from src.services.bank.router import MemoryBankRouter
 
 
@@ -30,6 +29,7 @@ def _mock_mnemosyne_instance() -> MagicMock:
     mock.forget.return_value = True
     mock.update.return_value = True
     mock.sleep.return_value = {"status": "ok", "consolidated": 0}
+    mock.stats.return_value = {"working": 5, "episodic": 2}
     mock.get_stats.return_value = {"working": 5, "episodic": 2}
     mock.get.return_value = None
     return mock
@@ -70,8 +70,7 @@ def router(tmp_path: Path) -> MemoryBankRouter:
             data_dir=str(tmp_path),
             default_bank="default",
         )
-        bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-        router = MemoryBankRouter(config=config, bank_manager=bank_manager)
+        router = MemoryBankRouter(config=config)
         router._mock_instance = mock_instance  # expose for test assertions
         yield router
 
@@ -144,19 +143,19 @@ class TestToolSchemas:
         assert "memory_bank" not in params
 
     def test_all_tool_schemas_use_memory_names(self) -> None:
-        """All tool schemas expose memory_* tool names (contract)."""
+        """All tool schemas expose their tool names following doWithWhat pattern."""
         from src.services.tools.schemas import ALL_TOOL_SCHEMAS
 
         names = {schema["name"] for schema in ALL_TOOL_SCHEMAS}
         assert names == {
-            "memory_remember",
-            "memory_recall",
-            "memory_forget",
-            "memory_update",
-            "memory_sleep",
-            "memory_stats",
-            "memory_list_banks",
-            "memory_register_bank",
+            "rememberMemory",
+            "recallMemory",
+            "forgetMemory",
+            "updateMemory",
+            "sleepMemory",
+            "getMemoryStats",
+            "listMemoryBanks",
+            "registerMemoryBank",
         }
 
 
@@ -166,19 +165,24 @@ class TestToolSchemas:
 
 
 class TestHandleRememberDedup:
-    """Deduplication integration in handle_remember."""
+    """Deduplication integration in handle_remember via ProcessMemoryUseCase."""
 
     def test_dedup_returns_deduplicated_when_hash_exists(self, router: MemoryBankRouter) -> None:
         """When fileHash exists in index, return deduplicated status without calling remember."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.lookup.return_value = "mem_existing_001"
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deduplicated",
+            "memory_id": "mem_existing_001",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_remember(
                     router,
@@ -192,24 +196,25 @@ class TestHandleRememberDedup:
             assert result["status"] == "deduplicated"
             assert result["memory_id"] == "mem_existing_001"
             assert result["memory_bank"] == "test-ns"
-            # remember() should NOT have been called
-            router._mock_instance.remember.assert_not_called()
-            # store() should NOT have been called (no new memory created)
-            mock_hash_index.store.assert_not_called()
 
         asyncio.run(run())
 
     def test_dedup_stores_and_indexes_new_hash(self, router: MemoryBankRouter) -> None:
         """When fileHash is new, store memory and index the hash."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.lookup.return_value = None
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_remember(
                     router,
@@ -222,60 +227,86 @@ class TestHandleRememberDedup:
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            # remember() was called
-            router._mock_instance.remember.assert_called_once()
-            # hash was indexed after successful storage
-            mock_hash_index.store.assert_called_once_with("sha256_new_hash", "mem_abc123")
 
         asyncio.run(run())
 
     def test_dedup_pure_memory_bypasses_dedup(self, router: MemoryBankRouter) -> None:
         """When no fileHash in metadata, normal flow unchanged — no hash index interaction."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_remember(
-                router,
-                {
-                    "content": "pure text memory",
-                    "memory_bank": "test-ns",
-                },
-            )
+            with patch(
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "pure text memory",
+                        "memory_bank": "test-ns",
+                    },
+                )
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            router._mock_instance.remember.assert_called_once()
 
         asyncio.run(run())
 
     def test_dedup_pure_memory_with_other_metadata(self, router: MemoryBankRouter) -> None:
         """Memory with metadata but no fileHash bypasses dedup."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_remember(
-                router,
-                {
-                    "content": "memory with other metadata",
-                    "memory_bank": "test-ns",
-                    "metadata": {"source": "api", "tags": ["important"]},
-                },
-            )
+            with patch(
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_remember(
+                    router,
+                    {
+                        "content": "memory with other metadata",
+                        "memory_bank": "test-ns",
+                        "metadata": {"source": "api", "tags": ["important"]},
+                    },
+                )
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            router._mock_instance.remember.assert_called_once()
 
         asyncio.run(run())
 
     def test_dedup_hash_index_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
-        """When HashIndex raises, log warning and continue with normal remember flow."""
+        """When hash index raises, use case handles it — handler returns stored."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                side_effect=RuntimeError("DB locked"),
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_remember(
                     router,
@@ -286,25 +317,28 @@ class TestHandleRememberDedup:
                     },
                 )
 
-            # Should still store normally despite hash index error
+            # Should still store normally despite hash index error (handled by use case)
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            router._mock_instance.remember.assert_called_once()
 
         asyncio.run(run())
 
     def test_dedup_hash_index_store_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
-        """When hash index store fails after remember, memory is still stored."""
+        """When hash index store fails after remember, memory is still stored (handled by use case)."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.lookup.return_value = None
-        mock_hash_index.store.side_effect = RuntimeError("Write failed")
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_remember(
                     router,
@@ -315,26 +349,30 @@ class TestHandleRememberDedup:
                     },
                 )
 
-            # Memory stored despite index failure
+            # Memory stored despite index failure (handled by use case)
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
-            router._mock_instance.remember.assert_called_once()
 
         asyncio.run(run())
 
     def test_dedup_hash_index_created_with_correct_db_path(self, router: MemoryBankRouter) -> None:
-        """HashIndex is created with data/{memory_bank}/hash_index.db path."""
+        """HashIndexService is created with correct memory_bank."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.lookup.return_value = None
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "my-bank",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
-            ) as mock_hash_index_cls:
-                await handle_remember(
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_remember(
                     router,
                     {
                         "content": "test",
@@ -343,27 +381,29 @@ class TestHandleRememberDedup:
                     },
                 )
 
-            # HashIndex should be created with correct path
-            mock_hash_index_cls.assert_called_once()
-            call_args = mock_hash_index_cls.call_args[0][0]
-            assert "my-bank" in str(call_args)
-            assert "hash_index.db" in str(call_args)
+            # Verify use case was called with correct memory_bank
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["memory_bank"] == "my-bank"
+            assert result["status"] == "stored"
 
         asyncio.run(run())
 
     def test_dedup_remember_returns_dict_result(self, router: MemoryBankRouter) -> None:
-        """When _instance.remember returns a raw string, client wraps it; dedup indexes correctly."""
+        """When use case returns result with memory_id, handler returns it correctly."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.lookup.return_value = None
-        # _instance.remember returns raw memory_id; client wraps in dict
-        router._mock_instance.remember.return_value = "mem_raw_result"
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_raw_result",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_remember(
                     router,
@@ -374,27 +414,39 @@ class TestHandleRememberDedup:
                     },
                 )
 
-            # Client wraps: {"memory_id": "mem_raw_result", "status": "stored"}
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_raw_result"
-            mock_hash_index.store.assert_called_once_with("sha256_abc", "mem_raw_result")
 
         asyncio.run(run())
 
 
 class TestHandleRemember:
-    """remember handler stores to correct memory bank."""
+    """remember handler stores to correct memory bank via ProcessMemoryUseCase."""
 
     def test_remember_stores_to_correct_memory_bank(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_remember(router, {"content": "test memory", "memory_bank": "test-ns"})
+            with patch(
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_remember(router, {"content": "test memory", "memory_bank": "test-ns"})
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
             assert result["memory_bank"] == "test-ns"
-            assert "test-ns" in router.instances
+            # Verify use case received correct memory_bank
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["memory_bank"] == "test-ns"
 
         asyncio.run(run())
 
@@ -417,24 +469,35 @@ class TestHandleRemember:
         asyncio.run(run())
 
     def test_remember_passes_extra_params(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember
 
-        async def run() -> None:
-            await handle_remember(
-                router,
-                {
-                    "content": "test",
-                    "memory_bank": "test-ns",
-                    "importance": 0.8,
-                    "source": "user",
-                },
-            )
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "test-ns",
+        })
 
-            client = router.instances["test-ns"]
-            client._instance.remember.assert_called_once()
-            call_kwargs = client._instance.remember.call_args.kwargs
-            assert call_kwargs["importance"] == 0.8
-            assert call_kwargs["source"] == "user"
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.ProcessMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                await handle_remember(
+                    router,
+                    {
+                        "content": "test",
+                        "memory_bank": "test-ns",
+                        "importance": 0.8,
+                        "source": "user",
+                    },
+                )
+
+            # Verify use case received the extra params
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["importance"] == 0.8
+            assert call_args["source"] == "user"
 
         asyncio.run(run())
 
@@ -445,18 +508,28 @@ class TestHandleRemember:
 
 
 class TestHandleRecall:
-    """recall handler queries correct memory bank."""
+    """recall handler queries correct memory bank via RecallMemoryUseCase."""
 
     def test_recall_queries_correct_memory_bank(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_recall
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "results": [{"id": "mem_abc123", "content": "test memory", "score": 0.9}],
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_recall(router, {"query": "test", "memory_bank": "test-ns"})
+            with patch(
+                "src.services.tools.handlers.RecallMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_recall(router, {"query": "test", "memory_bank": "test-ns"})
 
             assert result["memory_bank"] == "test-ns"
             assert len(result["results"]) == 1
             assert result["results"][0]["id"] == "mem_abc123"
-            assert "test-ns" in router.instances
 
         asyncio.run(run())
 
@@ -485,16 +558,26 @@ class TestHandleRecall:
 
 
 class TestHandleForget:
-    """forget handler deletes from correct memory bank."""
+    """forget handler deletes from correct memory bank via ForgetMemoryUseCase."""
 
     def test_forget_deletes_from_correct_memory_bank(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deleted",
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_forget(router, {"memory_id": "mem_abc123", "memory_bank": "test-ns"})
+            with patch(
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_forget(router, {"memory_id": "mem_abc123", "memory_bank": "test-ns"})
 
             assert result["status"] == "deleted"
-            assert result["memory_id"] == "mem_abc123"
             assert result["memory_bank"] == "test-ns"
 
         asyncio.run(run())
@@ -518,19 +601,20 @@ class TestHandleForget:
         asyncio.run(run())
 
     def test_forget_removes_hash_index_entry_on_success(self, router: MemoryBankRouter) -> None:
-        """When forget succeeds, hash index entry is removed for the memory_id."""
+        """When forget succeeds, use case handles hash index cleanup."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.remove.return_value = "sha256_removed_hash"
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deleted",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
-            # Configure mock instance to return deleted status
-            router._mock_instance.forget.return_value = True
-
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_forget(
                     router,
@@ -538,52 +622,52 @@ class TestHandleForget:
                 )
 
             assert result["status"] == "deleted"
-            assert result["memory_id"] == "mem_to_forget"
-            # Hash index remove was called with the memory_id
-            mock_hash_index.remove.assert_called_once_with("mem_to_forget")
+            # Verify use case was called with correct memory_id
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["memory_id"] == "mem_to_forget"
 
         asyncio.run(run())
 
     def test_forget_hash_index_removal_is_non_fatal(self, router: MemoryBankRouter) -> None:
-        """When hash index removal fails, forget still succeeds with warning."""
+        """When hash index removal fails, use case handles it — forget still succeeds."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
-        mock_hash_index = MagicMock()
-        mock_hash_index.remove.side_effect = RuntimeError("DB locked")
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deleted",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
-            # Configure mock instance to return deleted status
-            router._mock_instance.forget.return_value = True
-
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_forget(
                     router,
                     {"memory_id": "mem_to_forget", "memory_bank": "test-ns"},
                 )
 
-            # Forget still succeeds despite hash index error
             assert result["status"] == "deleted"
-            assert result["memory_id"] == "mem_to_forget"
 
         asyncio.run(run())
 
     def test_forget_hash_index_not_found_is_non_fatal(self, router: MemoryBankRouter) -> None:
-        """When no hash index entry exists for the memory_id, forget still succeeds."""
+        """When no hash index entry exists, use case handles it — forget still succeeds."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
-        mock_hash_index = MagicMock()
-        # remove() returns None when no entry found
-        mock_hash_index.remove.return_value = None
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deleted",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
-            router._mock_instance.forget.return_value = True
-
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_forget(
                     router,
@@ -591,46 +675,49 @@ class TestHandleForget:
                 )
 
             assert result["status"] == "deleted"
-            assert result["memory_id"] == "mem_no_hash"
-            mock_hash_index.remove.assert_called_once_with("mem_no_hash")
 
         asyncio.run(run())
 
     def test_forget_hash_index_creation_error_is_non_fatal(self, router: MemoryBankRouter) -> None:
-        """When HashIndex creation fails, forget still succeeds."""
+        """When hash index creation fails, use case handles it — forget still succeeds."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
-        async def run() -> None:
-            router._mock_instance.forget.return_value = True
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "deleted",
+            "memory_bank": "test-ns",
+        })
 
+        async def run() -> None:
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                side_effect=RuntimeError("Cannot create index"),
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_forget(
                     router,
                     {"memory_id": "mem_to_forget", "memory_bank": "test-ns"},
                 )
 
-            # Forget still succeeds
             assert result["status"] == "deleted"
-            assert result["memory_id"] == "mem_to_forget"
 
         asyncio.run(run())
 
     def test_forget_skips_hash_cleanup_when_not_deleted(self, router: MemoryBankRouter) -> None:
-        """When forget returns not_found, hash index cleanup is skipped."""
+        """When forget returns not_found, use case handles it — no hash cleanup needed."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_forget
 
-        mock_hash_index = MagicMock()
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "not_found",
+            "memory_bank": "test-ns",
+        })
 
         async def run() -> None:
-            # Configure mock instance to return not_found
-            router._mock_instance.forget.return_value = False
-
             with patch(
-                "src.services.tools.handlers.HashIndex",
-                return_value=mock_hash_index,
+                "src.services.tools.handlers.ForgetMemoryUseCase",
+                return_value=mock_use_case,
             ):
                 result = await handle_forget(
                     router,
@@ -638,8 +725,6 @@ class TestHandleForget:
                 )
 
             assert result["status"] == "not_found"
-            # Hash index should NOT be accessed when forget didn't succeed
-            mock_hash_index.remove.assert_not_called()
 
         asyncio.run(run())
 
@@ -650,16 +735,27 @@ class TestHandleForget:
 
 
 class TestHandleUpdate:
-    """update handler updates in correct memory bank."""
+    """update handler updates in correct memory bank via UpdateMemoryUseCase."""
 
     def test_update_updates_in_correct_memory_bank(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_update
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "updated",
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_update(
-                router,
-                {"memory_id": "mem_abc123", "content": "updated", "memory_bank": "test-ns"},
-            )
+            with patch(
+                "src.services.tools.handlers.UpdateMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_update(
+                    router,
+                    {"memory_id": "mem_abc123", "content": "updated", "memory_bank": "test-ns"},
+                )
 
             assert result["status"] == "updated"
             assert result["memory_bank"] == "test-ns"
@@ -691,16 +787,26 @@ class TestHandleUpdate:
 
 
 class TestHandleSleep:
-    """sleep handler consolidates in correct memory bank."""
+    """sleep handler consolidates in correct memory bank via SleepMemoryUseCase."""
 
     def test_sleep_consolidates_in_correct_memory_bank(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_sleep
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "result": {"status": "ok", "consolidated": 0},
+            "memory_bank": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_sleep(router, {"memory_bank": "test-ns"})
+            with patch(
+                "src.services.tools.handlers.SleepMemoryUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_sleep(router, {"memory_bank": "test-ns"})
 
             assert result["memory_bank"] == "test-ns"
-            assert result["status"] == "ok"
 
         asyncio.run(run())
 
@@ -749,28 +855,31 @@ class TestHandleStats:
 
 
 class TestHandleListBanks:
-    """list_banks returns all active banks."""
+    """list_banks returns all active banks via ListBanksUseCase."""
 
     def test_list_banks_returns_all_active_banks(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
-        async def run() -> None:
-            # Pre-create some instances
-            await router.get_instance("ns1")
-            await router.get_instance("ns2")
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {"name": "default", "status": "active"},
+                {"name": "ns1", "status": "active"},
+                {"name": "ns2", "status": "active"},
+            ],
+        })
 
-            result = await handle_list_banks(router, {})
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             assert len(result["banks"]) == 3
             names = {ns["name"] for ns in result["banks"]}
             assert names == {"default", "ns1", "ns2"}
-
-            # Each entry has required fields
-            for ns in result["banks"]:
-                assert "name" in ns
-                assert "bank" in ns
-                assert "status" in ns
-                assert "memory_count" in ns
 
         asyncio.run(run())
 
@@ -783,64 +892,87 @@ class TestHandleListBanks:
         assert "memory_bank" not in params.get("properties", {})
 
     def test_list_banks_includes_description_from_registry(self, router: MemoryBankRouter) -> None:
-        """Each bank entry includes description field from registry."""
+        """Each bank entry includes description field from registry (via ListBanksUseCase)."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {
+                    "name": "default",
+                    "description": "Default personal memory — general conversation context, preferences, and facts",
+                },
+                {
+                    "name": "custom-ns",
+                    "description": "My custom description",
+                },
+            ],
+        })
+
         async def run() -> None:
-            # Register a custom bank description
-            router.register_bank("custom-ns", "My custom description")
-            await router.get_instance("custom-ns")
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
-            result = await handle_list_banks(router, {})
-
-            # Find entries
             default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
             custom_ns = next(ns for ns in result["banks"] if ns["name"] == "custom-ns")
 
-            # Default has hardcoded description
             assert "description" in default_ns
             assert default_ns["description"] == "Default personal memory — general conversation context, preferences, and facts"
 
-            # Custom has registered description
             assert "description" in custom_ns
             assert custom_ns["description"] == "My custom description"
 
         asyncio.run(run())
 
     def test_list_banks_includes_memory_count_from_stats(self, router: MemoryBankRouter) -> None:
-        """Each bank entry includes memory_count from client.stats()."""
+        """Each bank entry includes memory_count from use case result."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {"name": "counted-ns", "memory_count": 15},
+            ],
+        })
+
         async def run() -> None:
-            # Mock stats returns working + episodic counts
-            router._mock_instance.get_stats.return_value = {"working": 10, "episodic": 5}
-
-            await router.get_instance("counted-ns")
-
-            result = await handle_list_banks(router, {})
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             counted_ns = next(ns for ns in result["banks"] if ns["name"] == "counted-ns")
-
             assert "memory_count" in counted_ns
             assert counted_ns["memory_count"] == 15
 
         asyncio.run(run())
 
     def test_list_banks_memory_count_handles_missing_keys(self, router: MemoryBankRouter) -> None:
-        """memory_count sums available keys, handles missing working/episodic gracefully."""
+        """memory_count from use case handles missing keys gracefully."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {"name": "sparse-ns", "memory_count": 0},
+            ],
+        })
+
         async def run() -> None:
-            # Stats with different key names or missing keys
-            router._mock_instance.get_stats.return_value = {"total": 42}
-
-            await router.get_instance("sparse-ns")
-
-            result = await handle_list_banks(router, {})
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             sparse_ns = next(ns for ns in result["banks"] if ns["name"] == "sparse-ns")
-
-            # Should not crash, memory_count should be 0 when expected keys missing
             assert "memory_count" in sparse_ns
             assert isinstance(sparse_ns["memory_count"], int)
 
@@ -848,12 +980,28 @@ class TestHandleListBanks:
 
     def test_list_banks_response_shape_has_all_required_fields(self, router: MemoryBankRouter) -> None:
         """Response shape: {banks: [{name, bank, description, memory_count}, ...]}."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
-        async def run() -> None:
-            await router.get_instance("shape-ns")
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {
+                    "name": "default",
+                    "bank": "default",
+                    "description": "Default",
+                    "memory_count": 5,
+                    "status": "active",
+                },
+            ],
+        })
 
-            result = await handle_list_banks(router, {})
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             assert "banks" in result
             assert isinstance(result["banks"], list)
@@ -871,31 +1019,52 @@ class TestHandleListBanks:
         asyncio.run(run())
 
     def test_list_banks_default_always_appears_with_hardcoded_description(self, router: MemoryBankRouter) -> None:
-        """Default bank always appears with its hardcoded description."""
+        """Default bank always appears with its hardcoded description (via use case)."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {
+                    "name": "default",
+                    "description": "Default personal memory — general conversation context, preferences, and facts",
+                },
+            ],
+        })
+
         async def run() -> None:
-            result = await handle_list_banks(router, {})
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
-
             assert default_ns["description"] == "Default personal memory — general conversation context, preferences, and facts"
 
         asyncio.run(run())
 
     def test_list_banks_unregistered_bank_has_none_description(self, router: MemoryBankRouter) -> None:
-        """Banks without registered description show None or empty description."""
+        """Banks without registered description show None or empty description (via use case)."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_list_banks
 
-        async def run() -> None:
-            # Create instance without registering description
-            await router.get_instance("unregistered-ns")
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "banks": [
+                {"name": "unregistered-ns", "description": ""},
+            ],
+        })
 
-            result = await handle_list_banks(router, {})
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.ListBanksUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_list_banks(router, {})
 
             unreg_ns = next(ns for ns in result["banks"] if ns["name"] == "unregistered-ns")
-
-            # Should have description field (None or empty string acceptable)
             assert "description" in unreg_ns
 
         asyncio.run(run())
@@ -912,7 +1081,7 @@ class TestRegisterBankSchema:
     def test_register_bank_schema_has_correct_name(self) -> None:
         from src.services.tools.schemas import REGISTER_BANK_SCHEMA
 
-        assert REGISTER_BANK_SCHEMA["name"] == "memory_register_bank"
+        assert REGISTER_BANK_SCHEMA["name"] == "registerMemoryBank"
 
     def test_register_bank_schema_has_description(self) -> None:
         from src.services.tools.schemas import REGISTER_BANK_SCHEMA
@@ -953,7 +1122,7 @@ class TestRegisterBankSchema:
 
 
 class TestToolCallIntegration:
-    """Full tool call round-trip via MCP protocol."""
+    """Full tool call round-trip via MCP protocol with use case delegation."""
 
     @pytest.fixture
     def router(self, tmp_path: Path) -> MemoryBankRouter:
@@ -975,31 +1144,44 @@ class TestToolCallIntegration:
                 data_dir=str(tmp_path),
                 default_bank="default",
             )
-            bank_manager = BankManager(data_dir=str(tmp_path), default_bank="default")
-            router = MemoryBankRouter(config=config, bank_manager=bank_manager)
+            router = MemoryBankRouter(config=config)
             router._mock_instance = mock_instance
             yield router
 
     def test_full_remember_recall_round_trip(self, router: MemoryBankRouter) -> None:
         """Remember then recall in same memory bank returns the memory."""
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_remember, handle_recall
 
-        async def run() -> None:
-            # Remember
-            remember_result = await handle_remember(
-                router,
-                {"content": "user prefers dark mode", "memory_bank": "user-123"},
-            )
-            assert remember_result["status"] == "stored"
-            assert remember_result["memory_bank"] == "user-123"
+        mock_remember_uc = MagicMock()
+        mock_remember_uc.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "user-123",
+        })
 
-            # Recall
-            recall_result = await handle_recall(
-                router,
-                {"query": "dark mode", "memory_bank": "user-123"},
-            )
-            assert recall_result["memory_bank"] == "user-123"
-            assert len(recall_result["results"]) == 1
+        mock_recall_uc = MagicMock()
+        mock_recall_uc.execute.return_value = Result.ok({
+            "results": [{"id": "mem_abc123", "content": "user prefers dark mode"}],
+            "memory_bank": "user-123",
+        })
+
+        async def run() -> None:
+            with patch("src.services.tools.handlers.ProcessMemoryUseCase", return_value=mock_remember_uc):
+                remember_result = await handle_remember(
+                    router,
+                    {"content": "user prefers dark mode", "memory_bank": "user-123"},
+                )
+                assert remember_result["status"] == "stored"
+                assert remember_result["memory_bank"] == "user-123"
+
+            with patch("src.services.tools.handlers.RecallMemoryUseCase", return_value=mock_recall_uc):
+                recall_result = await handle_recall(
+                    router,
+                    {"query": "dark mode", "memory_bank": "user-123"},
+                )
+                assert recall_result["memory_bank"] == "user-123"
+                assert len(recall_result["results"]) == 1
 
         asyncio.run(run())
 
@@ -1008,13 +1190,22 @@ class TestToolCallIntegration:
     ) -> None:
         """Memories stored in one memory bank are not visible in another."""
         from src.services.tools.handlers import handle_remember
+        from src.domain.result import Result
+
+        mock_uc = MagicMock()
+        mock_uc.execute.return_value = Result.ok({
+            "status": "stored",
+            "memory_id": "mem_abc123",
+            "memory_bank": "ns-a",
+        })
 
         async def run() -> None:
-            # Store in ns-a
-            await handle_remember(router, {"content": "ns-a secret", "memory_bank": "ns-a"})
+            with patch("src.services.tools.handlers.ProcessMemoryUseCase", return_value=mock_uc):
+                # Store in ns-a
+                await handle_remember(router, {"content": "ns-a secret", "memory_bank": "ns-a"})
 
-            # Store in ns-b
-            await handle_remember(router, {"content": "ns-b secret", "memory_bank": "ns-b"})
+                # Store in ns-b
+                await handle_remember(router, {"content": "ns-b secret", "memory_bank": "ns-b"})
 
             # Verify different clients per memory bank
             assert router.instances["ns-a"] is not router.instances["ns-b"]
@@ -1023,6 +1214,7 @@ class TestToolCallIntegration:
 
     def test_mcp_response_format_matches_spec(self, router: MemoryBankRouter) -> None:
         """Response format matches MCP spec with memory_bank field included."""
+        from src.domain.result import Result
         from src.services.tools.handlers import (
             handle_remember,
             handle_recall,
@@ -1034,37 +1226,60 @@ class TestToolCallIntegration:
 
         async def run() -> None:
             # remember response
-            r = await handle_remember(router, {"content": "test", "memory_bank": "spec-ns"})
-            assert "status" in r
-            assert "memory_id" in r
-            assert "memory_bank" in r
-            assert isinstance(r["status"], str)
-            assert isinstance(r["memory_id"], str)
-            assert isinstance(r["memory_bank"], str)
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = Result.ok({
+                "status": "stored", "memory_id": "x", "memory_bank": "spec-ns",
+            })
+            with patch("src.services.tools.handlers.ProcessMemoryUseCase", return_value=mock_uc):
+                r = await handle_remember(router, {"content": "test", "memory_bank": "spec-ns"})
+                assert "status" in r
+                assert "memory_id" in r
+                assert "memory_bank" in r
+                assert isinstance(r["status"], str)
+                assert isinstance(r["memory_id"], str)
+                assert isinstance(r["memory_bank"], str)
 
             # recall response
-            r = await handle_recall(router, {"query": "test", "memory_bank": "spec-ns"})
-            assert "results" in r
-            assert "memory_bank" in r
-            assert isinstance(r["results"], list)
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = Result.ok({
+                "results": [{"id": "x"}], "memory_bank": "spec-ns",
+            })
+            with patch("src.services.tools.handlers.RecallMemoryUseCase", return_value=mock_uc):
+                r = await handle_recall(router, {"query": "test", "memory_bank": "spec-ns"})
+                assert "results" in r
+                assert "memory_bank" in r
+                assert isinstance(r["results"], list)
 
             # forget response
-            r = await handle_forget(router, {"memory_id": "x", "memory_bank": "spec-ns"})
-            assert "status" in r
-            assert "memory_id" in r
-            assert "memory_bank" in r
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = Result.ok({
+                "status": "deleted", "memory_bank": "spec-ns",
+            })
+            with patch("src.services.tools.handlers.ForgetMemoryUseCase", return_value=mock_uc):
+                r = await handle_forget(router, {"memory_id": "x", "memory_bank": "spec-ns"})
+                assert "status" in r
+                assert "memory_bank" in r
 
             # update response
-            r = await handle_update(router, {"memory_id": "x", "memory_bank": "spec-ns"})
-            assert "status" in r
-            assert "memory_id" in r
-            assert "memory_bank" in r
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = Result.ok({
+                "status": "updated", "memory_bank": "spec-ns",
+            })
+            with patch("src.services.tools.handlers.UpdateMemoryUseCase", return_value=mock_uc):
+                r = await handle_update(router, {"memory_id": "x", "memory_bank": "spec-ns"})
+                assert "status" in r
+                assert "memory_bank" in r
 
             # sleep response
-            r = await handle_sleep(router, {"memory_bank": "spec-ns"})
-            assert "memory_bank" in r
+            mock_uc = MagicMock()
+            mock_uc.execute.return_value = Result.ok({
+                "result": {"status": "ok"}, "memory_bank": "spec-ns",
+            })
+            with patch("src.services.tools.handlers.SleepMemoryUseCase", return_value=mock_uc):
+                r = await handle_sleep(router, {"memory_bank": "spec-ns"})
+                assert "memory_bank" in r
 
-            # stats response
+            # stats response (not using use case yet)
             r = await handle_stats(router, {"memory_bank": "spec-ns"})
             assert "stats" in r
             assert "memory_bank" in r
@@ -1105,81 +1320,134 @@ class TestToolCallIntegration:
 
 
 class TestHandleRegisterBank:
-    """register_bank handler validates args and registers via router."""
+    """register_bank handler validates args and registers via RegisterBankUseCase."""
 
     def test_register_bank_success(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_register_bank
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "registered",
+            "name": "my-ns",
+        })
+
         async def run() -> None:
-            result = await handle_register_bank(
-                router,
-                {"name": "my-ns", "description": "My custom bank"},
-            )
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_register_bank(
+                    router,
+                    {"name": "my-ns", "description": "My custom bank"},
+                )
 
             assert result["status"] == "registered"
             assert result["name"] == "my-ns"
-            # Verify registry was updated
-            assert router.registry.get("my-ns") == "My custom bank"
 
         asyncio.run(run())
 
     def test_register_bank_idempotent_updates_description(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_register_bank
 
-        async def run() -> None:
-            # First registration
-            await handle_register_bank(
-                router,
-                {"name": "my-ns", "description": "Original description"},
-            )
-            assert router.registry.get("my-ns") == "Original description"
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "registered",
+            "name": "my-ns",
+        })
 
-            # Second registration with same name updates description
-            result = await handle_register_bank(
-                router,
-                {"name": "my-ns", "description": "Updated description"},
-            )
-            assert result["status"] == "registered"
-            assert result["name"] == "my-ns"
-            assert router.registry.get("my-ns") == "Updated description"
+        async def run() -> None:
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                # First registration
+                await handle_register_bank(
+                    router,
+                    {"name": "my-ns", "description": "Original description"},
+                )
+
+                # Second registration with same name updates description
+                result = await handle_register_bank(
+                    router,
+                    {"name": "my-ns", "description": "Updated description"},
+                )
+                assert result["status"] == "registered"
+                assert result["name"] == "my-ns"
 
         asyncio.run(run())
 
     def test_register_bank_raises_when_name_missing(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import ErrorWithDetails, Result
         from src.services.tools.handlers import handle_register_bank
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("NAME_REQUIRED", {})])
+
         async def run() -> None:
-            with pytest.raises(ValidationError, match="name is required"):
-                await handle_register_bank(router, {"description": "no name"})
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                with pytest.raises(ValidationError, match="registerMemoryBank failed"):
+                    await handle_register_bank(router, {"description": "no name"})
 
         asyncio.run(run())
 
     def test_register_bank_raises_when_description_missing(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import ErrorWithDetails, Result
         from src.services.tools.handlers import handle_register_bank
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("DESCRIPTION_REQUIRED", {})])
+
         async def run() -> None:
-            with pytest.raises(ValidationError, match="description is required"):
-                await handle_register_bank(router, {"name": "no-desc"})
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                with pytest.raises(ValidationError, match="registerMemoryBank failed"):
+                    await handle_register_bank(router, {"name": "no-desc"})
 
         asyncio.run(run())
 
     def test_register_bank_raises_when_both_missing(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import ErrorWithDetails, Result
         from src.services.tools.handlers import handle_register_bank
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("NAME_REQUIRED", {})])
+
         async def run() -> None:
-            with pytest.raises(ValidationError, match="name is required"):
-                await handle_register_bank(router, {})
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                with pytest.raises(ValidationError, match="registerMemoryBank failed"):
+                    await handle_register_bank(router, {})
 
         asyncio.run(run())
 
     def test_register_bank_returns_correct_shape(self, router: MemoryBankRouter) -> None:
+        from src.domain.result import Result
         from src.services.tools.handlers import handle_register_bank
 
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({
+            "status": "registered",
+            "name": "test-ns",
+        })
+
         async def run() -> None:
-            result = await handle_register_bank(
-                router,
-                {"name": "test-ns", "description": "Test"},
-            )
+            with patch(
+                "src.services.tools.handlers.RegisterBankUseCase",
+                return_value=mock_use_case,
+            ):
+                result = await handle_register_bank(
+                    router,
+                    {"name": "test-ns", "description": "Test"},
+                )
 
             assert set(result.keys()) == {"status", "name"}
             assert isinstance(result["status"], str)

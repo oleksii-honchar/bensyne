@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Dict
 
 from src.domain.models import InstancePoolConfig
+from src.utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
-    from src.infrastructure.mnemosyne.client import MnemosyneClient
+    from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 DEFAULT_BANK = "default"
 
@@ -41,4 +40,4 @@ def evict_if_over_limit(
 
         target = min(non_default.keys(), key=lambda k: non_default[k].created_at)
         del instances[target]
-        logger.info("Evicted oldest instance: %s", target)
+        logger.info("Evicted oldest instance", memory_bank=target)

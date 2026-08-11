@@ -1,22 +1,24 @@
-"""Memory bank router with async locking and LRU eviction."""
+"""Memory bank router with async locking and LRU eviction.
+
+Uses the new Result-returning MnemosyneClient and structured logging.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
-from typing import TYPE_CHECKING, Dict, Optional, Set
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from asyncio import Lock
 
 from src.domain.models import InstancePoolConfig
-from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.infrastructure.mnemosyne.client import MnemosyneClient
+from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.services.bank.pool import evict_if_over_limit
 from src.services.bank.registry import MemoryBankRegistry
+from src.utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MemoryBankRouter:
@@ -27,18 +29,18 @@ class MemoryBankRouter:
     - Default instance created at boot
     - Dynamic instance creation on first request per memory bank
     - LRU eviction (oldest created non-default) when over max_instances
+    - Structured logging for instance creation and eviction
     """
 
-    def __init__(self, config: InstancePoolConfig, bank_manager: BankManager) -> None:
+    def __init__(self, config: InstancePoolConfig) -> None:
         self.config = config
-        self.bank_manager = bank_manager
         self.registry = MemoryBankRegistry()
         self.instances: Dict[str, MnemosyneClient] = {}
         self._lock: Optional[Lock] = None
 
         # Start default instance at boot
         self.instances["default"] = self._create_instance("default")
-        logger.info("Default memory bank instance created")
+        logger.info("Default memory bank instance created", memory_bank="default")
 
     def _get_lock(self) -> Lock:
         """Lazy-initialize asyncio.Lock to avoid event loop issues in tests."""
@@ -48,8 +50,15 @@ class MemoryBankRouter:
 
     def _create_instance(self, memory_bank: str) -> MnemosyneClient:
         """Create a new MnemosyneClient for the given memory bank."""
-        client = MnemosyneClient(memory_bank=memory_bank, bank_manager=self.bank_manager)
-        logger.info("Created instance for memory_bank: %s", memory_bank)
+        client = MnemosyneClient(
+            memory_bank=memory_bank,
+            data_dir=self.config.data_dir,
+        )
+        logger.info(
+            "Created MnemosyneClient instance",
+            memory_bank=memory_bank,
+            data_dir=self.config.data_dir,
+        )
         return client
 
     async def get_instance(self, memory_bank: str) -> MnemosyneClient:
@@ -62,24 +71,33 @@ class MemoryBankRouter:
             MnemosyneClient instance for the memory bank.
         """
         logger.debug(
-            "[router] get_instance called for memory_bank=%s, current_instances=%s",
-            memory_bank,
-            list(self.instances.keys()),
+            "[router] get_instance called",
+            memory_bank=memory_bank,
+            current_instances=list(self.instances.keys()),
         )
 
         # First check (before lock) — fast path for cached instances
         if memory_bank in self.instances:
             self.instances[memory_bank].last_accessed = time.time()
-            logger.debug("[router] HIT cached instance for memory_bank=%s", memory_bank)
+            logger.debug(
+                "[router] HIT cached instance",
+                memory_bank=memory_bank,
+            )
             return self.instances[memory_bank]
 
         async with self._get_lock():
             # Second check (after lock) — prevent duplicate creation
             if memory_bank not in self.instances:
-                logger.debug("[router] Creating new instance for memory_bank=%s", memory_bank)
+                logger.debug(
+                    "[router] Creating new instance",
+                    memory_bank=memory_bank,
+                )
                 self.instances[memory_bank] = self._create_instance(memory_bank)
                 await self._evict_if_over_limit()
-                logger.debug("[router] Active instances after creation: %s", list(self.instances.keys()))
+                logger.debug(
+                    "[router] Active instances after creation",
+                    active_instances=list(self.instances.keys()),
+                )
             return self.instances[memory_bank]
 
     async def _evict_if_over_limit(self) -> None:
@@ -93,6 +111,14 @@ class MemoryBankRouter:
     def get_active_banks(self) -> Set[str]:
         """Return set of active memory bank names for health endpoint."""
         return set(self.instances.keys())
+
+    def list_banks(self) -> List[str]:
+        """Return list of active memory bank names.
+
+        Returns:
+            List of memory bank name strings currently in the instance pool.
+        """
+        return list(self.instances.keys())
 
     def get_bank_description(self, memory_bank: str) -> str | None:
         """Get description for a memory bank from the registry.
@@ -113,3 +139,8 @@ class MemoryBankRouter:
             description: Human-readable description.
         """
         self.registry.register(name, description)
+        logger.info(
+            "Memory bank registered",
+            memory_bank=name,
+            description=description,
+        )

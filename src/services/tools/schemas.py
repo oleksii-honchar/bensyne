@@ -8,7 +8,7 @@ MEMORY_BANK_PARAM = {
 }
 
 REMEMBER_SCHEMA = {
-    "name": "memory_remember",
+    "name": "rememberMemory",
     "description": "Store a durable memory in Mnemosyne. Use for any fact, preference, identity, insight, or context that should persist across sessions. Higher importance (0.0-1.0) surfaces the memory more often.",
     "parameters": {
         "type": "object",
@@ -16,6 +16,7 @@ REMEMBER_SCHEMA = {
             "content": {"type": "string", "description": "The memory content to store."},
             "importance": {"type": "number", "description": "Importance 0.0-1.0. Default 0.5.", "default": 0.5},
             "source": {"type": "string", "description": "Source tag (e.g., user, tool, system). Default 'mcp'.", "default": "mcp"},
+            "scope": {"type": "string", "description": "Scope tag to categorize the memory (e.g., project, personal, system)."},
             **MEMORY_BANK_PARAM,
         },
         "required": ["content", "memory_bank"],
@@ -23,7 +24,7 @@ REMEMBER_SCHEMA = {
 }
 
 RECALL_SCHEMA = {
-    "name": "memory_recall",
+    "name": "recallMemory",
     "description": "Search Mnemosyne for relevant memories. Returns ranked results by vector similarity and text match.",
     "parameters": {
         "type": "object",
@@ -37,7 +38,7 @@ RECALL_SCHEMA = {
 }
 
 FORGET_SCHEMA = {
-    "name": "memory_forget",
+    "name": "forgetMemory",
     "description": "Permanently delete a memory by ID.",
     "parameters": {
         "type": "object",
@@ -50,7 +51,7 @@ FORGET_SCHEMA = {
 }
 
 UPDATE_SCHEMA = {
-    "name": "memory_update",
+    "name": "updateMemory",
     "description": "Update the content or importance of an existing memory by ID.",
     "parameters": {
         "type": "object",
@@ -65,7 +66,7 @@ UPDATE_SCHEMA = {
 }
 
 SLEEP_SCHEMA = {
-    "name": "memory_sleep",
+    "name": "sleepMemory",
     "description": "Run the Mnemosyne consolidation cycle. Compresses old working memories into episodic summaries.",
     "parameters": {
         "type": "object",
@@ -77,7 +78,7 @@ SLEEP_SCHEMA = {
 }
 
 STATS_SCHEMA = {
-    "name": "memory_stats",
+    "name": "getMemoryStats",
     "description": "Return Mnemosyne memory statistics: working count, episodic count.",
     "parameters": {
         "type": "object",
@@ -89,7 +90,7 @@ STATS_SCHEMA = {
 }
 
 LIST_BANKS_SCHEMA = {
-    "name": "memory_list_banks",
+    "name": "listMemoryBanks",
     "description": "List all available memory banks with their status and memory counts.",
     "parameters": {
         "type": "object",
@@ -98,7 +99,7 @@ LIST_BANKS_SCHEMA = {
 }
 
 REGISTER_BANK_SCHEMA = {
-    "name": "memory_register_bank",
+    "name": "registerMemoryBank",
     "description": "Register a new memory bank with a description. Use to create named banks for isolating different memory contexts (e.g., projects, users, domains).",
     "parameters": {
         "type": "object",

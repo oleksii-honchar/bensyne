@@ -10,6 +10,8 @@ dependencies = [
   "python-dotenv>=1.0.0,<2.0.0",
   "pyyaml>=6.0.2,<7.0.0",
   "starlette>=1.0.1,<2.0.0",
+  "dependency-injector>=4.41.0,<5.0.0",
+  "structlog>=23.0.0,<24.0.0",
   "uvicorn>=0.32.0,<1.0.0",
 ]
 
@@ -33,6 +35,19 @@ line-length = 120
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/tests/*", "*/egg-info/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
