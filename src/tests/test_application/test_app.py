@@ -222,7 +222,6 @@ class TestMainEntryPoints:
         with patch.object(sys, "argv", test_args), \
              patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
              patch("src.utils.logging.setup_logging") as mock_setup_logging, \
-             patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
              patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
              patch("src.app.create_application") as mock_create_app, \
              patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready, \
@@ -253,7 +252,6 @@ class TestMainEntryPoints:
             # Verify startup sequence was called in order
             assert MockConfigManager.called
             assert mock_setup_logging.called
-            assert MockBankManager.called
             assert MockMemoryBankRouter.called
             assert mock_create_app.called
             assert mock_mark_ready.called

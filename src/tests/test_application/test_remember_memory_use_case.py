@@ -62,7 +62,7 @@ class TestRememberMemoryUseCase:
     def test_execute_returns_deduplicated_when_hash_exists(self, use_case, hash_index_service) -> None:
         """When hash index already has the hash, return deduplicated status."""
         existing_id = "existing_memory_id"
-        hash_index_service.lookup.return_value = existing_id
+        hash_index_service.lookup.return_value = Result.ok(existing_id)
 
         result = use_case.execute({
             "content": "file content",
@@ -111,7 +111,7 @@ class TestRememberMemoryUseCase:
         """Hash should be stored in hash index after successful save."""
         memory = a_memory(id="new_memory_id")
         memory_repository.save.return_value = Result.ok(memory)
-        hash_index_service.lookup.return_value = None  # No dedup — new hash
+        hash_index_service.lookup.return_value = Result.ok(None)  # No dedup — new hash
         test_hash = "b" * 64
 
         use_case.execute({
@@ -140,9 +140,10 @@ class TestRememberMemoryUseCase:
 
     def test_execute_returns_ko_when_memory_of_fails(self, use_case) -> None:
         """When Memory.of fails validation, return Result.ko."""
-        # Memory.of requires id; omitting it should fail
+        # Invalid scope triggers Memory.of validation failure
         result = use_case.execute({
             "content": "some content",
+            "scope": "invalid_scope",
         })
 
         assert result.is_ko is True

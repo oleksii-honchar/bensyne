@@ -5,7 +5,7 @@ and returns Result with results and memory_bank.
 """
 
 import structlog.stdlib
-from src.infrastructure.mnemosyne.client import MnemosyneClient
+from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.utils.result import ErrorWithDetails, Result
 
@@ -29,9 +29,11 @@ class RecallMemoryUseCase(BaseUseCase[dict, dict]):
         limit = parameters.get("limit", 10)
         memory_bank = parameters.get("memory_bank", "default")
 
-        results = self.mnemosyne_client.recall(query, limit)
+        recall_result = self.mnemosyne_client.recall(query, limit)
+        if recall_result.is_ko:
+            return recall_result
 
         return Result.ok({
-            "results": results,
+            "results": recall_result.value,
             "memory_bank": memory_bank,
         })

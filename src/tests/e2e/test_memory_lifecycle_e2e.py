@@ -40,27 +40,21 @@ def mock_mnemosyne_client() -> MagicMock:
     # remember: used by RememberMemoryUseCase as MemoryRepository.save() → returns Result
     client.save = MagicMock(return_value=Result.ok(a_memory(id="mem-001")))
 
-    # recall: used by RecallMemoryUseCase → expects raw list
-    client.recall = MagicMock(return_value=[
+    # recall: used by RecallMemoryUseCase → returns Result[List[Dict]]
+    client.recall = MagicMock(return_value=Result.ok([
         {"id": "mem-001", "content": "test memory", "score": 0.9},
-    ])
+    ]))
 
-    # forget: used by ForgetMemoryUseCase → expects raw dict with .get("status")
-    client.forget = MagicMock(return_value={
-        "id": "mem-001",
-        "status": "deleted",
-    })
+    # forget: used by ForgetMemoryUseCase → returns Result[bool]
+    client.forget = MagicMock(return_value=Result.ok(True))
 
-    # update: used by UpdateMemoryUseCase → expects raw dict with ["status"]
-    client.update = MagicMock(return_value={
-        "id": "mem-001",
-        "status": "updated",
-    })
+    # update: used by UpdateMemoryUseCase → returns Result[bool]
+    client.update = MagicMock(return_value=Result.ok(True))
 
-    # sleep: used by SleepUseCase → expects raw dict
-    client.sleep = MagicMock(return_value={
+    # sleep: used by SleepUseCase → returns Result[Dict]
+    client.sleep = MagicMock(return_value=Result.ok({
         "status": "consolidated",
-    })
+    }))
 
     # stats: used directly by handlers → returns Result (handler checks .is_ok)
     client.stats = MagicMock(return_value=Result.ok({
@@ -160,6 +154,7 @@ class TestMemoryLifecycle:
         forget_result = await handle_forget(
             mock_router,
             {"memory_bank": bank, "memory_id": "mem-lifecycle-1"},
+            bank_type_checker=lambda bank: "pure_memories",
         )
         assert forget_result["status"] == "deleted"
         assert forget_result["memory_bank"] == bank
@@ -235,7 +230,7 @@ class TestMemoryLifecycle:
 
         # --- Forget memory via ForgetMemoryUseCase ---
         mock_client = MagicMock()
-        mock_client.forget.return_value = {"id": "e2e-mem-1", "status": "deleted"}
+        mock_client.forget.return_value = Result.ok(True)
 
         forget_uc = ForgetMemoryUseCase(
             mnemosyne_client=mock_client,
@@ -273,7 +268,7 @@ class TestMemoryDeduplication:
 
         mock_hash_service = MagicMock(spec=HashIndexService)
         existing_id = "existing-mem-id"
-        mock_hash_service.lookup.return_value = existing_id
+        mock_hash_service.lookup.return_value = Result.ok(existing_id)
 
         repo = a_memory_repository()
         logger = LoggerMock()
@@ -341,7 +336,7 @@ class TestMemoryDeduplication:
         from src.utils.structured_logging import LoggerMock
 
         mock_hash_service = MagicMock(spec=HashIndexService)
-        mock_hash_service.lookup.return_value = None  # New hash
+        mock_hash_service.lookup.return_value = Result.ok(None)  # New hash
 
         logger = LoggerMock()
 
@@ -477,7 +472,7 @@ class TestErrorHandling:
         from src.infrastructure.mcp.handlers import handle_forget
 
         with pytest.raises(ValidationError):
-            await handle_forget(mock_router, {"memory_bank": "default"})
+            await handle_forget(mock_router, {"memory_bank": "default"}, bank_type_checker=lambda bank: "pure_memories")
 
     async def test_update_raises_validation_error_when_memory_id_missing(
         self,
@@ -615,15 +610,15 @@ class TestMemoryBankIsolation:
         # Create two isolated mock clients, one per bank
         client_a = MagicMock()
         client_a.memory_bank = "bank_a"
-        client_a.recall = MagicMock(return_value=[
+        client_a.recall = MagicMock(return_value=Result.ok([
             {"id": "mem-a-1", "content": "Bank A memory", "score": 0.9},
-        ])
+        ]))
 
         client_b = MagicMock()
         client_b.memory_bank = "bank_b"
-        client_b.recall = MagicMock(return_value=[
+        client_b.recall = MagicMock(return_value=Result.ok([
             {"id": "mem-b-1", "content": "Bank B memory", "score": 0.9},
-        ])
+        ]))
 
         router = MagicMock()
 
@@ -722,11 +717,11 @@ class TestMemoryBankIsolation:
 
         client_a = MagicMock()
         client_a.memory_bank = "bank_a"
-        client_a.forget.return_value = {"id": "mem-a", "status": "deleted"}
+        client_a.forget.return_value = Result.ok(True)
 
         client_b = MagicMock()
         client_b.memory_bank = "bank_b"
-        client_b.forget.return_value = {"id": "mem-b", "status": "deleted"}
+        client_b.forget.return_value = Result.ok(True)
 
         router = MagicMock()
 
@@ -741,6 +736,7 @@ class TestMemoryBankIsolation:
         result = await handle_forget(
             router,
             {"memory_bank": "bank_a", "memory_id": "mem-a"},
+            bank_type_checker=lambda bank: "pure_memories",
         )
         assert result["status"] == "deleted"
         assert result["memory_bank"] == "bank_a"
@@ -816,6 +812,7 @@ class TestMCPToolInterfacesPreserved:
         result = await handle_forget(
             mock_router,
             {"memory_bank": "default", "memory_id": "mem-001"},
+            bank_type_checker=lambda bank: "pure_memories",
         )
 
         assert isinstance(result, dict)

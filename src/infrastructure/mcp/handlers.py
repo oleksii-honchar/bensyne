@@ -11,7 +11,7 @@ router/client directly. Each handler:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
@@ -107,7 +107,7 @@ async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
 
 
 @log_tool_call("forgetMemory")
-async def handle_forget(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_forget(router: MemoryBankRouter, arguments: dict, bank_type_checker: Callable[[str], str] | None = None) -> dict:
     """Delete a memory from the specified memory bank.
 
     Only allowed on "pure_memories" banks — banks with file associations
@@ -150,16 +150,25 @@ async def handle_forget(router: MemoryBankRouter, arguments: dict) -> dict:
     )
 
     # Bank type checker: determine if this bank is "pure_memories"
-    def _bank_type_checker(bank_name: str) -> str:
-        """Return the bank type for a given bank name.
+    if bank_type_checker is None:
+        def _bank_type_checker(bank_name: str) -> str:
+            """Return the bank type for a given bank name.
 
-        A bank is "file_metadata" if it has file metadata stored (SQLite DB exists),
-        otherwise it's "pure_memories".
-        """
-        db_path = Path(router.config.data_dir) / bank_name / "file_metadata.db"
-        if db_path.exists():
-            return "file_metadata"
-        return "pure_memories"
+            A bank is "file_metadata" if it has file metadata stored (SQLite DB exists),
+            otherwise it's "pure_memories".
+
+            Path resolution mirrors MnemosyneClient:
+            - default bank: data_dir/file_metadata.db
+            - custom bank: data_dir/banks/bank_name/file_metadata.db
+            """
+            if bank_name == "default":
+                db_path = Path(router.config.data_dir) / "file_metadata.db"
+            else:
+                db_path = Path(router.config.data_dir) / "banks" / bank_name / "file_metadata.db"
+            if db_path.exists():
+                return "file_metadata"
+            return "pure_memories"
+        bank_type_checker = _bank_type_checker
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
@@ -170,7 +179,7 @@ async def handle_forget(router: MemoryBankRouter, arguments: dict) -> dict:
         logger=logger,
         file_service=file_service,
         chunk_repository=chunk_repo,
-        bank_type_checker=_bank_type_checker,
+        bank_type_checker=bank_type_checker,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "forgetMemory")

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, TYPE_CHECKING
 
 import structlog.stdlib
-from src.infrastructure.mnemosyne.client import MnemosyneClient
+from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.infrastructure.mcp.hash_index_service import HashIndexService
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.utils.result import ErrorWithDetails, Result
@@ -63,14 +63,21 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
             })])
 
         forget_result = self.mnemosyne_client.forget(memory_id)
+        if not forget_result.is_ok:
+            return forget_result
+
+        # Mnemosyne.forget returns bool — True means deleted, False means not found
+        deleted = forget_result.value
+        status = "deleted" if deleted else "not_found"
 
         # Only clean up related files and hash index if memory was actually deleted
-        if forget_result.get("status") == "deleted":
+        if deleted:
             self._cleanup_chunks_and_files(memory_id)
             self.hash_index_service.remove(memory_id)
 
         return Result.ok({
-            "status": forget_result["status"],
+            "status": status,
+            "memory_id": memory_id,
             "memory_bank": memory_bank,
         })
 

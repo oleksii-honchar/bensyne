@@ -4,15 +4,15 @@ Validates input, creates Memory entity, checks hash index for
 deduplication, and saves via repository.
 """
 
+import uuid
 from typing import Optional
 
 import structlog.stdlib
 from src.infrastructure.mcp.hash_index_service import HashIndexService
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.memory_entity import Memory
-from src.tests.test_domain.domain_test_utils import InMemoryMemoryRepository
+from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 
-MemoryRepository = InMemoryMemoryRepository  # concrete type, no ABC
 from src.utils.result import ErrorWithDetails, Result
 
 
@@ -21,7 +21,7 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
 
     def __init__(
         self,
-        memory_repository: MemoryRepository,
+        memory_repository: MnemosyneClient,
         hash_index_service: HashIndexService,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
@@ -53,8 +53,9 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                 use_case="remember_memory",
                 file_hash=file_hash[:16],
             )
-            existing_memory_id = self.hash_index_service.lookup(file_hash)
-            if existing_memory_id:
+            lookup_result = self.hash_index_service.lookup(file_hash)
+            if lookup_result.is_ok and lookup_result.value:
+                existing_memory_id = lookup_result.value
                 self.logger.info(
                     "Memory deduplicated",
                     use_case="remember_memory",
@@ -65,8 +66,10 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                     "memory_id": existing_memory_id,
                 })
 
-        # 2. Create memory entity
-        memory_result = Memory.of(parameters)
+        # 2. Create memory entity — generate id if not provided
+        create_params = dict(parameters)
+        create_params.setdefault("id", str(uuid.uuid4()))
+        memory_result = Memory.of(create_params)
         if not memory_result.is_ok:
             self.logger.error(
                 "Memory creation failed",
@@ -82,7 +85,7 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
             memory_id=memory.id,
         )
 
-        # 3. Save memory
+        # 3. Save memory — save may return a Memory with a different (actual) id
         save_result = self.memory_repository.save(memory)
         if not save_result.is_ok:
             self.logger.error(
@@ -93,19 +96,22 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
             )
             return save_result
 
+        # Use the saved memory — it may have a different id than the input
+        saved_memory = save_result.value
+
         # 4. Index hash if applicable
-        if file_hash and memory.id:
-            self.hash_index_service.store(file_hash, memory.id)
+        if file_hash and saved_memory.id:
+            self.hash_index_service.store(file_hash, saved_memory.id)
             self.logger.info(
                 "Hash indexed",
                 use_case="remember_memory",
-                memory_id=memory.id,
+                memory_id=saved_memory.id,
                 file_hash=file_hash[:16],
             )
 
         return Result.ok({
             "status": "stored",
-            "memory_id": memory.id,
+            "memory_id": saved_memory.id,
             "memory_bank": memory_bank,
         })
 

@@ -31,7 +31,7 @@ if _env_path.exists():
                     os.environ.setdefault(key.strip(), value.strip())
 
 from src.infrastructure.config.manager import ConfigManager
-from src.infrastructure.mnemosyne.bank_manager import BankManager
+
 from src.infrastructure.bank.router import MemoryBankRouter
 from src.app import create_application
 from src.middleware.health import mark_default_instance_ready
@@ -95,17 +95,8 @@ def main() -> None:
                 config.server.port, config.instance_pool.data_dir,
                 config.logging.level, config.logging.log_file)
 
-    # Step 3: Create BankManager with configured data_dir
-    bank_manager = BankManager(
-        data_dir=config.instance_pool.data_dir,
-        default_bank=config.instance_pool.default_bank,
-    )
-
-    # Step 4: Create MemoryBankRouter — creates default instance at boot
-    router = MemoryBankRouter(
-        config=config.instance_pool,
-        bank_manager=bank_manager,
-    )
+    # Step 3: Create MemoryBankRouter — creates default instance at boot
+    router = MemoryBankRouter(config=config.instance_pool)
 
     # Step 5: Create FastMCP server, register all tools with router injected
     app = create_application(config, router)

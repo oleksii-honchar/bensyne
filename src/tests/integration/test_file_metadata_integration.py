@@ -969,7 +969,7 @@ class TestForgetMemoryUseCaseIntegration:
         assert file_before.value.status != FileStatus.DELETED
 
         # Set up use case
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_int_1"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
@@ -1023,7 +1023,7 @@ class TestForgetMemoryUseCaseIntegration:
         assert len(chunks_before.value) == 2
 
         # Forget one memory
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_int_2a"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
@@ -1093,7 +1093,7 @@ class TestForgetMemoryUseCaseIntegration:
         service.create_file(_file_data(id="f_int_4", path="/tmp/forget_notfound.py"))
         service.link_chunk(file_id="f_int_4", memory_id="mem_int_4", chunk_index=0)
 
-        mnemosyne_client.forget.return_value = {"status": "not_found", "memory_id": "mem_int_4"}
+        mnemosyne_client.forget.return_value = Result.ok(False)
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,

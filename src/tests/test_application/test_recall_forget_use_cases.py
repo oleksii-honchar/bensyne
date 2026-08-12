@@ -56,7 +56,7 @@ class TestRecallMemoryUseCase:
     def test_execute_returns_results_when_recall_succeeds(self, use_case, mnemosyne_client) -> None:
         """When recall succeeds, return Result.ok with results and memory_bank."""
         mock_results = [{"id": "mem_1", "content": "Some memory"}]
-        mnemosyne_client.recall.return_value = mock_results
+        mnemosyne_client.recall.return_value = Result.ok(mock_results)
 
         result = use_case.execute({
             "query": "search term",
@@ -71,7 +71,7 @@ class TestRecallMemoryUseCase:
 
     def test_execute_uses_default_limit(self, use_case, mnemosyne_client) -> None:
         """When no limit is provided, use default limit of 10."""
-        mnemosyne_client.recall.return_value = []
+        mnemosyne_client.recall.return_value = Result.ok([])
 
         use_case.execute({
             "query": "search term",
@@ -153,7 +153,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_returns_deleted_when_forget_succeeds(self, use_case, mnemosyne_client, hash_index_service) -> None:
         """When forget succeeds, return Result.ok with deleted status and clean hash index."""
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
         hash_index_service.remove.return_value = "a" * 64
 
         result = use_case.execute({
@@ -169,7 +169,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_cleans_hash_index_on_successful_deletion(self, use_case, mnemosyne_client, hash_index_service) -> None:
         """Hash index must be cleaned on successful deletion."""
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -179,7 +179,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_does_not_clean_hash_index_on_not_found(self, use_case, mnemosyne_client, hash_index_service) -> None:
         """Hash index should not be cleaned when memory was not found."""
-        mnemosyne_client.forget.return_value = {"status": "not_found", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(False)
 
         result = use_case.execute({
             "memory_id": "mem_123",
@@ -225,7 +225,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=MagicMock(),
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         result = use_case.execute({
             "memory_id": "mem_123",
@@ -272,7 +272,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -296,7 +296,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -319,7 +319,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "not_found", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(False)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -369,7 +369,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -416,7 +416,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",
@@ -463,7 +463,7 @@ class TestForgetMemoryUseCase:
             chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
-        mnemosyne_client.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
+        mnemosyne_client.forget.return_value = Result.ok(True)
 
         use_case.execute({
             "memory_id": "mem_123",

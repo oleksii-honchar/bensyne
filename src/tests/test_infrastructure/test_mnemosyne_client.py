@@ -126,7 +126,7 @@ class TestMnemosyneClientRecall:
 
         assert result.is_ok
         assert result.value == [{"id": "mem_1", "content": "hello"}]
-        mock_mnemosyne_instance.recall.assert_called_once_with(query="hello", limit=5)
+        mock_mnemosyne_instance.recall.assert_called_once_with(query="hello", top_k=5)
 
     def test_returns_result_ko_on_exception(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
         """recall() returns Result.ko with DATABASE_ERROR when library raises."""
@@ -143,7 +143,7 @@ class TestMnemosyneClientRecall:
         result = client.recall(query="test")
 
         assert result.is_ok
-        mock_mnemosyne_instance.recall.assert_called_once_with(query="test", limit=5)
+        mock_mnemosyne_instance.recall.assert_called_once_with(query="test", top_k=5)
 
 
 # ---------------------------------------------------------------------------
