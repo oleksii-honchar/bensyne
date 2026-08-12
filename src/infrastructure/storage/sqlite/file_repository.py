@@ -27,8 +27,8 @@ def _orm_to_file(orm: FileORM) -> File:
     keywords_raw = orm.keywords
     tags_raw = orm.tags
 
-    aggregated_keywords: List[str] = json.loads(keywords_raw) if keywords_raw else []
-    aggregated_tags: List[str] = json.loads(tags_raw) if tags_raw else []
+    aggregated_keywords: list[str] = json.loads(keywords_raw) if keywords_raw else []
+    aggregated_tags: list[str] = json.loads(tags_raw) if tags_raw else []
 
     created_at = orm.created_at if orm.created_at else datetime.now()
     updated_at = orm.updated_at if orm.updated_at else created_at
@@ -109,7 +109,7 @@ class FileRepository:
     # get_file_by_id
     # ------------------------------------------------------------------
 
-    def get_file_by_id(self, file_id: str) -> Result[Optional[File]]:
+    def get_file_by_id(self, file_id: str) -> Result[File | None]:
         """Find a file by its id."""
         session = self._conn_manager.get_session()
         try:
@@ -126,7 +126,7 @@ class FileRepository:
     # get_file_by_path
     # ------------------------------------------------------------------
 
-    def get_file_by_path(self, path: str) -> Result[Optional[File]]:
+    def get_file_by_path(self, path: str) -> Result[File | None]:
         """Find a file by its path."""
         session = self._conn_manager.get_session()
         try:
@@ -145,7 +145,7 @@ class FileRepository:
     # list_files
     # ------------------------------------------------------------------
 
-    def list_files(self) -> Result[List[File]]:
+    def list_files(self) -> Result[list[File]]:
         """List all saved files."""
         session = self._conn_manager.get_session()
         try:
@@ -163,7 +163,7 @@ class FileRepository:
     # search_files_by_query
     # ------------------------------------------------------------------
 
-    def search_files_by_query(self, query: str) -> Result[List[File]]:
+    def search_files_by_query(self, query: str) -> Result[list[File]]:
         """Search files by query across path, keywords, and tags using FTS5."""
         session = self._conn_manager.get_session()
         try:
@@ -179,7 +179,7 @@ class FileRepository:
             )
             rows = result.fetchall()
             # Convert to ORM objects via the session
-            files: List[File] = []
+            files: list[File] = []
             for row in rows:
                 orm = session.get(FileORM, row[0])
                 if orm is not None:

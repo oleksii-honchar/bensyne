@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from asyncio import Lock
@@ -35,8 +35,8 @@ class MemoryBankRouter:
     def __init__(self, config: InstancePoolConfig) -> None:
         self.config = config
         self.registry = MemoryBankRegistry()
-        self.instances: Dict[str, MnemosyneClient] = {}
-        self._lock: Optional[Lock] = None
+        self.instances: dict[str, MnemosyneClient] = {}
+        self._lock: Lock | None = None
 
         # Start default instance at boot
         self.instances["default"] = self._create_instance("default")
@@ -108,11 +108,11 @@ class MemoryBankRouter:
         """Return count of active instances for health endpoint."""
         return len(self.instances)
 
-    def get_active_banks(self) -> Set[str]:
+    def get_active_banks(self) -> set[str]:
         """Return set of active memory bank names for health endpoint."""
         return set(self.instances.keys())
 
-    def list_banks(self) -> List[str]:
+    def list_banks(self) -> list[str]:
         """Return list of active memory bank names.
 
         Returns:

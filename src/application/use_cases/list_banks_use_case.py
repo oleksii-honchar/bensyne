@@ -27,6 +27,12 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
 
     def execute_internal(self, parameters: dict) -> Result[dict]:
         """Build merged list of active instances and registered banks."""
+        self.logger.info(
+            "Listing banks",
+            use_case="list_banks",
+            method="execute_internal",
+        )
+
         banks = []
         seen = set()
 
@@ -61,5 +67,12 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
                     "memory_count": 0,
                     "status": "registered",
                 })
+
+        self.logger.info(
+            "Banks listed",
+            use_case="list_banks",
+            method="execute_internal",
+            banks_count=len(banks),
+        )
 
         return Result.ok({"banks": banks})

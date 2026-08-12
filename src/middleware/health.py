@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from typing import TYPE_CHECKING, Deque, List
+from typing import TYPE_CHECKING, Deque
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -52,7 +52,7 @@ def _add_log(source: str, message: str) -> None:
 async def health_handler(request: Request) -> JSONResponse:
     """GET /health — returns overall health status with instance count."""
     instances = 0
-    banks: List[str] = []
+    banks: list[str] = []
 
     if _memory_bank_router is not None:
         instances = _memory_bank_router.get_active_instances()

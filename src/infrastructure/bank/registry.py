@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
 
-DEFAULT_DESCRIPTIONS: Dict[str, str] = {
+DEFAULT_DESCRIPTIONS: dict[str, str] = {
     "default": "Default personal memory — general conversation context, preferences, and facts",
 }
 
@@ -16,7 +15,7 @@ class MemoryBankRegistry:
     """
 
     def __init__(self) -> None:
-        self._descriptions: Dict[str, str] = dict(DEFAULT_DESCRIPTIONS)
+        self._descriptions: dict[str, str] = dict(DEFAULT_DESCRIPTIONS)
 
     def register(self, name: str, description: str) -> None:
         """Register or update a memory bank description (idempotent upsert).
@@ -38,7 +37,7 @@ class MemoryBankRegistry:
         """
         return self._descriptions.get(name)
 
-    def list_banks(self) -> List[str]:
+    def list_banks(self) -> list[str]:
         """Return all registered memory bank names.
 
         Returns:

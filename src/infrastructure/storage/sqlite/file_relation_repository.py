@@ -89,7 +89,7 @@ class FileRelationRepository:
     # get_relation_by_id
     # ------------------------------------------------------------------
 
-    def get_relation_by_id(self, relation_id: str) -> Result[Optional[FileRelation]]:
+    def get_relation_by_id(self, relation_id: str) -> Result[FileRelation | None]:
         """Find a relation by its id."""
         session = self._conn_manager.get_session()
         try:
@@ -108,7 +108,7 @@ class FileRelationRepository:
     # get_relations_by_file_id
     # ------------------------------------------------------------------
 
-    def get_relations_by_file_id(self, file_id: str) -> Result[List[FileRelation]]:
+    def get_relations_by_file_id(self, file_id: str) -> Result[list[FileRelation]]:
         """Find all relations where the given file is either source or target."""
         session = self._conn_manager.get_session()
         try:
@@ -127,7 +127,7 @@ class FileRelationRepository:
     # get_relations_by_type
     # ------------------------------------------------------------------
 
-    def get_relations_by_type(self, relation_type: RelationType) -> Result[List[FileRelation]]:
+    def get_relations_by_type(self, relation_type: RelationType) -> Result[list[FileRelation]]:
         """Find all relations of a given type."""
         session = self._conn_manager.get_session()
         try:

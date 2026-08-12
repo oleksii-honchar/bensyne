@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -29,7 +28,7 @@ class FileChunkSchema(BaseModel):
     chunk_index: int = Field(ge=0)
     start_line: int = Field(default=0, ge=0)
     end_line: int = Field(default=0, ge=0)
-    content_hash: Optional[str] = None
+    content_hash: str | None = None
     content_type: ContentType = Field(default=ContentType.UNKNOWN)
     is_partial: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.now)
@@ -37,7 +36,7 @@ class FileChunkSchema(BaseModel):
 
     @field_validator("content_hash")
     @classmethod
-    def validate_content_hash(cls, v: Optional[str]) -> Optional[str]:
+    def validate_content_hash(cls, v: str | None) -> str | None:
         if v is None:
             return v
         result = FileHash.of(v)

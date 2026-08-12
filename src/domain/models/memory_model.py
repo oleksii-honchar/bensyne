@@ -1,7 +1,6 @@
 """Memory validation model using Pydantic."""
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,9 +14,9 @@ class MemorySchema(BaseModel):
     source: str = Field(default="conversation")
     scope: str = Field(default="working")
     created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: Optional[datetime] = None
-    veracity: Optional[float] = Field(ge=0.0, le=1.0, default=None)
-    metadata: Optional[dict] = None
+    updated_at: datetime | None = None
+    veracity: float | None = Field(ge=0.0, le=1.0, default=None)
+    metadata: dict | None = None
 
     @field_validator("scope")
     @classmethod

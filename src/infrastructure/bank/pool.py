@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 from src.domain.config_models import InstancePoolConfig
 from src.utils.structured_logging import get_logger
@@ -16,7 +16,7 @@ DEFAULT_BANK = "default"
 
 
 def evict_if_over_limit(
-    instances: Dict[str, MnemosyneClient],
+    instances: dict[str, MnemosyneClient],
     config: InstancePoolConfig,
 ) -> None:
     """Evict oldest (first created) non-default instance when over max limit.

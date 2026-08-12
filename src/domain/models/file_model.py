@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -36,20 +35,20 @@ class FileSchema(BaseModel):
     id: str
     path: str = Field(min_length=1)
     source_type: SourceType
-    hash: Optional[str] = None
-    file_type: Optional[str] = None
-    size: Optional[int] = Field(default=None, ge=0)
-    language: Optional[str] = None
-    aggregated_keywords: List[str] = Field(default_factory=list)
-    aggregated_tags: List[str] = Field(default_factory=list)
+    hash: str | None = None
+    file_type: str | None = None
+    size: int | None = Field(default=None, ge=0)
+    language: str | None = None
+    aggregated_keywords: list[str] = Field(default_factory=list)
+    aggregated_tags: list[str] = Field(default_factory=list)
     status: FileStatus = Field(default=FileStatus.PENDING)
-    summary: Optional[str] = None
+    summary: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
     @field_validator("hash")
     @classmethod
-    def validate_hash(cls, v: Optional[str]) -> Optional[str]:
+    def validate_hash(cls, v: str | None) -> str | None:
         if v is None:
             return v
         result = FileHash.of(v)

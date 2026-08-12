@@ -29,11 +29,29 @@ class RecallMemoryUseCase(BaseUseCase[dict, dict]):
         limit = parameters.get("limit", 10)
         memory_bank = parameters.get("memory_bank", "default")
 
+        self.logger.info(
+            "Recalling memory",
+            use_case="recall_memory",
+            method="execute_internal",
+            query=query,
+            limit=limit,
+            memory_bank=memory_bank,
+        )
+
         recall_result = self.mnemosyne_client.recall(query, limit)
         if recall_result.is_ko:
             return recall_result
 
+        results = recall_result.value
+        self.logger.info(
+            "Memory recalled",
+            use_case="recall_memory",
+            method="execute_internal",
+            results_count=len(results),
+            memory_bank=memory_bank,
+        )
+
         return Result.ok({
-            "results": recall_result.value,
+            "results": results,
             "memory_bank": memory_bank,
         })

@@ -1,6 +1,6 @@
 """API request/response models for memory operations."""
 
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -13,16 +13,16 @@ class MemoryOperationRequest(BaseModel):
     source: str = Field(default="conversation")
     scope: str = Field(default="working")
     memory_bank: str = Field(default="default")
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 class MemoryOperationResponse(BaseModel):
     """Response model for memory operations."""
 
     status: str
-    memory_id: Optional[str] = None
+    memory_id: str | None = None
     memory_bank: str = Field(default="default")
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class MemorySearchRequest(BaseModel):
@@ -36,6 +36,6 @@ class MemorySearchRequest(BaseModel):
 class MemorySearchResponse(BaseModel):
     """Response model for memory search."""
 
-    results: List[Any]
+    results: list[Any]
     memory_bank: str
     total_count: int = Field(default=0)

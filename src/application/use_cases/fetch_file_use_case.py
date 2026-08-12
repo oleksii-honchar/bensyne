@@ -11,6 +11,7 @@ Flow:
 
 from __future__ import annotations
 
+import structlog.stdlib
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.file_entity import File
@@ -47,18 +48,42 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         file_id = parameters["file_id"]
         include_metadata = parameters.get("include_metadata", False)
 
+        self.logger.info(
+            "Fetching file content",
+            use_case="fetch_file",
+            method="execute_internal",
+            file_id=file_id,
+            include_metadata=include_metadata,
+        )
+
         # Step 1: Get file
         file_result = self.file_repository.get_file_by_id(file_id)
         if not file_result.is_ok or file_result.value is None:
             return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {"file_id": file_id})])
         file = file_result.value
 
+        self.logger.debug(
+            "File retrieved",
+            use_case="fetch_file",
+            method="execute_internal",
+            file_id=file_id,
+            file_path=file.path,
+        )
+
         # Step 2: Get chunks
         chunks_result = self.chunk_repository.get_chunks_by_file_id(file_id)
         if not chunks_result.is_ok:
             return self._build_partial_response(file, include_metadata)
 
-        chunks: List[FileChunk] = chunks_result.value
+        chunks: list[FileChunk] = chunks_result.value
+
+        self.logger.debug(
+            "Chunks retrieved",
+            use_case="fetch_file",
+            method="execute_internal",
+            file_id=file_id,
+            chunks_count=len(chunks),
+        )
 
         # Step 3: Deduplicate by memory_id (keep first occurrence)
         chunks = self._deduplicate_chunks(chunks)
@@ -72,6 +97,16 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         # Step 6: Determine reconstruction status
         status = "complete" if chunks and not missing else "partial"
 
+        self.logger.info(
+            "File content reconstructed",
+            use_case="fetch_file",
+            method="execute_internal",
+            file_id=file_id,
+            chunks_count=len(chunk_details),
+            status=status,
+            missing_chunks_count=len(missing),
+        )
+
         return Result.ok({
             "file": self._file_to_dict(file, len(chunks)) if include_metadata else None,
             "content": content,
@@ -84,10 +119,10 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
     # Reconstruction
     # ------------------------------------------------------------------
 
-    def _deduplicate_chunks(self, chunks: List[FileChunk]) -> List[FileChunk]:
+    def _deduplicate_chunks(self, chunks: list[FileChunk]) -> list[FileChunk]:
         """Remove duplicate chunks by memory_id, keeping first occurrence."""
         seen: set[str] = set()
-        result: List[FileChunk] = []
+        result: list[FileChunk] = []
         for chunk in chunks:
             if chunk.memory_id not in seen:
                 seen.add(chunk.memory_id)
@@ -96,15 +131,15 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
 
     def _reconstruct_content(
         self,
-        chunks: List[FileChunk],
-    ) -> tuple[str, List[dict], List[str]]:
+        chunks: list[FileChunk],
+    ) -> tuple[str, list[dict], list[str]]:
         """Reconstruct file content from ordered chunks.
 
         Returns (content, chunk_details, missing_memory_ids).
         """
-        content_parts: List[str] = []
-        chunk_details: List[dict] = []
-        missing: List[str] = []
+        content_parts: list[str] = []
+        chunk_details: list[dict] = []
+        missing: list[str] = []
 
         for chunk in chunks:
             memory = self.mnemosyne_client.get(chunk.memory_id)
@@ -125,7 +160,7 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         """Generate a gap indicator for a missing chunk."""
         return f"<< missing chunk {chunk.memory_id} (index={chunk.chunk_index}, lines={chunk.start_line}-{chunk.end_line}) >>"
 
-    def _chunk_to_dict(self, chunk: FileChunk, content: Optional[str]) -> dict:
+    def _chunk_to_dict(self, chunk: FileChunk, content: str | None) -> dict:
         """Convert a FileChunk to a dict for the response."""
         return {
             "memory_id": chunk.memory_id,

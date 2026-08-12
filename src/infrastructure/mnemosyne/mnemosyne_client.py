@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.domain.memory_entity import Memory
@@ -92,7 +92,7 @@ class MnemosyneClient:
     # Public API — all methods return Result
     # ------------------------------------------------------------------
 
-    def remember(self, **kwargs: Any) -> Result[Dict[str, Any]]:
+    def remember(self, **kwargs: Any) -> Result[dict[str, Any]]:
         """Store a durable memory."""
         try:
             value = self._instance.remember(**kwargs)
@@ -101,7 +101,7 @@ class MnemosyneClient:
             logger.error("Mnemosyne remember failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def recall(self, query: str, limit: int = 5) -> Result[List[Dict[str, Any]]]:
+    def recall(self, query: str, limit: int = 5) -> Result[list[dict[str, Any]]]:
         """Search for relevant memories."""
         try:
             value = self._instance.recall(query=query, top_k=limit)
@@ -110,7 +110,7 @@ class MnemosyneClient:
             logger.error("Mnemosyne recall failed", memory_bank=self.memory_bank, query=query, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def forget(self, memory_id: str) -> Result[Dict[str, Any]]:
+    def forget(self, memory_id: str) -> Result[dict[str, Any]]:
         """Delete a memory."""
         try:
             value = self._instance.forget(memory_id=memory_id)
@@ -119,7 +119,7 @@ class MnemosyneClient:
             logger.error("Mnemosyne forget failed", memory_bank=self.memory_bank, memory_id=memory_id, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def update(self, memory_id: str, **kwargs: Any) -> Result[Dict[str, Any]]:
+    def update(self, memory_id: str, **kwargs: Any) -> Result[dict[str, Any]]:
         """Update memory content or importance."""
         try:
             value = self._instance.update(memory_id=memory_id, **kwargs)
@@ -128,7 +128,7 @@ class MnemosyneClient:
             logger.error("Mnemosyne update failed", memory_bank=self.memory_bank, memory_id=memory_id, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def sleep(self) -> Result[Dict[str, Any]]:
+    def sleep(self) -> Result[dict[str, Any]]:
         """Trigger memory consolidation."""
         try:
             value = self._instance.sleep()
@@ -137,7 +137,7 @@ class MnemosyneClient:
             logger.error("Mnemosyne sleep failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def stats(self) -> Result[Dict[str, Any]]:
+    def stats(self) -> Result[dict[str, Any]]:
         """Return memory statistics."""
         try:
             value = self._instance.stats()

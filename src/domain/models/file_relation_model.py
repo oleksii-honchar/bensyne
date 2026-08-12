@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -37,7 +36,7 @@ class FileRelationSchema(BaseModel):
     relation_type: RelationType
     strength: float = Field(default=1.0, ge=0.0, le=1.0)
     direction: Direction = Field(default=Direction.UNIDIRECTIONAL)
-    description: Optional[str] = None
+    description: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

@@ -6,8 +6,6 @@ returns Result, validating non-empty inputs.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List
-
 from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 
@@ -45,7 +43,7 @@ class FileUpdatedEvent(DomainEvent):
     """Emitted when a file is updated."""
 
     file_id: str
-    changed_fields: List[str]
+    changed_fields: list[str]
     timestamp: datetime = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -53,7 +51,7 @@ class FileUpdatedEvent(DomainEvent):
             object.__setattr__(self, "timestamp", datetime.now())
 
     @classmethod
-    def of(cls, file_id: str, changed_fields: List[str]) -> Result["FileUpdatedEvent"]:
+    def of(cls, file_id: str, changed_fields: list[str]) -> Result["FileUpdatedEvent"]:
         if not file_id:
             return Result.ko([ErrorWithDetails("INVALID_FILE_UPDATED_EVENT", {
                 "file_id": file_id,

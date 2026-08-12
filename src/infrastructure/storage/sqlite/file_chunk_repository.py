@@ -93,7 +93,7 @@ class FileChunkRepository:
     # get_chunk_by_id
     # ------------------------------------------------------------------
 
-    def get_chunk_by_id(self, chunk_id: str) -> Result[Optional[FileChunk]]:
+    def get_chunk_by_id(self, chunk_id: str) -> Result[FileChunk | None]:
         """Find a chunk by its id."""
         session = self._conn_manager.get_session()
         try:
@@ -112,7 +112,7 @@ class FileChunkRepository:
     # get_chunks_by_file_id
     # ------------------------------------------------------------------
 
-    def get_chunks_by_file_id(self, file_id: str) -> Result[List[FileChunk]]:
+    def get_chunks_by_file_id(self, file_id: str) -> Result[list[FileChunk]]:
         """Find all chunks belonging to a file, ordered by chunk_index."""
         session = self._conn_manager.get_session()
         try:
@@ -132,7 +132,7 @@ class FileChunkRepository:
     # get_chunk_by_memory_id
     # ------------------------------------------------------------------
 
-    def get_chunk_by_memory_id(self, memory_id: str) -> Result[Optional[FileChunk]]:
+    def get_chunk_by_memory_id(self, memory_id: str) -> Result[FileChunk | None]:
         """Find a chunk by its associated memory id."""
         session = self._conn_manager.get_session()
         try:
@@ -151,7 +151,7 @@ class FileChunkRepository:
     # get_chunks_by_memory_id
     # ------------------------------------------------------------------
 
-    def get_chunks_by_memory_id(self, memory_id: str) -> Result[List[FileChunk]]:
+    def get_chunks_by_memory_id(self, memory_id: str) -> Result[list[FileChunk]]:
         """Find all chunks by their associated memory id."""
         session = self._conn_manager.get_session()
         try:

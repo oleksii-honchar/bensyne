@@ -81,7 +81,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
         # Step 2: Get relations for source file
         relations_result = self.relation_repository.get_relations_by_file_id(file_id)
         if not relations_result.is_ok:
-            relations: List[FileRelation] = []
+            relations: list[FileRelation] = []
         else:
             relations = relations_result.value
 
@@ -123,22 +123,22 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
     def _expand_related_files(
         self,
         source_file: File,
-        relations: List[FileRelation],
+        relations: list[FileRelation],
         summary_only: bool = False,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Expand file relations into structured results with content.
 
         For each related file, gets the aggregate via FileService and
         delegates content composition to aggregate.compose_content().
         """
         # Deduplicate by target_file_id, keeping first relation type
-        seen: Dict[str, FileRelation] = {}
+        seen: dict[str, FileRelation] = {}
         for rel in relations:
             target_id = rel.target_file_id
             if target_id not in seen:
                 seen[target_id] = rel
 
-        expanded: List[dict] = []
+        expanded: list[dict] = []
         for target_id, rel in seen.items():
             # Get the aggregate for the related file (with chunks)
             agg_result = self.file_service.get_file(target_id)

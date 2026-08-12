@@ -47,17 +47,40 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
         query = parameters["query"]
         limit = parameters.get("limit", 10)
 
+        self.logger.info(
+            "Searching files",
+            use_case="search_files",
+            method="execute_internal",
+            query=query,
+            limit=limit,
+        )
+
         # Phase 1: Recall memories
         recall_result = self.mnemosyne_client.recall(query, limit)
         if isinstance(recall_result, Result) and recall_result.is_ko:
             return recall_result
 
         # MnemosyneClient.recall may return Result or raw list depending on wiring
-        memories: List[dict] = recall_result.value if isinstance(recall_result, Result) else recall_result
+        memories: list[dict] = recall_result.value if isinstance(recall_result, Result) else recall_result
+
+        self.logger.debug(
+            "Memories recalled",
+            use_case="search_files",
+            method="execute_internal",
+            memories_count=len(memories),
+        )
 
         # Phase 2: Enrich each memory with file context
         include_relations = parameters.get("include_relations", False)
         results = self._enrich_memories(memories, include_relations)
+
+        self.logger.info(
+            "File search completed",
+            use_case="search_files",
+            method="execute_internal",
+            results_count=len(results),
+            include_relations=include_relations,
+        )
 
         return Result.ok({
             "results": results,
@@ -70,16 +93,16 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
 
     def _enrich_memories(
         self,
-        memories: List[dict],
+        memories: list[dict],
         include_relations: bool,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Enrich recalled memories with file metadata.
 
         Groups file-backed memories by file_id; non-file memories appear as separate results.
         """
         # Track file_id → result mapping for grouping
-        file_results: Dict[str, dict] = {}
-        all_results: List[dict] = []
+        file_results: dict[str, dict] = {}
+        all_results: list[dict] = []
 
         for memory in memories:
             memory_id = memory.get("id", "")
@@ -105,7 +128,7 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
                 file = file_result.value
                 # Look up relations
                 relations_result = self.relation_repository.get_relations_by_file_id(file_id)
-                relations: List[FileRelation] = relations_result.value if relations_result.is_ok else []
+                relations: list[FileRelation] = relations_result.value if relations_result.is_ok else []
 
                 file_results[file_id] = self._build_file_result(
                     file=file,
@@ -141,13 +164,13 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
     def _build_file_result(
         self,
         file: File,
-        relations: List[FileRelation],
+        relations: list[FileRelation],
         include_relations: bool,
     ) -> dict:
         """Build a result entry for a file-backed memory group."""
         related_files_count = len(relations)
 
-        related_files: Optional[List[dict]] = None
+        related_files: list[dict] | None = None
         if include_relations:
             related_files = self._resolve_related_files(relations)
 
@@ -185,9 +208,9 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
             "metadata": {},
         }
 
-    def _resolve_related_files(self, relations: List[FileRelation]) -> List[dict]:
+    def _resolve_related_files(self, relations: list[FileRelation]) -> list[dict]:
         """Resolve related file details from relations."""
-        resolved: Dict[str, dict] = {}
+        resolved: dict[str, dict] = {}
         for rel in relations:
             # The related file is the one that is NOT the source
             target_id = rel.target_file_id

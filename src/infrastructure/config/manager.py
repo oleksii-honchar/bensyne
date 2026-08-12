@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -18,7 +18,7 @@ class ConfigManager:
     def load(
         self,
         default_file: str = "default.yaml",
-        override_files: Optional[List[str]] = None,
+        override_files: list[str] | None = None,
     ) -> AppConfig:
         """Load configuration from YAML files with env var overrides.
 
@@ -55,7 +55,7 @@ class ConfigManager:
         # Build typed config objects
         return self._build_config(config_dict)
 
-    def _load_yaml(self, path: Path) -> Dict[str, Any]:
+    def _load_yaml(self, path: Path) -> dict[str, Any]:
         """Load and parse a YAML file."""
         try:
             with open(path, "r") as f:
@@ -68,7 +68,7 @@ class ConfigManager:
         except yaml.YAMLError as e:
             raise ValueError(f"Failed to parse YAML file {path}: {e}") from e
 
-    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _deep_merge(self, base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         """Deep merge override dict into base dict."""
         result = base.copy()
         for key, value in override.items():
@@ -78,7 +78,7 @@ class ConfigManager:
                 result[key] = value
         return result
 
-    def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_env_overrides(self, config: dict[str, Any]) -> dict[str, Any]:
         """Apply environment variable overrides to config dict."""
         # LOG_LEVEL -> logging.level
         log_level = os.getenv("LOG_LEVEL")
@@ -106,7 +106,7 @@ class ConfigManager:
 
         return config
 
-    def _build_config(self, config_dict: Dict[str, Any]) -> AppConfig:
+    def _build_config(self, config_dict: dict[str, Any]) -> AppConfig:
         """Build typed AppConfig from raw dict."""
         server_dict = config_dict.get("server", {})
         logging_dict = config_dict.get("logging", {})

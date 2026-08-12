@@ -54,6 +54,14 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
         memory_id = parameters["memory_id"]
         memory_bank = parameters.get("memory_bank", "default")
 
+        self.logger.info(
+            "Forgetting memory",
+            use_case="forget_memory",
+            method="execute_internal",
+            memory_id=memory_id,
+            memory_bank=memory_bank,
+        )
+
         # Guard: only allow on pure_memories banks
         bank_type = self.bank_type_checker(memory_bank)
         if bank_type != "pure_memories":
@@ -61,6 +69,14 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
                 "memory_bank": memory_bank,
                 "bank_type": bank_type,
             })])
+
+        self.logger.debug(
+            "Bank type check passed",
+            use_case="forget_memory",
+            method="execute_internal",
+            memory_bank=memory_bank,
+            bank_type=bank_type,
+        )
 
         forget_result = self.mnemosyne_client.forget(memory_id)
         if not forget_result.is_ok:
@@ -70,10 +86,33 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
         deleted = forget_result.value
         status = "deleted" if deleted else "not_found"
 
+        self.logger.debug(
+            "Memory deletion result",
+            use_case="forget_memory",
+            method="execute_internal",
+            memory_id=memory_id,
+            deleted=deleted,
+        )
+
         # Only clean up related files and hash index if memory was actually deleted
         if deleted:
             self._cleanup_chunks_and_files(memory_id)
             self.hash_index_service.remove(memory_id)
+
+            self.logger.debug(
+                "Chunk and file cleanup completed",
+                use_case="forget_memory",
+                method="execute_internal",
+                memory_id=memory_id,
+            )
+
+        self.logger.info(
+            "Memory forgotten",
+            use_case="forget_memory",
+            method="execute_internal",
+            memory_id=memory_id,
+            status=status,
+        )
 
         return Result.ok({
             "status": status,

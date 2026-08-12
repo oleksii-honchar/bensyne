@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.infrastructure.mnemosyne.bank_manager import BankManager
@@ -36,33 +36,33 @@ class MnemosyneClient:
     # MnemosyneClient implementation
     # ------------------------------------------------------------------
 
-    def remember(self, content: str, source: str = "conversation", **kwargs: Any) -> Dict[str, Any]:
+    def remember(self, content: str, source: str = "conversation", **kwargs: Any) -> dict[str, Any]:
         """Store a durable memory."""
         memory_id = self._instance.remember(content=content, source=source, **kwargs)
         return {"memory_id": memory_id, "status": "stored"}
 
-    def recall(self, query: str, limit: int = 10, **kwargs: Any) -> List[Dict[str, Any]]:
+    def recall(self, query: str, limit: int = 10, **kwargs: Any) -> list[dict[str, Any]]:
         """Search for relevant memories."""
         return self._instance.recall(query=query, top_k=limit, **kwargs)
 
-    def forget(self, memory_id: str) -> Dict[str, Any]:
+    def forget(self, memory_id: str) -> dict[str, Any]:
         """Delete a memory."""
         ok = self._instance.forget(memory_id)
         return {"status": "deleted" if ok else "not_found", "memory_id": memory_id}
 
-    def update(self, memory_id: str, content: Optional[str] = None, importance: Optional[float] = None) -> Dict[str, Any]:
+    def update(self, memory_id: str, content: str | None = None, importance: float | None = None) -> dict[str, Any]:
         """Update memory content or importance."""
         ok = self._instance.update(memory_id, content=content, importance=importance)
         return {"status": "updated" if ok else "not_found", "memory_id": memory_id}
 
-    def sleep(self) -> Dict[str, Any]:
+    def sleep(self) -> dict[str, Any]:
         """Trigger memory consolidation."""
         return self._instance.sleep()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return memory statistics."""
         return self._instance.get_stats()
 
-    def get(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, memory_id: str) -> dict[str, Any] | None:
         """Get a specific memory by ID."""
         return self._instance.get(memory_id)

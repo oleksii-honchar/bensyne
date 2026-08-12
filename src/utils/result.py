@@ -16,7 +16,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -55,17 +55,17 @@ class Result(Generic[T]):
     Result object, not stored as properties on the entity/aggregate.
     """
 
-    value: Optional[T]
-    errors: List[ErrorWithDetails]
-    events: List[DomainEvent]
+    value: T | None
+    errors: list[ErrorWithDetails]
+    events: list[DomainEvent]
 
     @classmethod
-    def ok(cls, value: T, events: Optional[List[DomainEvent]] = None) -> "Result[T]":
+    def ok(cls, value: T, events: list[DomainEvent] | None = None) -> "Result[T]":
         """Create a successful result with value and optional events."""
         return cls(value=value, errors=[], events=events or [])
 
     @classmethod
-    def ko(cls, errors: List[ErrorWithDetails], events: Optional[List[DomainEvent]] = None) -> "Result[None]":
+    def ko(cls, errors: list[ErrorWithDetails], events: list[DomainEvent] | None = None) -> "Result[None]":
         """Create a failed result with error(s) and optional events."""
         return cls(value=None, errors=errors, events=events or [])
 
@@ -83,11 +83,11 @@ class Result(Generic[T]):
         """Check if result contains domain events."""
         return len(self.events) > 0
 
-    def get_events(self) -> List[DomainEvent]:
+    def get_events(self) -> list[DomainEvent]:
         """Get domain events from result."""
         return self.events
 
-    def get_errors(self) -> List[ErrorWithDetails]:
+    def get_errors(self) -> list[ErrorWithDetails]:
         """Get errors from result."""
         return self.errors
 

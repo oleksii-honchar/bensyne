@@ -34,7 +34,21 @@ class RegisterBankUseCase(BaseUseCase[dict, dict]):
         name = parameters["name"]
         description = parameters["description"]
 
+        self.logger.info(
+            "Registering bank",
+            use_case="register_bank",
+            method="execute_internal",
+            name=name,
+        )
+
         self.router.register_bank(name, description)
+
+        self.logger.info(
+            "Bank registered",
+            use_case="register_bank",
+            method="execute_internal",
+            name=name,
+        )
 
         return Result.ok({
             "status": "registered",
