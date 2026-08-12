@@ -1,7 +1,7 @@
 """Data models and schemas."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class LoggingConfig:
 
     level: str = "INFO"
     format: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"  # noqa: A003
-    log_file: Optional[str] = None
+    log_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,9 +92,9 @@ class ToolResponse:
     """Standardized response from MCP tool operations."""
 
     status: str
-    data: Optional[dict] = None
+    data: dict | None = None
     memory_bank: str = "default"
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""

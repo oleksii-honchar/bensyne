@@ -1,7 +1,7 @@
 """FileMetadataAggregate — aggregate root orchestrating File, FileChunk, and FileRelation."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional
+from typing import Callable
 
 from src.domain.file_entity import File
 from src.domain.file_chunk_entity import FileChunk
@@ -24,15 +24,15 @@ class FileMetadataAggregate:
     """
 
     file: File
-    chunks: List[FileChunk]
-    relations: List[FileRelation]
+    chunks: list[FileChunk]
+    relations: list[FileRelation]
 
     @classmethod
     def of(
         cls,
         file: File,
-        chunks: Optional[List[FileChunk]] = None,
-        relations: Optional[List[FileRelation]] = None,
+        chunks: list[FileChunk] | None = None,
+        relations: list[FileRelation] | None = None,
     ) -> Result["FileMetadataAggregate"]:
         """Factory method returning Result[FileMetadataAggregate]."""
         return Result.ok(cls(
@@ -137,7 +137,7 @@ class FileMetadataAggregate:
 
     def compose_content(
         self,
-        mnemosyne_client: Callable[[str], Optional[dict]],
+        mnemosyne_client: Callable[[str], dict | None],
         summary_only: bool = False,
     ) -> Result[dict]:
         """Compose file representation from its chunks and mnemosyne content.
@@ -180,7 +180,7 @@ class FileMetadataAggregate:
         chunks_count = len(sorted_chunks)
 
         # Fetch content from mnemosyne for each chunk
-        content_parts: List[str] = []
+        content_parts: list[str] = []
         for chunk in sorted_chunks:
             memory = mnemosyne_client(chunk.memory_id)
             if memory and isinstance(memory, dict) and memory.get("content"):
@@ -222,7 +222,7 @@ class FileMetadataAggregate:
         include_relation_type: RelationType | None = None,
         include_content: bool = False,
         summary_only: bool = False,
-        mnemosyne_client: Callable[[str], Optional[dict]] | None = None,
+        mnemosyne_client: Callable[[str], dict | None] | None = None,
     ) -> Result[dict]:
         """Produce the full output dict used by expand_file_relations.
 

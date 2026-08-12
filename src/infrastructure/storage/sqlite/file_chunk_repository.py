@@ -7,8 +7,6 @@ Uses FileMetadataConnectionManager for Session management.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
-
 from src.domain.file_chunk_entity import ContentType, FileChunk
 from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (

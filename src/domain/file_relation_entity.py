@@ -6,7 +6,6 @@ indicating the confidence in the relationship.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from pydantic import ValidationError
 
@@ -28,7 +27,7 @@ class FileRelation:
     relation_type: RelationType
     strength: float
     direction: Direction
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -81,7 +80,7 @@ class FileRelation:
             return Result.ko(event.errors)
         return Result.ok(updated, events=[event.value])
 
-    def update_description(self, description: Optional[str]) -> "Result[FileRelation]":
+    def update_description(self, description: str | None) -> "Result[FileRelation]":
         """Update the relation description.
 
         Emits FileRelationUpdatedEvent on success.

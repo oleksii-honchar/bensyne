@@ -7,8 +7,6 @@ Uses SQLAlchemy 2.0 style with Mapped and mapped_column.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
-
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -69,16 +67,16 @@ class FileORM(Base):
     tags: Mapped[str | None] = mapped_column(Text)
 
     # Relationships
-    chunks: Mapped[List["FileChunkORM"]] = relationship(
+    chunks: Mapped[list["FileChunkORM"]] = relationship(
         "FileChunkORM", back_populates="file", cascade="all, delete-orphan"
     )
-    relations_as_source: Mapped[List["FileRelationORM"]] = relationship(
+    relations_as_source: Mapped[list["FileRelationORM"]] = relationship(
         "FileRelationORM",
         foreign_keys="FileRelationORM.source_file_id",
         back_populates="source_file",
         cascade="all, delete-orphan",
     )
-    relations_as_target: Mapped[List["FileRelationORM"]] = relationship(
+    relations_as_target: Mapped[list["FileRelationORM"]] = relationship(
         "FileRelationORM",
         foreign_keys="FileRelationORM.target_file_id",
         back_populates="target_file",

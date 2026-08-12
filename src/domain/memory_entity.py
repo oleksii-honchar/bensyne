@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from pydantic import ValidationError
 
@@ -20,9 +19,9 @@ class Memory:
     source: str
     scope: str
     created_at: datetime
-    updated_at: Optional[datetime]
-    veracity: Optional[float]
-    metadata: Optional[dict]
+    updated_at: datetime | None
+    veracity: float | None
+    metadata: dict | None
 
     @classmethod
     def of(cls, properties: dict) -> "Result[Memory]":
@@ -47,9 +46,9 @@ class Memory:
 
     def update(
         self,
-        content: Optional[str] = None,
-        importance: Optional[float] = None,
-        scope: Optional[str] = None,
+        content: str | None = None,
+        importance: float | None = None,
+        scope: str | None = None,
     ) -> "Result[Memory]":
         """Update memory with new content, importance, or scope."""
         properties = {

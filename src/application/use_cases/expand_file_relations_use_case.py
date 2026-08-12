@@ -10,7 +10,7 @@ Flow (aggregate-owned content composition):
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable
 
 import structlog.stdlib
 from src.application.services.file_service import FileService
@@ -32,7 +32,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
     def __init__(
         self,
-        mnemosyne_client: Callable[[str], Optional[dict]],
+        mnemosyne_client: Callable[[str], dict | None],
         file_service: FileService,
         relation_repository: FileRelationRepository,
         logger: structlog.stdlib.BoundLogger,

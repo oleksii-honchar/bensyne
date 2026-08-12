@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import ValidationError
 
@@ -23,14 +22,14 @@ class File:
     id: str
     path: str
     source_type: SourceType
-    hash: Optional[str]
-    file_type: Optional[str]
-    size: Optional[int]
-    language: Optional[str]
-    aggregated_keywords: List[str]
-    aggregated_tags: List[str]
+    hash: str | None
+    file_type: str | None
+    size: int | None
+    language: str | None
+    aggregated_keywords: list[str]
+    aggregated_tags: list[str]
     status: FileStatus
-    summary: Optional[str]
+    summary: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -109,11 +108,11 @@ class File:
 
     def update_metadata(
         self,
-        hash: Optional[str] = None,
-        file_type: Optional[str] = None,
-        size: Optional[int] = None,
-        language: Optional[str] = None,
-        summary: Optional[str] = None,
+        hash: str | None = None,
+        file_type: str | None = None,
+        size: int | None = None,
+        language: str | None = None,
+        summary: str | None = None,
     ) -> "Result[File]":
         """Update file metadata fields.
 
@@ -154,7 +153,7 @@ class File:
         event = FileUpdatedEvent.of(self.id, changed_fields=changed)
         return Result.ok(updated, events=[event.value])
 
-    def add_keywords(self, keywords: List[str]) -> "Result[File]":
+    def add_keywords(self, keywords: list[str]) -> "Result[File]":
         """Append keywords to aggregated_keywords.
 
         Returns Result.ko if file is deleted.
@@ -167,7 +166,7 @@ class File:
         event = FileUpdatedEvent.of(self.id, changed_fields=["aggregated_keywords"])
         return Result.ok(updated, events=[event.value])
 
-    def add_tags(self, tags: List[str]) -> "Result[File]":
+    def add_tags(self, tags: list[str]) -> "Result[File]":
         """Append tags to aggregated_tags.
 
         Returns Result.ko if file is deleted.
@@ -183,8 +182,8 @@ class File:
     def with_chunk(
         self,
         importance: float = 0.5,
-        tags: Optional[List[str]] = None,
-        keywords: Optional[List[str]] = None,
+        tags: list[str] | None = None,
+        keywords: list[str] | None = None,
     ) -> "Result[File]":
         """Update file metadata when a chunk is added.
 
@@ -195,7 +194,7 @@ class File:
         if self._is_deleted():
             return Result.ko([ErrorWithDetails("FILE_DELETED", {"id": self.id})])
 
-        changed: List[str] = []
+        changed: list[str] = []
         new_keywords = self.aggregated_keywords
         new_tags = self.aggregated_tags
 

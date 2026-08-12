@@ -11,8 +11,6 @@ Flow:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.file_entity import File

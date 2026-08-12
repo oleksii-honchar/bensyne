@@ -7,8 +7,6 @@ state changes. All operations return Result[T].
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 import structlog.stdlib
 from src.domain.file_metadata_aggregate import FileMetadataAggregate
 from src.domain.file_entity import File
@@ -41,7 +39,7 @@ class FileService:
         chunk_repository: FileChunkRepository,
         relation_repository: FileRelationRepository,
         logger: structlog.stdlib.BoundLogger,
-        memory_client: Optional[object] = None,
+        memory_client: object | None = None,
     ) -> None:
         self.file_repository = file_repository
         self.chunk_repository = chunk_repository
@@ -91,11 +89,11 @@ class FileService:
     def update_file(
         self,
         file_id: str,
-        hash: Optional[str] = None,
-        file_type: Optional[str] = None,
-        size: Optional[int] = None,
-        language: Optional[str] = None,
-        summary: Optional[str] = None,
+        hash: str | None = None,
+        file_type: str | None = None,
+        size: int | None = None,
+        language: str | None = None,
+        summary: str | None = None,
     ) -> Result[File]:
         """Update file metadata fields.
 
@@ -157,8 +155,8 @@ class FileService:
         file_id: str,
         memory_id: str,
         chunk_index: int,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> Result[FileChunk]:
         """Link a memory to a file as a chunk via the aggregate.
 
@@ -177,8 +175,8 @@ class FileService:
         file_id: str,
         memory_id: str,
         chunk_index: int,
-        start_line: Optional[int],
-        end_line: Optional[int],
+        start_line: int | None,
+        end_line: int | None,
     ) -> Result[FileChunk]:
         """Build a FileChunk via FileChunk.of(), add to aggregate, persist."""
         sl = start_line if start_line is not None else 0
@@ -226,7 +224,7 @@ class FileService:
         target_file_id: str,
         relation_type: RelationType,
         strength: float = 1.0,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> Result[FileRelation]:
         """Create a file relation via the aggregate.
 
@@ -247,7 +245,7 @@ class FileService:
         target_file_id: str,
         relation_type: RelationType,
         strength: float,
-        description: Optional[str],
+        description: str | None,
     ) -> Result[FileRelation]:
         """Build a FileRelation via FileRelation.of(), add to aggregate, persist."""
         relation_result = FileRelation.of({
@@ -283,7 +281,7 @@ class FileService:
         file_id: str,
         include_chunks: bool = True,
         include_relations: bool = True,
-        relation_types: Optional[List[RelationType]] = None,
+        relation_types: list[RelationType] | None = None,
     ) -> Result[FileMetadataAggregate]:
         """Retrieve file with configurable chunks and relations as an aggregate.
 
@@ -307,7 +305,7 @@ class FileService:
         file_id: str,
         include_chunks: bool = True,
         include_relations: bool = True,
-        relation_types: Optional[List[RelationType]] = None,
+        relation_types: list[RelationType] | None = None,
         method: str = "get_file",
     ) -> Result[FileMetadataAggregate]:
         """Build a FileMetadataAggregate from repository data."""
@@ -317,12 +315,12 @@ class FileService:
 
         file = file_result.value
 
-        chunks: List[FileChunk] = []
+        chunks: list[FileChunk] = []
         if include_chunks:
             chunks_result = self.chunk_repository.get_chunks_by_file_id(file_id)
             chunks = chunks_result.value if chunks_result.is_ok else []
 
-        relations: List[FileRelation] = []
+        relations: list[FileRelation] = []
         if include_relations:
             relations_result = self.relation_repository.get_relations_by_file_id(file_id)
             relations = relations_result.value if relations_result.is_ok else []
@@ -366,7 +364,7 @@ class FileService:
     # Memory-based lookup
     # ------------------------------------------------------------------
 
-    def find_files_by_memory(self, memory_id: str) -> Result[List[File]]:
+    def find_files_by_memory(self, memory_id: str) -> Result[list[File]]:
         """Find files associated with a memory via chunk lookup."""
         self._log_info("Finding files by memory", method="find_files_by_memory", memory_id=memory_id)
         chunk_result = self.chunk_repository.get_chunk_by_memory_id(memory_id)

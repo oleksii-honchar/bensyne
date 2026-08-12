@@ -6,7 +6,6 @@ can be reconstructed from ordered chunks.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from pydantic import ValidationError
 
@@ -29,7 +28,7 @@ class FileChunk:
     chunk_index: int
     start_line: int
     end_line: int
-    content_hash: Optional[str]
+    content_hash: str | None
     content_type: ContentType
     is_partial: bool
     created_at: datetime
@@ -62,11 +61,11 @@ class FileChunk:
 
     def update_metadata(
         self,
-        content_type: Optional[ContentType] = None,
-        content_hash: Optional[str] = None,
-        is_partial: Optional[bool] = None,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        content_type: ContentType | None = None,
+        content_hash: str | None = None,
+        is_partial: bool | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> "Result[FileChunk]":
         """Update FileChunk metadata fields.
 

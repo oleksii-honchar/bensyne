@@ -8,7 +8,6 @@ Result.events.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import ValidationError
 
@@ -33,9 +32,9 @@ class MemoryBank:
     description: str
     status: str  # "active", "registered", "suspended"
     created_at: datetime
-    last_accessed: Optional[datetime]
+    last_accessed: datetime | None
     memory_count: int
-    memories: List[Memory]
+    memories: list[Memory]
 
     # ------------------------------------------------------------------
     # Factory

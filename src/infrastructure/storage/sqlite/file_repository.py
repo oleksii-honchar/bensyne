@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import List, Optional
-
 from src.domain.file_entity import File, FileStatus, SourceType
 from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (

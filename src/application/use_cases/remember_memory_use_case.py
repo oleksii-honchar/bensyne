@@ -5,7 +5,6 @@ deduplication, and saves via repository.
 """
 
 import uuid
-from typing import Optional
 
 import structlog.stdlib
 from src.infrastructure.mcp.hash_index_service import HashIndexService
@@ -116,6 +115,6 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
         })
 
     @staticmethod
-    def _extract_file_hash(parameters: dict) -> Optional[str]:
+    def _extract_file_hash(parameters: dict) -> str | None:
         """Extract file hash from parameters."""
         return parameters.get("hash")
