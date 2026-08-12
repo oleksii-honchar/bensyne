@@ -6,7 +6,6 @@ updatedAt: "2026-08-07T18:01:00Z"
 tags: [hash-index, deduplication, sqlite]
 see_also:
   - "adrs/0005-sqlite-hash-index.adr.md"
-  - "concepts/0013-file-hash-deduplication.concept.md"
 deprecated:
   date: null
   reason: null
@@ -27,9 +26,10 @@ When the same file is ingested from multiple devices, its SHA-256 hash is identi
 
 - **Location:** `data/{memory_bank}/hash_index.db` — one database per memory bank
 - **Mode:** WAL mode for concurrent reads
+- **Implementation:** `HashIndexService` in `src/infrastructure/mcp/hash_index_service.py` — SQLAlchemy ORM, thread-safe via per-operation `threading.Lock`, returns `Result[T]`
 - **Operations:**
   - `lookup(file_hash)` → returns `memory_id` or `None`
-  - `store(file_hash, memory_id)` → `INSERT OR REPLACE` (handles file updates)
+  - `store(file_hash, memory_id)` → get-or-update (add new row or update `memory_id` in place)
   - `remove(memory_id)` → deletes entry on `memory_forget`, returns the `file_hash`
-- **Thread-safe:** Per-connection locking via `threading.Lock`
+- **Thread-safe:** Per-operation locking via `threading.Lock`
 - **Non-fatal:** HashIndex errors log a warning; the remember/forget pipeline continues

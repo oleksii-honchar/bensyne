@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS hash_index (
 );
 ```
 
-- `INSERT OR REPLACE` for update handling (same file, new memory — replaces old mapping)
+- Upsert via SQLAlchemy ORM (`HashIndexService`): `session.get(HashIndexRow, file_hash)` → add new row or update `memory_id` in place (no raw `INSERT OR REPLACE`)
 - WAL mode for concurrent reads
 - Per-memory-bank isolation (separate DB file per bank)
 

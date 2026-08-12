@@ -32,3 +32,7 @@ Add `register_namespace(name, description)` MCP tool that allows external system
 - **Positive**: Self-describing namespaces, agent discoverability
 - **Negative**: Tool adds surface area to maintain
 - **Mitigation**: Simple implementation, well-tested
+
+## Status Note
+
+> **2026-08-12:** Namespace terminology was superseded by memory-bank terminology. The tool described here is now `registerMemoryBank` (see `src/app.py`). The decision principle — external systems self-describe their storage — remains in force.

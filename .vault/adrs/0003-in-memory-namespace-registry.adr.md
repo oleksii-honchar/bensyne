@@ -32,3 +32,7 @@ Use in-memory `NamespaceRegistry` class with `Dict[str, str]` for namespace → 
 - **Positive**: Simple, fast, no persistence concerns
 - **Negative**: Descriptions lost on Mnemosyne server restart
 - **Mitigation**: RAG Content Chunker re-registers all namespaces on bootstrap
+
+## Status Note
+
+> **2026-08-12:** `NamespaceRegistry` was renamed to `MemoryBankRegistry` (`src/infrastructure/bank/registry.py`) during the memory-bank terminology migration. Still an in-memory dict, still re-registered on startup.

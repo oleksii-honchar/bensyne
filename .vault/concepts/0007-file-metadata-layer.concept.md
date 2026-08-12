@@ -21,7 +21,7 @@ The file metadata layer is an additive layer to bensyne that tracks file-level m
 
 **Three-tier structure:**
 1. **Domain** — File, FileChunk, FileRelation entities; FileMetadataAggregate; domain events
-2. **Infrastructure** — SQLite per-bank storage (`file_metadata.db`), SQLAlchemy ORM models, Alembic migrations, FTS5 search
+2. **Infrastructure** — SQLite per-bank storage (`file_metadata.db`), SQLAlchemy ORM models, custom migrations V1–V5, FTS5 search
 3. **Application** — FileService (aggregate-based orchestration), use cases, MCP tool handlers
 
 ## Why
@@ -30,8 +30,13 @@ Before this layer, memories (content chunks) had no file context. File paths, so
 
 ## Key Details
 
-- **Storage:** SQLite per memory bank (`file_metadata.db`), WAL mode, connection pooling
-- **Migrations:** Alembic with 5 versions (V1: files, V2: file_chunks, V3: file_relations, V4: FTS5, V5: summary field)
+- **Storage:** SQLite per memory bank (`file_metadata.db`), WAL mode, connection pooling (SQLAlchemy Engine/Session via FileMetadataConnectionManager)
+- **Migrations:** custom runner (`src/infrastructure/storage/sqlite/file_metadata_migrations.py`), 5 versions:
+  - V1 — initial: files, file_chunks, file_relations + indexes
+  - V2 — files: file_type, size, language, status + FTS5 (trigram) virtual table `files_fts` + sync triggers
+  - V3 — file_chunks: id, content_hash, content_type, is_partial, updated_at + unique index + backfill
+  - V4 — file_relations: id, strength, direction, description, updated_at + unique index + backfill
+  - V5 — files: summary column
 - **Search:** FTS5 full-text search on file path, keywords, and tags
 - **MCP Tools:**
   - `searchFiles` — two-phase search (mnemosyne recall → file metadata enrichment)
@@ -39,4 +44,4 @@ Before this layer, memories (content chunks) had no file context. File paths, so
   - `fetchFile` — file reconstruction from chunks
 - **Integration:** Racochu's FileMetadataPropagator with BensyneFileClient interface
 - **Backward compatible:** Existing memories and operations unaffected
-- **1335 tests passing** (unit + integration + 43 integration tests across 7 test classes)
+- **Tests:** 1352 collected (unit + integration)

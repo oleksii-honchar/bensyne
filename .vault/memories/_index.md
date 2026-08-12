@@ -2,7 +2,7 @@
 type: index
 title: "Atomic Memories"
 createdAt: "2026-08-01T21:31:00Z"
-updatedAt: "2026-08-12T00:00:00Z"
+updatedAt: "2026-08-12T16:58:00Z"
 tags: []
 ---
 
@@ -24,4 +24,4 @@ Durable facts, gotchas, and operational learnings for Bensyne MCP server.
 
 ### File Metadata
 
-- [[0005-on-conflict-do-update]] — SQLite ON CONFLICT DO UPDATE for upserts (not INSERT OR REPLACE — prevents chunk loss on file update)
+- [[0005-on-conflict-do-update]] — Safe file upserts — session.merge() over INSERT OR REPLACE (prevents chunk loss on file update)

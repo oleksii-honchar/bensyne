@@ -22,12 +22,12 @@ The aggregate enforces critical invariants: a bank must be active to remember (a
 
 ## Key Details
 
-- **Location:** `src/domain/aggregates/memory_bank_aggregate.py`
+- **Location:** `src/domain/memory_bank_aggregate.py`
 - **Composition:** Contains `MemoryBank` entity + `List[Memory]` entities
 - **Operations:**
-  - `remember(memory)` — adds memory; rejects if bank not active; produces MemoryCreatedEvent
-  - `forget(memory_id)` — removes memory; rejects if not found; produces MemoryDeletedEvent
+  - `remember(memory)` — adds memory; rejects if bank not active; produces MemoryRememberedEvent
+  - `forget(memory_id)` — removes memory; rejects if not found; produces MemoryForgottenEvent
   - `activate()` — activates bank; produces MemoryBankActivatedEvent
   - `suspend()` — suspends bank; produces MemoryBankSuspendedEvent
 - **Invariants:** Bank must be active to remember; memory must exist to forget; all operations return `Result` with optional domain events
-- **Events:** MemoryCreatedEvent, MemoryDeletedEvent, MemoryBankActivatedEvent, MemoryBankSuspendedEvent — all returned in `Result.events`
+- **Events:** MemoryRememberedEvent, MemoryForgottenEvent, MemoryBankActivatedEvent, MemoryBankSuspendedEvent — all returned in `Result.events`

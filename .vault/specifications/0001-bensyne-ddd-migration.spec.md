@@ -19,15 +19,15 @@ see_also:
 
 ## Goal
 
-Migrate bensyne from flat Python architecture to hexagonal DDD with Result pattern, rich domain objects, use cases, and repository abstraction. 735 tests passing, 92.22% coverage.
+Migrate bensyne from flat Python architecture to hexagonal DDD with Result pattern, rich domain objects, use cases, and repository abstraction. 1352 tests collected, domain coverage high.
 
 ## Architecture
 
 Hexagonal architecture with 4 layers:
 - **Adapters:** FastMCP Server, health endpoints, HTTP controllers
-- **Application:** Use cases (ProcessMemory, RecallMemory, ForgetMemory, UpdateMemory, SleepMemory, ListBanks, RegisterBank), services (HashIndexService)
-- **Domain:** Entities (Memory, MemoryBank), value objects (FileHash), aggregate (MemoryBankAggregate), events (MemoryCreated, MemoryDeleted, MemoryBankActivated, MemoryBankSuspended), Result pattern, repository interfaces
-- **Infrastructure:** MnemosyneClient, HashIndexService, ConfigurationService, DI container, structured logging
+- **Application:** Use cases (RememberMemory, RecallMemory, ForgetMemory, UpdateMemory, Sleep, ListBanks, RegisterBank, SearchFiles, ExpandFileRelations, FetchFile), services (HashIndexService, FileService)
+- **Domain:** Entities (Memory, MemoryBank, File, FileChunk, FileRelation), value objects (FileHash), aggregates (MemoryBankAggregate, FileMetadataAggregate), events (MemoryRemembered, MemoryForgotten, MemoryBankActivated, MemoryBankSuspended, file events), Result pattern
+- **Infrastructure:** MnemosyneClient, HashIndexService, FileMetadataConnectionManager, ConfigurationService, DI container, structured logging
 
 ## Phases Completed
 
@@ -47,6 +47,6 @@ Hexagonal architecture with 4 layers:
 
 | Metric | Value |
 |--------|-------|
-| Tests | 735 passing |
-| Coverage | 92.22% |
+| Tests | 1352 collected |
+| Coverage | 92.22% ⚠️ unverified this session |
 | Domain coverage | 100% |

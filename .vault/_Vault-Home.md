@@ -1,14 +1,14 @@
 ---
 type: vault-home
-title: "Better-Mnemosyne Vault"
+title: "Bensyne Vault"
 createdAt: "2026-08-01T21:31:00Z"
-updatedAt: "2026-08-01T21:31:00Z"
+updatedAt: "2026-08-12T16:58:00Z"
 tags: []
 ---
 
-# Better-Mnemosyne Vault
+# Bensyne Vault
 
-Durable knowledge vault for Bensyne MCP server — namespace management, memory lifecycle, and operational decisions.
+Durable knowledge vault for Bensyne MCP server — memory lifecycle, file metadata, and operational decisions.
 
 ## Indexes
 

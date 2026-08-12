@@ -22,8 +22,8 @@ Memory is the primary thing bensyne manages. The domain model enforces invariant
 
 ## Key Details
 
-- **Location:** `src/domain/entities/memory.py`
+- **Location:** `src/domain/memory_entity.py`
 - **Validation:** Pydantic `MemorySchema` in `src/domain/schemas/memory_schema.py`
 - **Operations:** `of(properties)` — create with validation; `update(content, importance)` — update with new instance; `suspend()` — transition to suspended scope
 - **Invariants:** Frozen dataclass (immutable); update produces new instance; suspend rejects already-suspended memories
-- **Events:** MemoryCreatedEvent, MemoryDeletedEvent produced by MemoryBankAggregate operations (not by the entity directly)
+- **Events:** MemoryRememberedEvent, MemoryForgottenEvent produced by MemoryBankAggregate operations (not by the entity directly)

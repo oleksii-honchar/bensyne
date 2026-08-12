@@ -41,4 +41,4 @@ The DDD migration required an explicit error handling strategy that integrates w
 
 - **Positive:** Explicit error handling, better testability, functional composition, type-safe error handling, domain events returned with results
 - **Negative:** More verbose code, learning curve for team, requires careful implementation
-- **Neutral:** Replaces exception-based handling across all layers; all 23 use cases and domain operations now return Result
+- **Neutral:** Replaces exception-based handling across all layers; all use cases and domain operations now return Result

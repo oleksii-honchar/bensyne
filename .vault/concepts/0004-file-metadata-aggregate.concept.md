@@ -21,19 +21,18 @@ The `FileMetadataAggregate` is the aggregate root for file metadata operations. 
 Without an aggregate, file-chunk relationships would be managed by the application layer, violating the rich domain model principle. The aggregate centralizes:
 - Chunk uniqueness enforcement (no duplicate memory_id per file)
 - Content composition (aggregate knows how to compose content from chunks)
-- Metadata aggregation (keywords, tags, average importance computed on chunk add/remove)
+- Metadata aggregation (keywords/tags merged on chunk add/remove via File.with_chunk()/without_chunk())
 - Domain event production (FileChunkAddedEvent, FileChunkRemovedEvent, etc.)
 
 ## Key Details
 
 - **Frozen dataclass** — immutable; updates produce new instances
 - **Composition methods:**
-  - `compose_content(mnemosyne_client, summary_only=False)` — composes file content from chunks, emits `FileContentComposedEvent`
-  - `to_dict()` — serializes aggregate for MCP tool output
+  - `compose_content(mnemosyne_client: Callable, summary_only=False)` — composes file content from chunks, emits `FileContentComposedEvent`
+  - `to_dict(include_relation_type, include_content, summary_only, mnemosyne_client)` — serializes aggregate for MCP output
 - **Chunk operations:**
   - `add_chunk(chunk)` — enforces uniqueness, emits `FileChunkAddedEvent`, delegates to File.with_chunk()
   - `remove_chunk(memory_id)` — emits `FileChunkRemovedEvent`, delegates to File.without_chunk()
 - **Relation operations:**
   - `add_relation(relation)` — emits `FileRelationCreatedEvent`
-- **File.with_chunk() / File.without_chunk()** — recomputes average_importance, merges keywords/tags
 - **Content composition lives in the aggregate** — use case delegates to aggregate, not builds dict itself
