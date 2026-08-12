@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 if TYPE_CHECKING:
-    from src.services.bank_router import MemoryBankRouter
+    from src.infrastructure.bank.router import MemoryBankRouter
 
 # ---------------------------------------------------------------------------
 # Global state for health tracking

@@ -1,0 +1,115 @@
+"""RememberMemoryUseCase — orchestrates memory creation with hash deduplication.
+
+Validates input, creates Memory entity, checks hash index for
+deduplication, and saves via repository.
+"""
+
+from typing import Optional
+
+import structlog.stdlib
+from src.infrastructure.mcp.hash_index_service import HashIndexService
+from src.application.use_cases.base_use_case import BaseUseCase
+from src.domain.memory_entity import Memory
+from src.tests.test_domain.domain_test_utils import InMemoryMemoryRepository
+
+MemoryRepository = InMemoryMemoryRepository  # concrete type, no ABC
+from src.utils.result import ErrorWithDetails, Result
+
+
+class RememberMemoryUseCase(BaseUseCase[dict, dict]):
+    """Orchestrates memory creation with hash deduplication."""
+
+    def __init__(
+        self,
+        memory_repository: MemoryRepository,
+        hash_index_service: HashIndexService,
+        logger: structlog.stdlib.BoundLogger,
+    ) -> None:
+        super().__init__(logger)
+        self.memory_repository = memory_repository
+        self.hash_index_service = hash_index_service
+
+    def validate_params(self, parameters: dict) -> Result[dict]:
+        """Validate that content is present and non-empty."""
+        if not parameters.get("content"):
+            return Result.ko([ErrorWithDetails("CONTENT_REQUIRED", {})])
+        return Result.ok(parameters)
+
+    def execute_internal(self, parameters: dict) -> Result[dict]:
+        """Execute memory creation with hash deduplication."""
+        memory_bank = parameters.get("memory_bank", "default")
+
+        self.logger.info(
+            "Processing memory",
+            use_case="remember_memory",
+            memory_bank=memory_bank,
+        )
+
+        # 1. Check hash index for deduplication first (early exit)
+        file_hash = self._extract_file_hash(parameters)
+        if file_hash:
+            self.logger.debug(
+                "Hash index lookup",
+                use_case="remember_memory",
+                file_hash=file_hash[:16],
+            )
+            existing_memory_id = self.hash_index_service.lookup(file_hash)
+            if existing_memory_id:
+                self.logger.info(
+                    "Memory deduplicated",
+                    use_case="remember_memory",
+                    existing_memory_id=existing_memory_id,
+                )
+                return Result.ok({
+                    "status": "deduplicated",
+                    "memory_id": existing_memory_id,
+                })
+
+        # 2. Create memory entity
+        memory_result = Memory.of(parameters)
+        if not memory_result.is_ok:
+            self.logger.error(
+                "Memory creation failed",
+                use_case="remember_memory",
+                errors=memory_result.get_formatted_errors(),
+            )
+            return memory_result
+
+        memory = memory_result.value
+        self.logger.debug(
+            "Memory entity created",
+            use_case="remember_memory",
+            memory_id=memory.id,
+        )
+
+        # 3. Save memory
+        save_result = self.memory_repository.save(memory)
+        if not save_result.is_ok:
+            self.logger.error(
+                "Memory save failed",
+                use_case="remember_memory",
+                memory_id=memory.id,
+                errors=save_result.get_formatted_errors(),
+            )
+            return save_result
+
+        # 4. Index hash if applicable
+        if file_hash and memory.id:
+            self.hash_index_service.store(file_hash, memory.id)
+            self.logger.info(
+                "Hash indexed",
+                use_case="remember_memory",
+                memory_id=memory.id,
+                file_hash=file_hash[:16],
+            )
+
+        return Result.ok({
+            "status": "stored",
+            "memory_id": memory.id,
+            "memory_bank": memory_bank,
+        })
+
+    @staticmethod
+    def _extract_file_hash(parameters: dict) -> Optional[str]:
+        """Extract file hash from parameters."""
+        return parameters.get("hash")

@@ -15,11 +15,11 @@ from typing import Dict, List, Optional
 
 from src.infrastructure.mnemosyne.client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.entities.file import File
-from src.domain.entities.file_chunk import FileChunk
-from src.domain.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.domain.file_entity import File
+from src.domain.file_chunk_entity import FileChunk
+from src.utils.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 
 class FetchFileUseCase(BaseUseCase[dict, dict]):
@@ -28,8 +28,8 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
     def __init__(
         self,
         mnemosyne_client: MnemosyneClient,
-        chunk_repository: FileChunkRepositorySQLite,
-        file_repository: FileRepositorySQLite,
+        chunk_repository: FileChunkRepository,
+        file_repository: FileRepository,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
         super().__init__(logger)

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MnemosyneClient:
     """Wraps mnemosyne.Mnemosyne for a single memory bank.
 
-    Implements IMnemosyneClient by delegating to the underlying Mnemosyne instance.
+    Wraps Mnemosyne by delegating operations to the underlying Mnemosyne instance.
     Tracks created_at for LRU eviction in the instance pool.
     """
 
@@ -33,7 +33,7 @@ class MnemosyneClient:
         logger.info("[MnemosyneClient] Created instance: memory_bank=%s, db_path=%s", memory_bank, self._instance.db_path)
 
     # ------------------------------------------------------------------
-    # IMnemosyneClient implementation
+    # MnemosyneClient implementation
     # ------------------------------------------------------------------
 
     def remember(self, content: str, source: str = "conversation", **kwargs: Any) -> Dict[str, Any]:

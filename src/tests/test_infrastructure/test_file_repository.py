@@ -1,4 +1,4 @@
-"""FileRepositorySQLite tests — SQLite-backed FileRepository implementation.
+"""FileRepository tests — SQLite-backed FileRepository implementation.
 
 Tests all repository operations using an in-memory SQLite database via
 FileMetadataConnectionManager.
@@ -13,12 +13,12 @@ from typing import Generator, List, Optional
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.result import Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.utils.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -39,9 +39,9 @@ def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None
 
 
 @pytest.fixture
-def repo(manager: FileMetadataConnectionManager) -> Generator[FileRepositorySQLite, None, None]:
-    """Create a FileRepositorySQLite backed by a temporary database."""
-    r = FileRepositorySQLite(manager)
+def repo(manager: FileMetadataConnectionManager) -> Generator[FileRepository, None, None]:
+    """Create a FileRepository backed by a temporary database."""
+    r = FileRepository(manager)
     yield r
 
 
@@ -90,14 +90,14 @@ def _a_file(
 class TestSaveFile:
     """save_file persists a File entity to SQLite."""
 
-    def test_save_file_returns_result_ok_with_file(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_returns_result_ok_with_file(self, repo: FileRepository) -> None:
         file = _a_file(id="s1")
         result = repo.save_file(file)
         assert result.is_ok is True
         assert result.value is not None
         assert result.value.id == "s1"
 
-    def test_save_file_persists_and_retrievable(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_persists_and_retrievable(self, repo: FileRepository) -> None:
         file = _a_file(id="s2", path="/tmp/persist.txt")
         save_result = repo.save_file(file)
         assert save_result.is_ok
@@ -107,7 +107,7 @@ class TestSaveFile:
         assert find_result.value is not None
         assert find_result.value.path == "/tmp/persist.txt"
 
-    def test_save_file_overwrites_existing(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_overwrites_existing(self, repo: FileRepository) -> None:
         file1 = _a_file(id="s3", path="/tmp/first.txt")
         file2 = _a_file(id="s3", path="/tmp/second.txt")
 
@@ -122,7 +122,7 @@ class TestSaveFile:
         assert find_result.value is not None
         assert find_result.value.path == "/tmp/second.txt"
 
-    def test_save_file_stores_all_fields(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_stores_all_fields(self, repo: FileRepository) -> None:
         file = _a_file(
             id="s4",
             path="/tmp/all_fields.py",
@@ -152,7 +152,7 @@ class TestSaveFile:
         assert f.aggregated_tags == ["tag1", "tag2"]
         assert f.status == FileStatus.INDEXED
 
-    def test_save_file_with_none_optional_fields(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_with_none_optional_fields(self, repo: FileRepository) -> None:
         file = _a_file(id="s5", hash=None, file_type=None, size=None, language=None)
         save_result = repo.save_file(file)
         assert save_result.is_ok
@@ -166,7 +166,7 @@ class TestSaveFile:
         assert f.size is None
         assert f.language is None
 
-    def test_save_file_handles_empty_keywords_tags(self, repo: FileRepositorySQLite) -> None:
+    def test_save_file_handles_empty_keywords_tags(self, repo: FileRepository) -> None:
         file = _a_file(id="s6", aggregated_keywords=[], aggregated_tags=[])
         save_result = repo.save_file(file)
         assert save_result.is_ok
@@ -185,7 +185,7 @@ class TestSaveFile:
 class TestGetFileById:
     """get_file_by_id retrieves a File by its id."""
 
-    def test_returns_result_ok_with_file(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_result_ok_with_file(self, repo: FileRepository) -> None:
         file = _a_file(id="g1")
         repo.save_file(file)
 
@@ -194,12 +194,12 @@ class TestGetFileById:
         assert result.value is not None
         assert result.value.id == "g1"
 
-    def test_returns_none_when_not_found(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_none_when_not_found(self, repo: FileRepository) -> None:
         result = repo.get_file_by_id("nonexistent")
         assert result.is_ok
         assert result.value is None
 
-    def test_returns_correct_file_among_many(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_correct_file_among_many(self, repo: FileRepository) -> None:
         f1 = _a_file(id="g2", path="/tmp/a.txt")
         f2 = _a_file(id="g3", path="/tmp/b.txt")
         f3 = _a_file(id="g4", path="/tmp/c.txt")
@@ -219,7 +219,7 @@ class TestGetFileById:
 class TestGetFileByPath:
     """get_file_by_path retrieves a File by its path."""
 
-    def test_returns_result_ok_with_file(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_result_ok_with_file(self, repo: FileRepository) -> None:
         file = _a_file(id="p1", path="/tmp/unique_path.txt")
         repo.save_file(file)
 
@@ -228,12 +228,12 @@ class TestGetFileByPath:
         assert result.value is not None
         assert result.value.id == "p1"
 
-    def test_returns_none_when_not_found(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_none_when_not_found(self, repo: FileRepository) -> None:
         result = repo.get_file_by_path("/tmp/notfound.txt")
         assert result.is_ok
         assert result.value is None
 
-    def test_returns_first_match_for_duplicate_paths(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_first_match_for_duplicate_paths(self, repo: FileRepository) -> None:
         file = _a_file(id="p2", path="/tmp/dup.txt")
         repo.save_file(file)
 
@@ -249,12 +249,12 @@ class TestGetFileByPath:
 class TestListFiles:
     """list_files returns all saved files."""
 
-    def test_returns_empty_list_when_no_files(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_empty_list_when_no_files(self, repo: FileRepository) -> None:
         result = repo.list_files()
         assert result.is_ok
         assert result.value == []
 
-    def test_returns_all_saved_files(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_all_saved_files(self, repo: FileRepository) -> None:
         f1 = _a_file(id="l1", path="/tmp/a.txt")
         f2 = _a_file(id="l2", path="/tmp/b.txt")
         f3 = _a_file(id="l3", path="/tmp/c.txt")
@@ -269,7 +269,7 @@ class TestListFiles:
         ids = {f.id for f in result.value}
         assert ids == {"l1", "l2", "l3"}
 
-    def test_returns_files_with_correct_data(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_files_with_correct_data(self, repo: FileRepository) -> None:
         file = _a_file(
             id="l4",
             path="/tmp/typed.py",
@@ -300,7 +300,7 @@ class TestListFiles:
 class TestSearchFilesByQuery:
     """search_files_by_query searches across path, keywords, and tags."""
 
-    def test_matches_path(self, repo: FileRepositorySQLite) -> None:
+    def test_matches_path(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q1", path="/tmp/test_file.txt")
         f2 = _a_file(id="q2", path="/tmp/other.txt")
         repo.save_file(f1)
@@ -312,7 +312,7 @@ class TestSearchFilesByQuery:
         assert len(result.value) == 1
         assert result.value[0].id == "q1"
 
-    def test_matches_keywords(self, repo: FileRepositorySQLite) -> None:
+    def test_matches_keywords(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q3", path="/tmp/x.txt", aggregated_keywords=["domain", "entity"])
         f2 = _a_file(id="q4", path="/tmp/y.txt", aggregated_keywords=["infra"])
         repo.save_file(f1)
@@ -324,7 +324,7 @@ class TestSearchFilesByQuery:
         assert len(result.value) == 1
         assert result.value[0].id == "q3"
 
-    def test_matches_tags(self, repo: FileRepositorySQLite) -> None:
+    def test_matches_tags(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q5", path="/tmp/a.txt", aggregated_tags=["core", "important"])
         f2 = _a_file(id="q6", path="/tmp/b.txt", aggregated_tags=["util"])
         repo.save_file(f1)
@@ -336,7 +336,7 @@ class TestSearchFilesByQuery:
         assert len(result.value) == 1
         assert result.value[0].id == "q5"
 
-    def test_returns_empty_when_no_matches(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_empty_when_no_matches(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q7", path="/tmp/a.txt")
         repo.save_file(f1)
 
@@ -345,7 +345,7 @@ class TestSearchFilesByQuery:
         assert result.value is not None
         assert len(result.value) == 0
 
-    def test_case_insensitive_search(self, repo: FileRepositorySQLite) -> None:
+    def test_case_insensitive_search(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q8", path="/tmp/TestFile.txt")
         repo.save_file(f1)
 
@@ -353,7 +353,7 @@ class TestSearchFilesByQuery:
         assert result.is_ok
         assert len(result.value) == 1
 
-    def test_matches_multiple_fields(self, repo: FileRepositorySQLite) -> None:
+    def test_matches_multiple_fields(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q9", path="/tmp/alpha.txt", aggregated_keywords=["domain"])
         f2 = _a_file(id="q10", path="/tmp/beta.txt", aggregated_tags=["domain"])
         f3 = _a_file(id="q11", path="/tmp/gamma.txt")
@@ -367,7 +367,7 @@ class TestSearchFilesByQuery:
         ids = {f.id for f in result.value}
         assert ids == {"q9", "q10"}
 
-    def test_multiple_keywords_match(self, repo: FileRepositorySQLite) -> None:
+    def test_multiple_keywords_match(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q12", path="/tmp/m.txt", aggregated_keywords=["domain", "entity", "aggregate"])
         repo.save_file(f1)
 
@@ -376,7 +376,7 @@ class TestSearchFilesByQuery:
         assert len(result.value) == 1
         assert result.value[0].id == "q12"
 
-    def test_multiple_tags_match(self, repo: FileRepositorySQLite) -> None:
+    def test_multiple_tags_match(self, repo: FileRepository) -> None:
         f1 = _a_file(id="q13", path="/tmp/n.txt", aggregated_tags=["core", "critical", "p0"])
         repo.save_file(f1)
 
@@ -392,7 +392,7 @@ class TestSearchFilesByQuery:
 class TestDeleteFile:
     """delete_file removes a File by id."""
 
-    def test_returns_true_when_found(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_true_when_found(self, repo: FileRepository) -> None:
         file = _a_file(id="d1")
         repo.save_file(file)
 
@@ -400,12 +400,12 @@ class TestDeleteFile:
         assert result.is_ok
         assert result.value is True
 
-    def test_returns_false_when_not_found(self, repo: FileRepositorySQLite) -> None:
+    def test_returns_false_when_not_found(self, repo: FileRepository) -> None:
         result = repo.delete_file("nonexistent")
         assert result.is_ok
         assert result.value is False
 
-    def test_removes_from_store(self, repo: FileRepositorySQLite) -> None:
+    def test_removes_from_store(self, repo: FileRepository) -> None:
         file = _a_file(id="d2")
         repo.save_file(file)
 
@@ -415,7 +415,7 @@ class TestDeleteFile:
         assert find_result.is_ok
         assert find_result.value is None
 
-    def test_delete_does_not_affect_other_files(self, repo: FileRepositorySQLite) -> None:
+    def test_delete_does_not_affect_other_files(self, repo: FileRepository) -> None:
         f1 = _a_file(id="d3", path="/tmp/d3.txt")
         f2 = _a_file(id="d4", path="/tmp/d4.txt")
         repo.save_file(f1)
@@ -432,7 +432,7 @@ class TestDeleteFile:
         assert find_result.value is not None
         assert find_result.value.id == "d4"
 
-    def test_delete_idempotent(self, repo: FileRepositorySQLite) -> None:
+    def test_delete_idempotent(self, repo: FileRepository) -> None:
         file = _a_file(id="d5")
         repo.save_file(file)
 
@@ -449,7 +449,7 @@ class TestDeleteFile:
 class TestRoundTrip:
     """Round-trip tests for save and retrieve operations."""
 
-    def test_save_and_get_by_id(self, repo: FileRepositorySQLite) -> None:
+    def test_save_and_get_by_id(self, repo: FileRepository) -> None:
         file = _a_file(id="rt1", path="/tmp/roundtrip.txt")
         save_result = repo.save_file(file)
         assert save_result.is_ok
@@ -459,7 +459,7 @@ class TestRoundTrip:
         assert find_result.value is not None
         assert find_result.value.path == "/tmp/roundtrip.txt"
 
-    def test_save_and_get_by_path(self, repo: FileRepositorySQLite) -> None:
+    def test_save_and_get_by_path(self, repo: FileRepository) -> None:
         file = _a_file(id="rt2", path="/tmp/by_path.txt")
         repo.save_file(file)
 
@@ -468,7 +468,7 @@ class TestRoundTrip:
         assert find_result.value is not None
         assert find_result.value.id == "rt2"
 
-    def test_save_search_and_delete(self, repo: FileRepositorySQLite) -> None:
+    def test_save_search_and_delete(self, repo: FileRepository) -> None:
         file = _a_file(id="rt3", path="/tmp/searchable.txt", aggregated_keywords=["search"])
         repo.save_file(file)
 
@@ -486,7 +486,7 @@ class TestRoundTrip:
         assert search_result2.is_ok
         assert len(search_result2.value) == 0
 
-    def test_full_round_trip_with_all_fields(self, repo: FileRepositorySQLite) -> None:
+    def test_full_round_trip_with_all_fields(self, repo: FileRepository) -> None:
         file = _a_file(
             id="rt4",
             path="/tmp/full.py",
@@ -555,7 +555,7 @@ class TestErrorHandling:
         """If the DB is corrupted, save_file returns Result.ko."""
         # Create a manager, then corrupt the DB by writing garbage
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
-        repo = FileRepositorySQLite(mgr)
+        repo = FileRepository(mgr)
 
         # Corrupt the DB
         import sqlite3
@@ -573,7 +573,7 @@ class TestErrorHandling:
     def test_get_file_by_id_returns_ko_on_db_error(self, tmp_bank_dir: Path) -> None:
         """If the DB is corrupted, get_file_by_id returns Result.ko."""
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
-        repo = FileRepositorySQLite(mgr)
+        repo = FileRepository(mgr)
 
         # Corrupt the DB
         import sqlite3
@@ -590,7 +590,7 @@ class TestErrorHandling:
     def test_list_files_returns_ko_on_db_error(self, tmp_bank_dir: Path) -> None:
         """If the DB is corrupted, list_files returns Result.ko."""
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
-        repo = FileRepositorySQLite(mgr)
+        repo = FileRepository(mgr)
 
         # Corrupt the DB
         import sqlite3
@@ -624,7 +624,7 @@ class TestFTS5Search:
         finally:
             conn.close()
 
-    def test_fts5_search_path(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_search_path(self, repo: FileRepository) -> None:
         """FTS5 search matches path content."""
         file = _a_file(id="fts1", path="/tmp/important_config.yaml")
         repo.save_file(file)
@@ -634,7 +634,7 @@ class TestFTS5Search:
         assert len(result.value) == 1
         assert result.value[0].id == "fts1"
 
-    def test_fts5_search_keywords(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_search_keywords(self, repo: FileRepository) -> None:
         """FTS5 search matches keywords content."""
         file = _a_file(id="fts2", path="/tmp/x.txt", aggregated_keywords=["architecture", "patterns"])
         repo.save_file(file)
@@ -644,7 +644,7 @@ class TestFTS5Search:
         assert len(result.value) == 1
         assert result.value[0].id == "fts2"
 
-    def test_fts5_search_tags(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_search_tags(self, repo: FileRepository) -> None:
         """FTS5 search matches tags content."""
         file = _a_file(id="fts3", path="/tmp/y.txt", aggregated_tags=["production", "critical"])
         repo.save_file(file)
@@ -654,7 +654,7 @@ class TestFTS5Search:
         assert len(result.value) == 1
         assert result.value[0].id == "fts3"
 
-    def test_fts5_cross_field_search(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_cross_field_search(self, repo: FileRepository) -> None:
         """FTS5 search matches across path, keywords, and tags."""
         f1 = _a_file(id="fts4", path="/tmp/path_match.txt")
         f2 = _a_file(id="fts5", path="/tmp/no_match.txt", aggregated_keywords=["keyword_match"])
@@ -669,7 +669,7 @@ class TestFTS5Search:
         ids = {f.id for f in result.value}
         assert ids == {"fts4", "fts5", "fts6"}
 
-    def test_fts5_delete_removes_from_index(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_delete_removes_from_index(self, repo: FileRepository) -> None:
         """Deleting a file removes it from the FTS5 index."""
         file = _a_file(id="fts7", path="/tmp/deletable.txt", aggregated_keywords=["deletable"])
         repo.save_file(file)
@@ -687,7 +687,7 @@ class TestFTS5Search:
         assert result2.is_ok
         assert len(result2.value) == 0
 
-    def test_fts5_update_refreshes_index(self, repo: FileRepositorySQLite) -> None:
+    def test_fts5_update_refreshes_index(self, repo: FileRepository) -> None:
         """Saving an updated file refreshes the FTS5 index."""
         file = _a_file(id="fts8", path="/tmp/old_name.txt")
         repo.save_file(file)
@@ -725,13 +725,13 @@ class TestSaveFilePreservesChunks:
 
     def test_update_file_preserves_associated_chunks(
         self,
-        repo: FileRepositorySQLite,
+        repo: FileRepository,
         manager: FileMetadataConnectionManager,
     ) -> None:
         """Updating an existing file via save_file must NOT delete file_chunks."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.infrastructure.storage.sqlite.file_chunk_repository import (
-            FileChunkRepositorySQLite,
+            FileChunkRepository,
         )
 
         # Create a file
@@ -739,7 +739,7 @@ class TestSaveFilePreservesChunks:
         repo.save_file(file)
 
         # Add chunks directly via chunk repo
-        chunk_repo = FileChunkRepositorySQLite(manager)
+        chunk_repo = FileChunkRepository(manager)
         chunk_repo.save_chunk(
             FileChunk.of({
                 "id": "fc_uc1_c1",
@@ -786,19 +786,19 @@ class TestSaveFilePreservesChunks:
 
     def test_update_file_preserves_all_chunk_data(
         self,
-        repo: FileRepositorySQLite,
+        repo: FileRepository,
         manager: FileMetadataConnectionManager,
     ) -> None:
         """Chunk data (start_line, end_line, etc.) survives file update."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.infrastructure.storage.sqlite.file_chunk_repository import (
-            FileChunkRepositorySQLite,
+            FileChunkRepository,
         )
 
         file = _a_file(id="uc2", path="/tmp/data_preserve.py")
         repo.save_file(file)
 
-        chunk_repo = FileChunkRepositorySQLite(manager)
+        chunk_repo = FileChunkRepository(manager)
         chunk_repo.save_chunk(
             FileChunk.of({
                 "id": "fc_uc2_c1",
@@ -824,13 +824,13 @@ class TestSaveFilePreservesChunks:
 
     def test_update_file_preserves_associated_relations(
         self,
-        repo: FileRepositorySQLite,
+        repo: FileRepository,
         manager: FileMetadataConnectionManager,
     ) -> None:
         """Updating a file must NOT delete file_relations (ON DELETE CASCADE)."""
-        from src.domain.entities.file_relation import FileRelation, RelationType
+        from src.domain.file_relation_entity import FileRelation, RelationType
         from src.infrastructure.storage.sqlite.file_relation_repository import (
-            FileRelationRepositorySQLite,
+            FileRelationRepository,
         )
 
         file1 = _a_file(id="uc3", path="/tmp/rel_preserve.py")
@@ -838,7 +838,7 @@ class TestSaveFilePreservesChunks:
         repo.save_file(file1)
         repo.save_file(file2)
 
-        rel_repo = FileRelationRepositorySQLite(manager)
+        rel_repo = FileRelationRepository(manager)
         rel_repo.save_relation(
             FileRelation.of({
                 "id": "fr_uc3_uc3b",

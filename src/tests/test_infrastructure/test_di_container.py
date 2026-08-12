@@ -45,7 +45,7 @@ class TestProductionContainerSingletons:
         container = ProductionContainer()
         # Router creates a real Mnemosyne instance on init; mock the client to avoid
         # hitting the real library in unit tests.
-        with patch("src.services.bank.router.MnemosyneClient"):
+        with patch("src.infrastructure.bank.router.MnemosyneClient"):
             r1 = container.memory_bank_router()
             r2 = container.memory_bank_router()
             assert r1 is r2
@@ -69,7 +69,7 @@ class TestProductionContainerSingletons:
         from unittest.mock import patch
 
         from src.infrastructure.mnemosyne.bank_manager import BankManager
-        from src.services.bank.router import MemoryBankRouter
+        from src.infrastructure.bank.router import MemoryBankRouter
         from src.tests.test_domain.domain_test_utils import (
             InMemoryMemoryBankRepository,
             InMemoryMemoryRepository,
@@ -86,7 +86,7 @@ class TestProductionContainerSingletons:
         assert isinstance(bm, BankManager)
 
         # memory_bank_router — mock MnemosyneClient to avoid real library init
-        with patch("src.services.bank.router.MnemosyneClient"):
+        with patch("src.infrastructure.bank.router.MnemosyneClient"):
             router = container.memory_bank_router()
             assert isinstance(router, MemoryBankRouter)
 

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.domain.exceptions import ValidationError
-from src.domain.result import Result
+from src.utils.result import Result
 from src.tests.test_domain.domain_test_utils import (
     InMemoryMemoryRepository,
     a_memory,
@@ -30,14 +30,14 @@ def mock_mnemosyne_client() -> MagicMock:
 
     The use cases (forget, update, recall) call .get() and [] on the
     client's return values — they expect raw dicts, not Result objects.
-    Only ProcessMemoryUseCase uses the client as a MemoryRepository
+    Only RememberMemoryUseCase uses the client as a MemoryRepository
     (calling .save() which returns Result).
     """
     client = MagicMock()
     client.memory_bank = "default"
     client.last_accessed = 0.0
 
-    # remember: used by ProcessMemoryUseCase as MemoryRepository.save() → returns Result
+    # remember: used by RememberMemoryUseCase as MemoryRepository.save() → returns Result
     client.save = MagicMock(return_value=Result.ok(a_memory(id="mem-001")))
 
     # recall: used by RecallMemoryUseCase → expects raw list
@@ -57,7 +57,7 @@ def mock_mnemosyne_client() -> MagicMock:
         "status": "updated",
     })
 
-    # sleep: used by SleepMemoryUseCase → expects raw dict
+    # sleep: used by SleepUseCase → expects raw dict
     client.sleep = MagicMock(return_value={
         "status": "consolidated",
     })
@@ -102,10 +102,10 @@ class TestMemoryLifecycle:
     ) -> None:
         """Store a memory, recall it, update it, then forget it — full lifecycle.
 
-        Patches ProcessMemoryUseCase because Memory.of() requires an id that
+        Patches RememberMemoryUseCase because Memory.of() requires an id that
         the handler does not provide — the real Mnemosyne library generates it.
         """
-        from src.services.tools.handlers import (
+        from src.infrastructure.mcp.handlers import (
             handle_remember,
             handle_recall,
             handle_forget,
@@ -116,7 +116,7 @@ class TestMemoryLifecycle:
 
         # --- Create ---
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ok({
@@ -169,7 +169,7 @@ class TestMemoryLifecycle:
         mock_router: MagicMock,
     ) -> None:
         """Sleep triggers consolidation and returns proper result."""
-        from src.services.tools.handlers import handle_sleep
+        from src.infrastructure.mcp.handlers import handle_sleep
 
         sleep_result = await handle_sleep(
             mock_router,
@@ -183,7 +183,7 @@ class TestMemoryLifecycle:
         mock_router: MagicMock,
     ) -> None:
         """Stats returns valid data for a memory bank."""
-        from src.services.tools.handlers import handle_stats
+        from src.infrastructure.mcp.handlers import handle_stats
 
         stats_result = await handle_stats(
             mock_router,
@@ -198,9 +198,9 @@ class TestMemoryLifecycle:
         in_memory_repo: InMemoryMemoryRepository,
     ) -> None:
         """Full lifecycle using in-memory repository directly through use case."""
-        from src.application.use_cases.process_memory_use_case import ProcessMemoryUseCase
+        from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
         from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
-        from src.infrastructure.hash_index_service import HashIndexService
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
         from src.utils.structured_logging import LoggerMock
 
         # Create a mock hash index service
@@ -211,8 +211,8 @@ class TestMemoryLifecycle:
 
         logger = LoggerMock()
 
-        # --- Create memory via ProcessMemoryUseCase with in-memory repo ---
-        process_uc = ProcessMemoryUseCase(
+        # --- Create memory via RememberMemoryUseCase with in-memory repo ---
+        process_uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash_service,
             logger=logger,
@@ -266,8 +266,8 @@ class TestMemoryDeduplication:
         self,
     ) -> None:
         """When the same file hash is provided, the use case returns deduplicated status."""
-        from src.application.use_cases.process_memory_use_case import ProcessMemoryUseCase
-        from src.infrastructure.hash_index_service import HashIndexService
+        from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
         from src.tests.test_domain.domain_test_utils import a_memory_repository
         from src.utils.structured_logging import LoggerMock
 
@@ -278,7 +278,7 @@ class TestMemoryDeduplication:
         repo = a_memory_repository()
         logger = LoggerMock()
 
-        uc = ProcessMemoryUseCase(
+        uc = RememberMemoryUseCase(
             memory_repository=repo,
             hash_index_service=mock_hash_service,
             logger=logger,
@@ -302,14 +302,14 @@ class TestMemoryDeduplication:
     ) -> None:
         """Handler-level deduplication: same hash returns deduplicated.
 
-        Patches ProcessMemoryUseCase because Memory.of() requires an id that
+        Patches RememberMemoryUseCase because Memory.of() requires an id that
         the handler does not provide.
         """
-        from src.services.tools.handlers import handle_remember
+        from src.infrastructure.mcp.handlers import handle_remember
 
-        # Patch ProcessMemoryUseCase to return deduplicated result
+        # Patch RememberMemoryUseCase to return deduplicated result
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ok({
@@ -336,8 +336,8 @@ class TestMemoryDeduplication:
         in_memory_repo: InMemoryMemoryRepository,
     ) -> None:
         """When a new hash is provided and memory is saved, hash is stored in index."""
-        from src.application.use_cases.process_memory_use_case import ProcessMemoryUseCase
-        from src.infrastructure.hash_index_service import HashIndexService
+        from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
         from src.utils.structured_logging import LoggerMock
 
         mock_hash_service = MagicMock(spec=HashIndexService)
@@ -345,7 +345,7 @@ class TestMemoryDeduplication:
 
         logger = LoggerMock()
 
-        uc = ProcessMemoryUseCase(
+        uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash_service,
             logger=logger,
@@ -375,7 +375,7 @@ class TestBankRegistrationAndListing:
         mock_router: MagicMock,
     ) -> None:
         """Register a new bank via handler and verify it's registered."""
-        from src.services.tools.handlers import handle_register_bank
+        from src.infrastructure.mcp.handlers import handle_register_bank
 
         result = await handle_register_bank(
             mock_router,
@@ -391,7 +391,7 @@ class TestBankRegistrationAndListing:
         mock_router: MagicMock,
     ) -> None:
         """List banks returns merged list of active and registered."""
-        from src.services.tools.handlers import handle_list_banks
+        from src.infrastructure.mcp.handlers import handle_list_banks
 
         # Setup: mock router has active instances and registered banks
         mock_router.instances = {"default": MagicMock(
@@ -454,7 +454,7 @@ class TestErrorHandling:
         mock_router: MagicMock,
     ) -> None:
         """handle_remember raises ValidationError when content is missing."""
-        from src.services.tools.handlers import handle_remember
+        from src.infrastructure.mcp.handlers import handle_remember
 
         with pytest.raises(ValidationError):
             await handle_remember(mock_router, {"memory_bank": "default"})
@@ -464,7 +464,7 @@ class TestErrorHandling:
         mock_router: MagicMock,
     ) -> None:
         """handle_recall raises ValidationError when query is missing."""
-        from src.services.tools.handlers import handle_recall
+        from src.infrastructure.mcp.handlers import handle_recall
 
         with pytest.raises(ValidationError):
             await handle_recall(mock_router, {"memory_bank": "default"})
@@ -474,7 +474,7 @@ class TestErrorHandling:
         mock_router: MagicMock,
     ) -> None:
         """handle_forget raises ValidationError when memory_id is missing."""
-        from src.services.tools.handlers import handle_forget
+        from src.infrastructure.mcp.handlers import handle_forget
 
         with pytest.raises(ValidationError):
             await handle_forget(mock_router, {"memory_bank": "default"})
@@ -484,7 +484,7 @@ class TestErrorHandling:
         mock_router: MagicMock,
     ) -> None:
         """handle_update raises ValidationError when memory_id is missing."""
-        from src.services.tools.handlers import handle_update
+        from src.infrastructure.mcp.handlers import handle_update
 
         with pytest.raises(ValidationError):
             await handle_update(mock_router, {"memory_bank": "default"})
@@ -494,10 +494,10 @@ class TestErrorHandling:
         mock_router: MagicMock,
     ) -> None:
         """handle_remember raises ValidationError when use case returns Result.ko."""
-        from src.services.tools.handlers import handle_remember
+        from src.infrastructure.mcp.handlers import handle_remember
 
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ko([
@@ -511,19 +511,19 @@ class TestErrorHandling:
                     {"memory_bank": "default", "content": "test"},
                 )
 
-    async def test_process_memory_use_case_rejects_empty_content(
+    async def test_remember_memory_use_case_rejects_empty_content(
         self,
         in_memory_repo: InMemoryMemoryRepository,
     ) -> None:
-        """ProcessMemoryUseCase rejects empty content with proper error."""
-        from src.application.use_cases.process_memory_use_case import ProcessMemoryUseCase
-        from src.infrastructure.hash_index_service import HashIndexService
+        """RememberMemoryUseCase rejects empty content with proper error."""
+        from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
         from src.utils.structured_logging import LoggerMock
 
         mock_hash = MagicMock(spec=HashIndexService)
         logger = LoggerMock()
 
-        uc = ProcessMemoryUseCase(
+        uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash,
             logger=logger,
@@ -557,7 +557,7 @@ class TestErrorHandling:
     ) -> None:
         """ForgetMemoryUseCase rejects empty memory_id with proper error."""
         from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
-        from src.infrastructure.hash_index_service import HashIndexService
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
         from src.utils.structured_logging import LoggerMock
 
         mock_hash = MagicMock(spec=HashIndexService)
@@ -610,7 +610,7 @@ class TestMemoryBankIsolation:
         Verifies that the router routes requests to the correct bank's client,
         ensuring isolation between memory banks.
         """
-        from src.services.tools.handlers import handle_remember, handle_recall
+        from src.infrastructure.mcp.handlers import handle_remember, handle_recall
 
         # Create two isolated mock clients, one per bank
         client_a = MagicMock()
@@ -634,10 +634,10 @@ class TestMemoryBankIsolation:
 
         router.get_instance = AsyncMock(side_effect=get_instance)
 
-        # Store memory in bank A — patch ProcessMemoryUseCase since handler
+        # Store memory in bank A — patch RememberMemoryUseCase since handler
         # doesn't provide id (Memory.of requires it)
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ok({
@@ -655,7 +655,7 @@ class TestMemoryBankIsolation:
         assert result_a["memory_bank"] == "bank_a"
 
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ok({
@@ -718,7 +718,7 @@ class TestMemoryBankIsolation:
         self,
     ) -> None:
         """Forgetting a memory in bank A does not affect bank B."""
-        from src.services.tools.handlers import handle_forget
+        from src.infrastructure.mcp.handlers import handle_forget
 
         client_a = MagicMock()
         client_a.memory_bank = "bank_a"
@@ -761,13 +761,13 @@ class TestMCPToolInterfacesPreserved:
     ) -> None:
         """rememberMemory returns dict with status, memory_id, memory_bank.
 
-        Patches ProcessMemoryUseCase because Memory.of() requires an id that
+        Patches RememberMemoryUseCase because Memory.of() requires an id that
         the handler does not provide.
         """
-        from src.services.tools.handlers import handle_remember
+        from src.infrastructure.mcp.handlers import handle_remember
 
         with patch(
-            "src.services.tools.handlers.ProcessMemoryUseCase",
+            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
             mock_uc.execute.return_value = Result.ok({
@@ -794,7 +794,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """recallMemory returns dict with results and memory_bank."""
-        from src.services.tools.handlers import handle_recall
+        from src.infrastructure.mcp.handlers import handle_recall
 
         result = await handle_recall(
             mock_router,
@@ -811,7 +811,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """forgetMemory returns dict with status and memory_bank."""
-        from src.services.tools.handlers import handle_forget
+        from src.infrastructure.mcp.handlers import handle_forget
 
         result = await handle_forget(
             mock_router,
@@ -827,7 +827,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """updateMemory returns dict with status and memory_bank."""
-        from src.services.tools.handlers import handle_update
+        from src.infrastructure.mcp.handlers import handle_update
 
         result = await handle_update(
             mock_router,
@@ -842,8 +842,8 @@ class TestMCPToolInterfacesPreserved:
         self,
         mock_router: MagicMock,
     ) -> None:
-        """sleepMemory returns dict with result and memory_bank."""
-        from src.services.tools.handlers import handle_sleep
+        """sleep returns dict with result and memory_bank."""
+        from src.infrastructure.mcp.handlers import handle_sleep
 
         result = await handle_sleep(
             mock_router,
@@ -858,7 +858,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """getMemoryStats returns dict with stats and memory_bank."""
-        from src.services.tools.handlers import handle_stats
+        from src.infrastructure.mcp.handlers import handle_stats
 
         result = await handle_stats(
             mock_router,
@@ -874,7 +874,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """listMemoryBanks returns dict with banks list."""
-        from src.services.tools.handlers import handle_list_banks
+        from src.infrastructure.mcp.handlers import handle_list_banks
 
         result = await handle_list_banks(mock_router, {})
 
@@ -887,7 +887,7 @@ class TestMCPToolInterfacesPreserved:
         mock_router: MagicMock,
     ) -> None:
         """registerMemoryBank returns dict with status and name."""
-        from src.services.tools.handlers import handle_register_bank
+        from src.infrastructure.mcp.handlers import handle_register_bank
 
         result = await handle_register_bank(
             mock_router,

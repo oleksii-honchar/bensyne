@@ -1,15 +1,17 @@
 """Domain events — concrete event classes for memory and memory bank operations."""
 
 from src.domain.events.memory_events import (
-    MemoryCreatedEvent,
-    MemoryDeletedEvent,
+    MemoryRememberedEvent,
+    MemoryForgottenEvent,
+)
+from src.domain.events.memory_bank_events import (
     MemoryBankActivatedEvent,
     MemoryBankSuspendedEvent,
 )
 
 __all__ = [
-    "MemoryCreatedEvent",
-    "MemoryDeletedEvent",
+    "MemoryRememberedEvent",
+    "MemoryForgottenEvent",
     "MemoryBankActivatedEvent",
     "MemoryBankSuspendedEvent",
 ]

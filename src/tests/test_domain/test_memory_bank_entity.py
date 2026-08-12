@@ -4,8 +4,8 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.entities.memory_bank import MemoryBank
-from src.domain.result import ErrorWithDetails, Result
+from src.domain.memory_bank_aggregate import MemoryBank
+from src.utils.result import ErrorWithDetails, Result
 
 
 class TestMemoryBankOfValidData:

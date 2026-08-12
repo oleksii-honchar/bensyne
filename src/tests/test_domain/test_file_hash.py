@@ -4,7 +4,7 @@
 import pytest
 
 from src.domain.value_objects.file_hash import FileHash
-from src.domain.result import Result
+from src.utils.result import Result
 
 
 VALID_SHA256 = "a" * 64  # 64 hex characters

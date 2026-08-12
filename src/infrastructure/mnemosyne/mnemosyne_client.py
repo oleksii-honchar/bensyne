@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)

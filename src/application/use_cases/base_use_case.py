@@ -10,7 +10,7 @@ from typing import Generic, TypeVar
 
 import structlog.stdlib
 from src.domain.exceptions import DomainException
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 
 Params = TypeVar("Params")
 ReturnType = TypeVar("ReturnType")

@@ -2,9 +2,8 @@
 
 from datetime import datetime
 
-from src.domain.aggregates.memory_bank_aggregate import MemoryBankAggregate
-from src.domain.entities.memory import Memory
-from src.domain.entities.memory_bank import MemoryBank
+from src.domain.memory_bank_aggregate import MemoryBank
+from src.domain.memory_entity import Memory
 from src.domain.value_objects.file_hash import FileHash
 
 from src.tests.test_domain.domain_test_utils import (
@@ -101,6 +100,7 @@ class TestAMemoryBank:
         assert isinstance(bank.created_at, datetime)
         assert bank.last_accessed is None
         assert bank.memory_count == 0
+        assert bank.memories == []
 
     def test_overrides_name(self):
         bank = a_memory_bank(name="custom_bank")
@@ -118,6 +118,12 @@ class TestAMemoryBank:
         bank = a_memory_bank(memory_count=5)
         assert bank.memory_count == 5
 
+    def test_overrides_memories(self):
+        mem1 = a_memory(id="m1")
+        bank = a_memory_bank(memories=[mem1])
+        assert len(bank.memories) == 1
+        assert bank.memories[0].id == "m1"
+
     def test_overrides_multiple_fields(self):
         bank = a_memory_bank(name="x", description="D", status="registered", memory_count=3)
         assert bank.name == "x"
@@ -132,21 +138,20 @@ class TestAMemoryBank:
         assert result.is_ok is True
 
 
-class TestAMemoryBankAggregate:
-    """a_memory_bank_aggregate() factory produces valid aggregate with defaults."""
+class TestAMemoryBank:
+    """a_memory_bank_aggregate() factory produces valid MemoryBank with defaults."""
 
-    def test_returns_valid_aggregate_with_defaults(self):
+    def test_returns_valid_memory_bank_with_defaults(self):
         agg = a_memory_bank_aggregate()
-        assert isinstance(agg, MemoryBankAggregate)
-        assert isinstance(agg.bank, MemoryBank)
-        assert agg.bank.status == "active"
+        assert isinstance(agg, MemoryBank)
+        assert agg.status == "active"
         assert isinstance(agg.memories, list)
 
     def test_overrides_bank(self):
         custom_bank = a_memory_bank(name="custom", status="registered")
         agg = a_memory_bank_aggregate(bank=custom_bank)
-        assert agg.bank.name == "custom"
-        assert agg.bank.status == "registered"
+        assert agg.name == "custom"
+        assert agg.status == "registered"
 
     def test_overrides_memories(self):
         mem1 = a_memory(id="m1")
@@ -162,7 +167,7 @@ class TestAMemoryBankAggregate:
 
     def test_aggregate_bank_is_active_by_default(self):
         agg = a_memory_bank_aggregate()
-        assert agg.bank.status == "active"
+        assert agg.status == "active"
 
 
 class TestAFileHash:
@@ -276,18 +281,18 @@ class TestAMemoryBankRepository:
         agg = a_memory_bank_aggregate()
         repo = a_memory_bank_repository()
         repo.save(agg)
-        result = repo.find_by_id(agg.bank.name)
+        result = repo.find_by_id(agg.name)
         assert result.is_ok is True
         assert result.value is not None
-        assert result.value.bank.name == agg.bank.name
+        assert result.value.name == agg.name
 
     def test_delete_removes_aggregate(self):
         agg = a_memory_bank_aggregate()
         repo = a_memory_bank_repository()
         repo.save(agg)
-        deleted = repo.delete(agg.bank.name)
+        deleted = repo.delete(agg.name)
         assert deleted is True
-        result = repo.find_by_id(agg.bank.name)
+        result = repo.find_by_id(agg.name)
         assert result.value is None
 
     def test_delete_returns_false_for_missing(self):
@@ -308,7 +313,7 @@ class TestAMemoryBankRepository:
     def test_init_with_data(self):
         agg = a_memory_bank_aggregate()
         repo = a_memory_bank_repository(data=[agg])
-        result = repo.find_by_id(agg.bank.name)
+        result = repo.find_by_id(agg.name)
         assert result.is_ok is True
         assert result.value is not None
-        assert result.value.bank.name == agg.bank.name
+        assert result.value.name == agg.name

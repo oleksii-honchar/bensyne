@@ -11,10 +11,10 @@ from typing import Callable, TYPE_CHECKING
 
 import structlog.stdlib
 from src.infrastructure.mnemosyne.client import MnemosyneClient
-from src.infrastructure.hash_index_service import HashIndexService
+from src.infrastructure.mcp.hash_index_service import HashIndexService
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
+from src.utils.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
 
 if TYPE_CHECKING:
     from src.application.services.file_service import FileService
@@ -33,7 +33,7 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
         hash_index_service: HashIndexService,
         logger: structlog.stdlib.BoundLogger,
         file_service: FileService,
-        chunk_repository: FileChunkRepositorySQLite,
+        chunk_repository: FileChunkRepository,
         bank_type_checker: Callable[[str], str],
     ) -> None:
         super().__init__(logger)

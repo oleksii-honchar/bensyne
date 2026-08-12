@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 if TYPE_CHECKING:
-    from src.services.bank_router import MemoryBankRouter
+    from src.infrastructure.bank.router import MemoryBankRouter
 
 # FastMCP may not be installed (requires Python 3.10+); guard import
 try:

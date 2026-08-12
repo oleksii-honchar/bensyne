@@ -12,13 +12,13 @@ from typing import Dict, List, Optional
 
 from src.infrastructure.mnemosyne.client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.entities.file import File
-from src.domain.entities.file_chunk import FileChunk
-from src.domain.entities.file_relation import FileRelation
-from src.domain.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
-from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.domain.file_entity import File
+from src.domain.file_chunk_entity import FileChunk
+from src.domain.file_relation_entity import FileRelation
+from src.utils.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
+from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepository
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 
 class SearchFilesUseCase(BaseUseCase[dict, dict]):
@@ -27,9 +27,9 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
     def __init__(
         self,
         mnemosyne_client: MnemosyneClient,
-        chunk_repository: FileChunkRepositorySQLite,
-        file_repository: FileRepositorySQLite,
-        relation_repository: FileRelationRepositorySQLite,
+        chunk_repository: FileChunkRepository,
+        file_repository: FileRepository,
+        relation_repository: FileRelationRepository,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
         super().__init__(logger)

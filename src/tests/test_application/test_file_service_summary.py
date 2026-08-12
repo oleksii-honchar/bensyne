@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.result import Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.utils.result import Result
 from src.utils.structured_logging import LoggerMock
 
 from src.application.services.file_service import FileService  # noqa: E402

@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 
 import structlog.stdlib
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.result import Result
+from src.utils.result import Result
 
 if TYPE_CHECKING:
-    from src.services.bank.router import MemoryBankRouter
+    from src.infrastructure.bank.router import MemoryBankRouter
 
 
 class ListBanksUseCase(BaseUseCase[dict, dict]):

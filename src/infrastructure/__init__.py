@@ -1,1 +1,1 @@
-"""Infrastructure layer — mnemosyne client, database, config."""
+"""Infrastructure layer — mnemosyne client, database, config, bank routing, MCP tools."""

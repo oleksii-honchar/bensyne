@@ -1,4 +1,4 @@
-"""FileRelationRepositorySQLite tests — SQLite-backed FileRelationRepository implementation.
+"""FileRelationRepository tests — SQLite-backed FileRelationRepository implementation.
 
 Tests all repository operations using an in-memory SQLite database via
 FileMetadataConnectionManager.
@@ -12,13 +12,13 @@ from typing import Generator, List, Optional
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_relation import Direction, FileRelation, RelationType
-from src.domain.result import Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_relation_entity import Direction, FileRelation, RelationType
+from src.utils.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -39,17 +39,17 @@ def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None
 
 
 @pytest.fixture
-def repo(manager: FileMetadataConnectionManager) -> Generator[FileRelationRepositorySQLite, None, None]:
-    """Create a FileRelationRepositorySQLite backed by a temporary database."""
-    from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
-    r = FileRelationRepositorySQLite(manager)
+def repo(manager: FileMetadataConnectionManager) -> Generator[FileRelationRepository, None, None]:
+    """Create a FileRelationRepository backed by a temporary database."""
+    from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepository
+    r = FileRelationRepository(manager)
     yield r
 
 
 @pytest.fixture
-def file_repo(manager: FileMetadataConnectionManager) -> FileRepositorySQLite:
-    """Create a FileRepositorySQLite for seeding files (FK constraints)."""
-    return FileRepositorySQLite(manager)
+def file_repo(manager: FileMetadataConnectionManager) -> FileRepository:
+    """Create a FileRepository for seeding files (FK constraints)."""
+    return FileRepository(manager)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,7 +74,7 @@ def _a_file(
     return result.value
 
 
-def _seed_file(file_repo: FileRepositorySQLite, file_id: str = "f1") -> File:
+def _seed_file(file_repo: FileRepository, file_id: str = "f1") -> File:
     """Save a file to satisfy FK constraints for file_relations tests."""
     f = _a_file(id=file_id)
     result = file_repo.save_file(f)
@@ -111,9 +111,9 @@ def _a_relation(
 # ---------------------------------------------------------------------------
 
 class TestSaveRelation:
-    """FileRelationRepositorySQLite.save_relation operations."""
+    """FileRelationRepository.save_relation operations."""
 
-    def test_save_relation_returns_result_ok_with_relation(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_relation_returns_result_ok_with_relation(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="sr1")
@@ -122,7 +122,7 @@ class TestSaveRelation:
         assert result.value is not None
         assert result.value.id == "sr1"
 
-    def test_save_relation_persists_to_database(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_relation_persists_to_database(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="sr2", strength=0.75)
@@ -134,7 +134,7 @@ class TestSaveRelation:
         assert find_result.value is not None
         assert find_result.value.strength == 0.75
 
-    def test_save_relation_overwrites_existing(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_relation_overwrites_existing(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         rel1 = _a_relation(id="sr3", strength=0.5)
@@ -149,7 +149,7 @@ class TestSaveRelation:
         assert find_result.value is not None
         assert find_result.value.strength == 0.9
 
-    def test_save_relation_stores_all_fields(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_relation_stores_all_fields(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(
@@ -175,7 +175,7 @@ class TestSaveRelation:
         assert r.direction == Direction.BIDIRECTIONAL
         assert r.description == "Sibling files"
 
-    def test_save_relation_with_none_description(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_relation_with_none_description(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="sr5", description=None)
@@ -192,9 +192,9 @@ class TestSaveRelation:
 # ---------------------------------------------------------------------------
 
 class TestGetRelationById:
-    """FileRelationRepositorySQLite.get_relation_by_id operations."""
+    """FileRelationRepository.get_relation_by_id operations."""
 
-    def test_get_relation_by_id_returns_relation(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relation_by_id_returns_relation(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="gr1", source_file_id="f1", target_file_id="f2")
@@ -206,7 +206,7 @@ class TestGetRelationById:
         assert result.value.source_file_id == "f1"
         assert result.value.target_file_id == "f2"
 
-    def test_get_relation_by_id_returns_none_when_not_found(self, repo: FileRelationRepositorySQLite) -> None:
+    def test_get_relation_by_id_returns_none_when_not_found(self, repo: FileRelationRepository) -> None:
         result = repo.get_relation_by_id("nonexistent")
         assert result.is_ok is True
         assert result.value is None
@@ -216,9 +216,9 @@ class TestGetRelationById:
 # ---------------------------------------------------------------------------
 
 class TestGetRelationsByFileId:
-    """FileRelationRepositorySQLite.get_relations_by_file_id operations."""
+    """FileRelationRepository.get_relations_by_file_id operations."""
 
-    def test_get_relations_by_file_id_returns_relations_where_source(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_file_id_returns_relations_where_source(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         _seed_file(file_repo, "f3")
@@ -236,7 +236,7 @@ class TestGetRelationsByFileId:
         ids = {r.id for r in result.value}
         assert ids == {"fr1", "fr2"}
 
-    def test_get_relations_by_file_id_returns_relations_where_target(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_file_id_returns_relations_where_target(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         _seed_file(file_repo, "f3")
@@ -255,7 +255,7 @@ class TestGetRelationsByFileId:
         ids = {r.id for r in result.value}
         assert ids == {"fr4", "fr5"}
 
-    def test_get_relations_by_file_id_returns_relations_where_either(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_file_id_returns_relations_where_either(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         r1 = _a_relation(id="fr7", source_file_id="f1", target_file_id="f2")
@@ -268,7 +268,7 @@ class TestGetRelationsByFileId:
         assert result.value is not None
         assert len(result.value) == 2
 
-    def test_get_relations_by_file_id_returns_empty_when_no_relations(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_file_id_returns_empty_when_no_relations(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f2")
         _seed_file(file_repo, "f3")
         r1 = _a_relation(id="fr9", source_file_id="f2", target_file_id="f3")
@@ -284,9 +284,9 @@ class TestGetRelationsByFileId:
 # ---------------------------------------------------------------------------
 
 class TestGetRelationsByType:
-    """FileRelationRepositorySQLite.get_relations_by_type operations."""
+    """FileRelationRepository.get_relations_by_type operations."""
 
-    def test_get_relations_by_type_returns_matching_relations(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_type_returns_matching_relations(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         _seed_file(file_repo, "f3")
@@ -304,7 +304,7 @@ class TestGetRelationsByType:
         ids = {r.id for r in result.value}
         assert ids == {"tt1", "tt2"}
 
-    def test_get_relations_by_type_returns_empty_when_no_matches(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_relations_by_type_returns_empty_when_no_matches(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         r1 = _a_relation(id="tt4", source_file_id="f1", target_file_id="f2", relation_type=RelationType.PARENT_CHILD)
@@ -320,9 +320,9 @@ class TestGetRelationsByType:
 # ---------------------------------------------------------------------------
 
 class TestDeleteRelation:
-    """FileRelationRepositorySQLite.delete_relation operations."""
+    """FileRelationRepository.delete_relation operations."""
 
-    def test_delete_relation_returns_true_when_found(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_delete_relation_returns_true_when_found(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="dr1")
@@ -331,12 +331,12 @@ class TestDeleteRelation:
         assert result.is_ok is True
         assert result.value is True
 
-    def test_delete_relation_returns_false_when_not_found(self, repo: FileRelationRepositorySQLite) -> None:
+    def test_delete_relation_returns_false_when_not_found(self, repo: FileRelationRepository) -> None:
         result = repo.delete_relation("nonexistent")
         assert result.is_ok is True
         assert result.value is False
 
-    def test_delete_relation_removes_from_store(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_delete_relation_removes_from_store(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="dr2")
@@ -351,9 +351,9 @@ class TestDeleteRelation:
 # ---------------------------------------------------------------------------
 
 class TestRoundTrip:
-    """End-to-end round-trip tests for FileRelationRepositorySQLite."""
+    """End-to-end round-trip tests for FileRelationRepository."""
 
-    def test_round_trip_save_and_get_by_id(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_id(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="rt1", source_file_id="f1", target_file_id="f2")
@@ -365,7 +365,7 @@ class TestRoundTrip:
         assert find_result.value.source_file_id == "f1"
         assert find_result.value.target_file_id == "f2"
 
-    def test_round_trip_save_and_get_by_file_id(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_file_id(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="rt2", source_file_id="f1", target_file_id="f2")
@@ -376,7 +376,7 @@ class TestRoundTrip:
         assert len(find_result.value) == 1
         assert find_result.value[0].id == "rt2"
 
-    def test_round_trip_save_and_get_by_type(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_type(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="rt3", relation_type=RelationType.SIBLING)
@@ -387,7 +387,7 @@ class TestRoundTrip:
         assert len(find_result.value) == 1
         assert find_result.value[0].id == "rt3"
 
-    def test_round_trip_save_update_and_get(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_update_and_get(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="rt4", strength=0.5)
@@ -402,7 +402,7 @@ class TestRoundTrip:
         assert find_result.value is not None
         assert find_result.value.strength == 0.9
 
-    def test_round_trip_save_delete_and_verify(self, repo: FileRelationRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_delete_and_verify(self, repo: FileRelationRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         relation = _a_relation(id="rt5", source_file_id="f1", target_file_id="f2")

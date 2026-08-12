@@ -19,15 +19,15 @@ from src.application.services.file_service import FileService
 from src.application.use_cases.expand_file_relations_use_case import (
     ExpandFileRelationsUseCase,
 )
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import FileChunk, ContentType
-from src.domain.entities.file_relation import (
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import FileChunk, ContentType
+from src.domain.file_relation_entity import (
     Direction,
     FileRelation,
     RelationType,
 )
-from src.domain.result import Result
+from src.utils.result import Result
 
 NOW = datetime(2026, 1, 1, 0, 0, 0)
 

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 
     from src.domain.config_models import AppConfig
-    from src.services.bank.router import MemoryBankRouter
+    from src.infrastructure.bank.router import MemoryBankRouter
 
 
 def create_application(config: AppConfig, router: MemoryBankRouter) -> FastMCP:
@@ -56,7 +56,7 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         mcp: FastMCP server instance.
         router: Memory bank router injected into all handlers.
     """
-    from src.services.tools import handlers
+    from src.infrastructure.mcp import handlers
 
     # Bind router to each handler via wrapper functions (fastmcp @tool requires callable, not partial)
     # FastMCP 3.x generates JSON schema from function signature; use explicit params to match MCP protocol
@@ -91,7 +91,7 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
             args["importance"] = importance
         return await handlers.handle_update(router, args)
 
-    @mcp.tool(name="sleepMemory")
+    @mcp.tool(name="sleep")
     async def sleep_tool(memory_bank: str):
         return await handlers.handle_sleep(router, {"memory_bank": memory_bank})
 

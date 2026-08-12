@@ -5,16 +5,16 @@ from typing import List, Optional
 
 import pytest
 
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File
-from src.domain.entities.file_chunk import FileChunk
-from src.domain.entities.file_relation import FileRelation
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File
+from src.domain.file_chunk_entity import FileChunk
+from src.domain.file_relation_entity import FileRelation
 from src.domain.events.file_events import (
     FileChunkAddedEvent,
     FileChunkRemovedEvent,
     FileRelationCreatedEvent,
 )
-from src.domain.result import Result
+from src.utils.result import Result
 from src.domain.models.file_model import FileStatus, SourceType
 
 from src.domain.models.file_chunk_model import ContentType

@@ -5,14 +5,14 @@ from typing import List
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
+from src.domain.file_entity import File, FileStatus, SourceType
 from src.domain.events.file_events import (
     FileCreatedEvent,
     FileDeletedEvent,
     FileIndexCompletedEvent,
     FileUpdatedEvent,
 )
-from src.domain.result import DomainEvent, ErrorWithDetails, Result
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 VALID_HASH = "a" * 64
 

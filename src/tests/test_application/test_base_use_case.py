@@ -7,7 +7,7 @@ import pytest
 
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.exceptions import DomainException
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 

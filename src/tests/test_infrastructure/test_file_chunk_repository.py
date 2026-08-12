@@ -1,4 +1,4 @@
-"""FileChunkRepositorySQLite tests — SQLite-backed FileChunkRepository implementation.
+"""FileChunkRepository tests — SQLite-backed FileChunkRepository implementation.
 
 Tests all repository operations using an in-memory SQLite database via
 FileMetadataConnectionManager.
@@ -12,16 +12,16 @@ from typing import Generator, List, Optional
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import ContentType, FileChunk
-from src.domain.result import Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import ContentType, FileChunk
+from src.utils.result import Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
 from src.infrastructure.storage.sqlite.file_chunk_repository import (
-    FileChunkRepositorySQLite,
+    FileChunkRepository,
 )
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,16 +42,16 @@ def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None
 
 
 @pytest.fixture
-def repo(manager: FileMetadataConnectionManager) -> Generator[FileChunkRepositorySQLite, None, None]:
-    """Create a FileChunkRepositorySQLite backed by a temporary database."""
-    r = FileChunkRepositorySQLite(manager)
+def repo(manager: FileMetadataConnectionManager) -> Generator[FileChunkRepository, None, None]:
+    """Create a FileChunkRepository backed by a temporary database."""
+    r = FileChunkRepository(manager)
     yield r
 
 
 @pytest.fixture
-def file_repo(manager: FileMetadataConnectionManager) -> FileRepositorySQLite:
-    """Create a FileRepositorySQLite for seeding files (FK constraints)."""
-    return FileRepositorySQLite(manager)
+def file_repo(manager: FileMetadataConnectionManager) -> FileRepository:
+    """Create a FileRepository for seeding files (FK constraints)."""
+    return FileRepository(manager)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,7 +76,7 @@ def _a_file(
     return result.value
 
 
-def _seed_file(file_repo: FileRepositorySQLite, file_id: str = "f1") -> File:
+def _seed_file(file_repo: FileRepository, file_id: str = "f1") -> File:
     """Save a file to satisfy FK constraints for file_chunks tests."""
     f = _a_file(id=file_id)
     result = file_repo.save_file(f)
@@ -117,9 +117,9 @@ def _a_chunk(
 # ---------------------------------------------------------------------------
 
 class TestSaveChunk:
-    """FileChunkRepositorySQLite.save_chunk operations."""
+    """FileChunkRepository.save_chunk operations."""
 
-    def test_save_chunk_returns_result_ok_with_chunk(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_chunk_returns_result_ok_with_chunk(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="sc1")
         result = repo.save_chunk(chunk)
@@ -127,7 +127,7 @@ class TestSaveChunk:
         assert result.value is not None
         assert result.value.id == "sc1"
 
-    def test_save_chunk_persists_to_database(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_chunk_persists_to_database(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="sc2", file_id="f1", memory_id="m1", chunk_index=5)
         save_result = repo.save_chunk(chunk)
@@ -138,7 +138,7 @@ class TestSaveChunk:
         assert find_result.value is not None
         assert find_result.value.chunk_index == 5
 
-    def test_save_chunk_overwrites_existing(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_chunk_overwrites_existing(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk1 = _a_chunk(id="sc3", chunk_index=0)
         chunk2 = _a_chunk(id="sc3", chunk_index=99)
@@ -152,7 +152,7 @@ class TestSaveChunk:
         assert find_result.value is not None
         assert find_result.value.chunk_index == 99
 
-    def test_save_chunk_stores_all_fields(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_chunk_stores_all_fields(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f4")
         chunk = _a_chunk(
             id="sc4",
@@ -181,7 +181,7 @@ class TestSaveChunk:
         assert f.content_type == ContentType.CODE
         assert f.is_partial is True
 
-    def test_save_chunk_with_none_content_hash(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_save_chunk_with_none_content_hash(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="sc5", content_hash=None)
         save_result = repo.save_chunk(chunk)
@@ -197,9 +197,9 @@ class TestSaveChunk:
 # ---------------------------------------------------------------------------
 
 class TestGetChunkById:
-    """FileChunkRepositorySQLite.get_chunk_by_id operations."""
+    """FileChunkRepository.get_chunk_by_id operations."""
 
-    def test_get_chunk_by_id_returns_chunk(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunk_by_id_returns_chunk(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="gc1", file_id="f1", memory_id="m1")
         repo.save_chunk(chunk)
@@ -210,7 +210,7 @@ class TestGetChunkById:
         assert result.value.file_id == "f1"
         assert result.value.memory_id == "m1"
 
-    def test_get_chunk_by_id_returns_none_when_not_found(self, repo: FileChunkRepositorySQLite) -> None:
+    def test_get_chunk_by_id_returns_none_when_not_found(self, repo: FileChunkRepository) -> None:
         result = repo.get_chunk_by_id("nonexistent")
         assert result.is_ok is True
         assert result.value is None
@@ -220,9 +220,9 @@ class TestGetChunkById:
 # ---------------------------------------------------------------------------
 
 class TestGetChunksByFileId:
-    """FileChunkRepositorySQLite.get_chunks_by_file_id operations."""
+    """FileChunkRepository.get_chunks_by_file_id operations."""
 
-    def test_get_chunks_by_file_id_returns_all_chunks(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunks_by_file_id_returns_all_chunks(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         c1 = _a_chunk(id="fc1", file_id="f1", memory_id="m1", chunk_index=0)
@@ -239,7 +239,7 @@ class TestGetChunksByFileId:
         ids = {c.id for c in result.value}
         assert ids == {"fc1", "fc2"}
 
-    def test_get_chunks_by_file_id_returns_empty_when_no_chunks(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunks_by_file_id_returns_empty_when_no_chunks(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f2")
         c1 = _a_chunk(id="fc4", file_id="f2", chunk_index=0)
         repo.save_chunk(c1)
@@ -249,7 +249,7 @@ class TestGetChunksByFileId:
         assert result.value is not None
         assert len(result.value) == 0
 
-    def test_get_chunks_by_file_id_returns_ordered_by_chunk_index(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunks_by_file_id_returns_ordered_by_chunk_index(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         # Save in reverse order to test ordering
         c2 = _a_chunk(id="fo2", file_id="f1", memory_id="mo2", chunk_index=2)
@@ -265,7 +265,7 @@ class TestGetChunksByFileId:
         indices = [c.chunk_index for c in result.value]
         assert indices == [0, 1, 2]
 
-    def test_get_chunks_by_file_id_returns_all_fields(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunks_by_file_id_returns_all_fields(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f5")
         chunk = _a_chunk(
             id="fc5",
@@ -298,9 +298,9 @@ class TestGetChunksByFileId:
 # ---------------------------------------------------------------------------
 
 class TestGetChunkByMemoryId:
-    """FileChunkRepositorySQLite.get_chunk_by_memory_id operations."""
+    """FileChunkRepository.get_chunk_by_memory_id operations."""
 
-    def test_get_chunk_by_memory_id_returns_chunk(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunk_by_memory_id_returns_chunk(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="mc1", memory_id="mem1")
         repo.save_chunk(chunk)
@@ -309,7 +309,7 @@ class TestGetChunkByMemoryId:
         assert result.value is not None
         assert result.value.id == "mc1"
 
-    def test_get_chunk_by_memory_id_returns_none_when_not_found(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunk_by_memory_id_returns_none_when_not_found(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="mc2", memory_id="mem2")
         repo.save_chunk(chunk)
@@ -317,7 +317,7 @@ class TestGetChunkByMemoryId:
         assert result.is_ok is True
         assert result.value is None
 
-    def test_get_chunk_by_memory_id_returns_first_match(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_get_chunk_by_memory_id_returns_first_match(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         c1 = _a_chunk(id="mc3", memory_id="mem3")
         c2 = _a_chunk(id="mc4", memory_id="mem4")
@@ -333,9 +333,9 @@ class TestGetChunkByMemoryId:
 # ---------------------------------------------------------------------------
 
 class TestDeleteChunk:
-    """FileChunkRepositorySQLite.delete_chunk operations."""
+    """FileChunkRepository.delete_chunk operations."""
 
-    def test_delete_chunk_returns_true_when_found(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_delete_chunk_returns_true_when_found(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="dc1")
         repo.save_chunk(chunk)
@@ -343,12 +343,12 @@ class TestDeleteChunk:
         assert result.is_ok is True
         assert result.value is True
 
-    def test_delete_chunk_returns_false_when_not_found(self, repo: FileChunkRepositorySQLite) -> None:
+    def test_delete_chunk_returns_false_when_not_found(self, repo: FileChunkRepository) -> None:
         result = repo.delete_chunk("nonexistent")
         assert result.is_ok is True
         assert result.value is False
 
-    def test_delete_chunk_removes_from_store(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_delete_chunk_removes_from_store(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="dc2")
         repo.save_chunk(chunk)
@@ -362,9 +362,9 @@ class TestDeleteChunk:
 # ---------------------------------------------------------------------------
 
 class TestRoundTrip:
-    """End-to-end round-trip tests for FileChunkRepositorySQLite."""
+    """End-to-end round-trip tests for FileChunkRepository."""
 
-    def test_round_trip_save_and_get_by_id(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_id(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="rt1", file_id="f1", memory_id="m1")
         save_result = repo.save_chunk(chunk)
@@ -375,7 +375,7 @@ class TestRoundTrip:
         assert find_result.value.file_id == "f1"
         assert find_result.value.memory_id == "m1"
 
-    def test_round_trip_save_and_get_by_file_id(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_file_id(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="rt2", file_id="f1", memory_id="m1")
         repo.save_chunk(chunk)
@@ -385,7 +385,7 @@ class TestRoundTrip:
         assert len(find_result.value) == 1
         assert find_result.value[0].id == "rt2"
 
-    def test_round_trip_save_and_get_by_memory_id(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_and_get_by_memory_id(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="rt3", file_id="f1", memory_id="m1")
         repo.save_chunk(chunk)
@@ -394,7 +394,7 @@ class TestRoundTrip:
         assert find_result.value is not None
         assert find_result.value.id == "rt3"
 
-    def test_round_trip_save_update_and_get(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_update_and_get(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="rt4", chunk_index=0)
         repo.save_chunk(chunk)
@@ -409,7 +409,7 @@ class TestRoundTrip:
         assert find_result.value is not None
         assert find_result.value.content_type == ContentType.CODE
 
-    def test_round_trip_save_delete_and_verify(self, repo: FileChunkRepositorySQLite, file_repo: FileRepositorySQLite) -> None:
+    def test_round_trip_save_delete_and_verify(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
         _seed_file(file_repo, "f5")
         chunk = _a_chunk(id="rt5", file_id="f5", memory_id="m5")
         repo.save_chunk(chunk)

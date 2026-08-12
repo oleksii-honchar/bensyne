@@ -4,7 +4,7 @@ import re
 
 from dataclasses import dataclass
 
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 

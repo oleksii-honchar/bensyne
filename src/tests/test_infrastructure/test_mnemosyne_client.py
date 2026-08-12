@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 
 

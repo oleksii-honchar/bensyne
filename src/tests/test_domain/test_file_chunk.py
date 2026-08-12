@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.entities.file_chunk import (
+from src.domain.file_chunk_entity import (
     ContentType,
     FileChunk,
 )
@@ -12,7 +12,7 @@ from src.domain.events.file_chunk_events import (
     FileChunkCreatedEvent,
     FileChunkUpdatedEvent,
 )
-from src.domain.result import DomainEvent, ErrorWithDetails, Result
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 VALID_CONTENT_HASH = "b" * 64
 

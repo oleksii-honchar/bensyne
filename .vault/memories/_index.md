@@ -2,7 +2,7 @@
 type: index
 title: "Atomic Memories"
 createdAt: "2026-08-01T21:31:00Z"
-updatedAt: "2026-08-07T19:01:00Z"
+updatedAt: "2026-08-12T00:00:00Z"
 tags: []
 ---
 
@@ -21,3 +21,7 @@ Durable facts, gotchas, and operational learnings for Bensyne MCP server.
 
 - [[0003-bensyne-file-logging-rotation]] — bensyne.log at ~/.local/share/bensyne/logs/, 10 MB rotation, 3 backups
 - [[0004-sqlite-wal-concurrent-reads]] — SQLite WAL mode allows concurrent reads during hash index writes; no read lockout
+
+### File Metadata
+
+- [[0005-on-conflict-do-update]] — SQLite ON CONFLICT DO UPDATE for upserts (not INSERT OR REPLACE — prevents chunk loss on file update)

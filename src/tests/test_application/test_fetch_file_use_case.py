@@ -16,9 +16,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import FileChunk, ContentType
-from src.domain.result import ErrorWithDetails, Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import FileChunk, ContentType
+from src.utils.result import ErrorWithDetails, Result
 
 NOW = datetime(2026, 1, 1, 0, 0, 0)
 

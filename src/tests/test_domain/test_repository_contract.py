@@ -1,11 +1,6 @@
-"""Repository contract tests — verify in-memory implementations satisfy the domain repository interfaces
-and return Result types for all operations."""
+"""Repository contract tests — verify in-memory repositories return Result types for all operations."""
 
-from src.domain.aggregates.memory_bank_aggregate import MemoryBankAggregate
-from src.domain.entities.memory import Memory
-from src.domain.entities.memory_bank import MemoryBank
-from src.domain.interfaces import MemoryBankRepository, MemoryRepository
-from src.domain.result import Result
+from src.utils.result import Result
 
 from src.tests.test_domain.domain_test_utils import (
     a_memory,
@@ -19,11 +14,11 @@ from src.tests.test_domain.domain_test_utils import (
 
 
 class TestMemoryRepositoryContract:
-    """In-memory MemoryRepository satisfies the MemoryRepository interface and Result contract."""
+    """InMemoryMemoryRepository returns Result types for all operations."""
 
-    def test_implementation_is_instance_of_interface(self):
+    def test_implementation_is_concrete_type(self):
         repo = a_memory_repository()
-        assert isinstance(repo, MemoryRepository)
+        assert isinstance(repo, InMemoryMemoryRepository)
 
     def test_save_returns_result_ok_with_memory(self):
         mem = a_memory(id="m1")
@@ -112,11 +107,11 @@ class TestMemoryRepositoryContract:
 
 
 class TestMemoryBankRepositoryContract:
-    """In-memory MemoryBankRepository satisfies the MemoryBankRepository interface and Result contract."""
+    """InMemoryMemoryBankRepository returns Result types for all operations."""
 
-    def test_implementation_is_instance_of_interface(self):
+    def test_implementation_is_concrete_type(self):
         repo = a_memory_bank_repository()
-        assert isinstance(repo, MemoryBankRepository)
+        assert isinstance(repo, InMemoryMemoryBankRepository)
 
     def test_save_returns_result_ok(self):
         agg = a_memory_bank_aggregate()
@@ -128,10 +123,10 @@ class TestMemoryBankRepositoryContract:
         agg = a_memory_bank_aggregate()
         repo = a_memory_bank_repository()
         repo.save(agg)
-        result = repo.find_by_id(agg.bank.name)
+        result = repo.find_by_id(agg.name)
         assert result.is_ok is True
         assert result.value is not None
-        assert result.value.bank.name == agg.bank.name
+        assert result.value.name == agg.name
 
     def test_find_by_id_returns_result_ok_with_none_when_not_found(self):
         repo = a_memory_bank_repository()
@@ -166,8 +161,8 @@ class TestMemoryBankRepositoryContract:
         find_result = repo.find_by_id("rt_bank")
         assert find_result.is_ok
         assert find_result.value is not None
-        assert find_result.value.bank.name == "rt_bank"
-        assert find_result.value.bank.description == "Round trip bank"
+        assert find_result.value.name == "rt_bank"
+        assert find_result.value.description == "Round trip bank"
 
     def test_list_returns_all_saved_entities(self):
         """List returns all saved aggregates."""
@@ -180,5 +175,5 @@ class TestMemoryBankRepositoryContract:
         assert result.is_ok
         assert result.value is not None
         assert len(result.value) == 2
-        names = {a.bank.name for a in result.value}
+        names = {a.name for a in result.value}
         assert names == {"bank1", "bank2"}

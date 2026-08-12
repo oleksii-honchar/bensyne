@@ -168,17 +168,17 @@ class TestUpdateWithoutMemoryBank:
 
 
 class TestSleepWithoutMemoryBank:
-    """sleepMemory requires memory_bank parameter."""
+    """sleep requires memory_bank parameter."""
 
     def test_sleep_without_memory_bank_raises_error(self, mcp_client: httpx.Client) -> None:
         """Calling sleep without memory_bank returns error."""
         result = mcp_call_tool_raw(
             mcp_client,
-            "sleepMemory",
+            "sleep",
             {},
             request_id=50,
         )
-        assert_mcp_error(result, "sleepMemory", "memory_bank")
+        assert_mcp_error(result, "sleep", "memory_bank")
 
 
 class TestStatsWithoutMemoryBank:
@@ -286,7 +286,7 @@ class TestUpdateWithMemoryBank:
 
 
 class TestSleepWithMemoryBank:
-    """sleepMemory succeeds with memory_bank parameter."""
+    """sleep succeeds with memory_bank parameter."""
 
     def test_sleep_with_memory_bank_succeeds(self, mcp_client: httpx.Client) -> None:
         """Calling sleep with memory_bank runs consolidation."""
@@ -294,7 +294,7 @@ class TestSleepWithMemoryBank:
 
         result = mcp_call_tool(
             mcp_client,
-            "sleepMemory",
+            "sleep",
             {"memory_bank": bank},
             request_id=110,
         )

@@ -32,7 +32,7 @@ if _env_path.exists():
 
 from src.infrastructure.config.manager import ConfigManager
 from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.services.bank.router import MemoryBankRouter
+from src.infrastructure.bank.router import MemoryBankRouter
 from src.app import create_application
 from src.middleware.health import mark_default_instance_ready
 from src.utils.logging import setup_logging

@@ -12,10 +12,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.use_cases.search_files_use_case import SearchFilesUseCase
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import FileChunk, ContentType
-from src.domain.entities.file_relation import FileRelation, RelationType, Direction
-from src.domain.result import ErrorWithDetails, Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import FileChunk, ContentType
+from src.domain.file_relation_entity import FileRelation, RelationType, Direction
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 NOW = datetime(2026, 1, 1, 0, 0, 0)

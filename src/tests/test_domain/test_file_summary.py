@@ -8,9 +8,9 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.entities.file import File, FileStatus, SourceType
+from src.domain.file_entity import File, FileStatus, SourceType
 from src.domain.events.file_events import FileUpdatedEvent
-from src.domain.result import Result
+from src.utils.result import Result
 
 VALID_HASH = "a" * 64
 NOW = datetime(2026, 1, 1, 0, 0, 0)
@@ -177,8 +177,8 @@ class TestFileSummaryInAggregate:
     """Summary persists through FileMetadataAggregate operations."""
 
     def test_aggregate_preserves_summary_on_add_chunk(self):
-        from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_metadata_aggregate import FileMetadataAggregate
+        from src.domain.file_chunk_entity import FileChunk
 
         file = File.of({
             **_file_data(summary="Aggregate summary"),
@@ -198,8 +198,8 @@ class TestFileSummaryInAggregate:
         assert add_result.value.file.summary == "Aggregate summary"
 
     def test_aggregate_preserves_summary_on_add_relation(self):
-        from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-        from src.domain.entities.file_relation import FileRelation, RelationType
+        from src.domain.file_metadata_aggregate import FileMetadataAggregate
+        from src.domain.file_relation_entity import FileRelation, RelationType
 
         file = File.of({
             **_file_data(summary="Aggregate summary"),

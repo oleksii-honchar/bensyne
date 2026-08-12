@@ -13,10 +13,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import FileChunk, ContentType
-from src.domain.entities.file_relation import FileRelation, RelationType, Direction
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import FileChunk, ContentType
+from src.domain.file_relation_entity import FileRelation, RelationType, Direction
 from src.domain.events.file_events import (
     FileChunkAddedEvent,
     FileChunkRemovedEvent,
@@ -25,7 +25,7 @@ from src.domain.events.file_events import (
     FileRelationCreatedEvent,
     FileUpdatedEvent,
 )
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.domain.models.file_chunk_model import ContentType as ChunkContentType
 from src.utils.structured_logging import LoggerMock
 
@@ -319,11 +319,11 @@ class TestDeleteFile:
         file_repo.save_file.assert_not_called()
 
 # ===================================================================
-# create_chunk
+# link_chunk
 # ===================================================================
 
 class TestCreateChunk:
-    """create_chunk uses the aggregate to add a chunk, then persists."""
+    """link_chunk uses the aggregate to add a chunk, then persists."""
 
     def test_returns_created_chunk(self,
         service: FileService,
@@ -339,7 +339,7 @@ class TestCreateChunk:
         file_repo.save_file.return_value = Result.ok(file)
         chunk_repo.save_chunk.return_value = Result.ok(saved_chunk)
 
-        result = service.create_chunk(
+        result = service.link_chunk(
             file_id="f1",
             memory_id="mem_1",
             chunk_index=0,
@@ -355,7 +355,7 @@ class TestCreateChunk:
     ) -> None:
         file_repo.get_file_by_id.return_value = Result.ok(None)
 
-        result = service.create_chunk(file_id="nonexistent", memory_id="mem_1", chunk_index=0)
+        result = service.link_chunk(file_id="nonexistent", memory_id="mem_1", chunk_index=0)
 
         assert result.is_ko is True
 
@@ -373,7 +373,7 @@ class TestCreateChunk:
         file_repo.save_file.return_value = Result.ok(file)
         chunk_repo.save_chunk.return_value = Result.ok(saved_chunk)
 
-        result = service.create_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
+        result = service.link_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
 
         assert result.is_ok is True
         assert result.has_events() is True
@@ -391,7 +391,7 @@ class TestCreateChunk:
         chunk_repo.get_chunks_by_file_id.return_value = Result.ok([existing_chunk])
         service.relation_repository.get_relations_by_file_id.return_value = Result.ok([])
 
-        result = service.create_chunk(file_id="f1", memory_id="mem_1", chunk_index=1)
+        result = service.link_chunk(file_id="f1", memory_id="mem_1", chunk_index=1)
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "CHUNK_ALREADY_EXISTS"
@@ -411,7 +411,7 @@ class TestCreateChunk:
         chunk_repo.save_chunk.return_value = Result.ok(saved_chunk)
         file_repo.save_file.return_value = Result.ok(file)
 
-        result = service.create_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
+        result = service.link_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
 
         assert result.is_ok is True
         # File should be saved after aggregate updates it
@@ -845,12 +845,12 @@ class TestStructuredLogging:
         assert entry.get("method") == "delete_file"
         assert entry.get("file_id") == "f1"
 
-    def test_create_chunk_logs_info_with_file_id_and_memory_id(self,
+    def test_link_chunk_logs_info_with_file_id_and_memory_id(self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
-        """create_chunk emits info log with file_id and memory_id."""
+        """link_chunk emits info log with file_id and memory_id."""
         service = FileService(
             file_repository=file_repo,
             chunk_repository=chunk_repo,
@@ -866,21 +866,21 @@ class TestStructuredLogging:
         file_repo.save_file.return_value = Result.ok(file)
         chunk_repo.save_chunk.return_value = Result.ok(saved_chunk)
 
-        service.create_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
+        service.link_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
 
         info_entries = [e for e in logger_mock.entries if e.get("level") == "info"]
         assert len(info_entries) >= 1
         entry = info_entries[0]
-        assert entry.get("method") == "create_chunk"
+        assert entry.get("method") == "link_chunk"
         assert entry.get("file_id") == "f1"
         assert entry.get("memory_id") == "mem_1"
 
-    def test_create_chunk_logs_debug_on_aggregate_load(self,
+    def test_link_chunk_logs_debug_on_aggregate_load(self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
-        """create_chunk emits debug log when loading aggregate."""
+        """link_chunk emits debug log when loading aggregate."""
         service = FileService(
             file_repository=file_repo,
             chunk_repository=chunk_repo,
@@ -896,7 +896,7 @@ class TestStructuredLogging:
         file_repo.save_file.return_value = Result.ok(file)
         chunk_repo.save_chunk.return_value = Result.ok(saved_chunk)
 
-        service.create_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
+        service.link_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
 
         debug_entries = [e for e in logger_mock.entries if e.get("level") == "debug"]
         assert len(debug_entries) >= 2, f"Expected at least 2 debug entries, got {len(debug_entries)}"
@@ -904,7 +904,7 @@ class TestStructuredLogging:
         loaded_entries = [e for e in debug_entries if e.get("event") == "Aggregate loaded"]
         assert len(loaded_entries) >= 1
         entry = loaded_entries[0]
-        assert entry.get("method") == "create_chunk"
+        assert entry.get("method") == "link_chunk"
         assert entry.get("file_id") == "f1"
 
     def test_create_relation_logs_info_with_source_and_target(self,

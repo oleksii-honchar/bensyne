@@ -10,14 +10,14 @@ from __future__ import annotations
 from typing import List, Optional
 
 import structlog.stdlib
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File
-from src.domain.entities.file_chunk import FileChunk
-from src.domain.entities.file_relation import FileRelation, RelationType
-from src.domain.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepositorySQLite
-from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File
+from src.domain.file_chunk_entity import FileChunk
+from src.domain.file_relation_entity import FileRelation, RelationType
+from src.utils.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
+from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepository
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 
 
 class FileService:
@@ -37,9 +37,9 @@ class FileService:
 
     def __init__(
         self,
-        file_repository: FileRepositorySQLite,
-        chunk_repository: FileChunkRepositorySQLite,
-        relation_repository: FileRelationRepositorySQLite,
+        file_repository: FileRepository,
+        chunk_repository: FileChunkRepository,
+        relation_repository: FileRelationRepository,
         logger: structlog.stdlib.BoundLogger,
         memory_client: Optional[object] = None,
     ) -> None:
@@ -152,7 +152,7 @@ class FileService:
     # Chunk operations
     # ------------------------------------------------------------------
 
-    def create_chunk(
+    def link_chunk(
         self,
         file_id: str,
         memory_id: str,
@@ -160,16 +160,16 @@ class FileService:
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
     ) -> Result[FileChunk]:
-        """Create a file-chunk relationship via the aggregate.
+        """Link a memory to a file as a chunk via the aggregate.
 
         Loads the aggregate, adds the chunk (enforcing uniqueness),
         persists the updated file metadata and the new chunk.
         Emits FileChunkAddedEvent on success.
         """
-        self._log_info("Creating chunk", method="create_chunk", file_id=file_id, memory_id=memory_id)
+        self._log_info("Linking chunk", method="link_chunk", file_id=file_id, memory_id=memory_id)
         return self._with_aggregate(file_id, lambda agg: self._add_chunk_to_aggregate(
             agg, file_id, memory_id, chunk_index, start_line, end_line,
-        ), method="create_chunk")
+        ), method="link_chunk")
 
     def _add_chunk_to_aggregate(
         self,

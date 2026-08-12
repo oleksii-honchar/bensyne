@@ -88,8 +88,8 @@ class TestRegisterTools:
 
     def test_register_tools_registers_all_tools(self) -> None:
         """register_tools registers all expected tool names."""
-        from src.services.bank.router import MemoryBankRouter
-        from src.services.tools import handlers
+        from src.infrastructure.bank.router import MemoryBankRouter
+        from src.infrastructure.mcp import handlers
 
         mock_mcp = MagicMock()
         mock_router = MagicMock(spec=MemoryBankRouter)
@@ -141,7 +141,7 @@ class TestMainEntryPoints:
              patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
              patch("src.utils.logging.setup_logging") as mock_setup_logging, \
              patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
-             patch("src.services.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
+             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
              patch("src.app.create_application") as mock_create_app, \
              patch("src.middleware.health.mark_default_instance_ready"), \
              patch("asyncio.get_event_loop") as mock_get_loop, \
@@ -223,7 +223,7 @@ class TestMainEntryPoints:
              patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
              patch("src.utils.logging.setup_logging") as mock_setup_logging, \
              patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
-             patch("src.services.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
+             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
              patch("src.app.create_application") as mock_create_app, \
              patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready, \
              patch("asyncio.get_event_loop") as mock_get_loop, \

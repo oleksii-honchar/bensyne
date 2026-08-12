@@ -16,18 +16,18 @@ from typing import Generator
 import pytest
 
 from src.application.services.file_service import FileService
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.result import Result
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.utils.result import Result
 from src.infrastructure.storage.sqlite.file_chunk_repository import (
-    FileChunkRepositorySQLite,
+    FileChunkRepository,
 )
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
 from src.infrastructure.storage.sqlite.file_relation_repository import (
-    FileRelationRepositorySQLite,
+    FileRelationRepository,
 )
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 from src.utils.structured_logging import LoggerMock
 
 VALID_HASH = "a" * 64
@@ -47,22 +47,22 @@ def conn_manager(bank_dir: Path) -> Generator[FileMetadataConnectionManager, Non
     mgr.close()
 
 @pytest.fixture
-def file_repo(conn_manager: FileMetadataConnectionManager) -> FileRepositorySQLite:
-    return FileRepositorySQLite(conn_manager)
+def file_repo(conn_manager: FileMetadataConnectionManager) -> FileRepository:
+    return FileRepository(conn_manager)
 
 @pytest.fixture
-def chunk_repo(conn_manager: FileMetadataConnectionManager) -> FileChunkRepositorySQLite:
-    return FileChunkRepositorySQLite(conn_manager)
+def chunk_repo(conn_manager: FileMetadataConnectionManager) -> FileChunkRepository:
+    return FileChunkRepository(conn_manager)
 
 @pytest.fixture
-def relation_repo(conn_manager: FileMetadataConnectionManager) -> FileRelationRepositorySQLite:
-    return FileRelationRepositorySQLite(conn_manager)
+def relation_repo(conn_manager: FileMetadataConnectionManager) -> FileRelationRepository:
+    return FileRelationRepository(conn_manager)
 
 @pytest.fixture
 def service(
-    file_repo: FileRepositorySQLite,
-    chunk_repo: FileChunkRepositorySQLite,
-    relation_repo: FileRelationRepositorySQLite,
+    file_repo: FileRepository,
+    chunk_repo: FileChunkRepository,
+    relation_repo: FileRelationRepository,
 ) -> FileService:
     return FileService(
         file_repository=file_repo,
@@ -81,7 +81,7 @@ class TestSummaryThroughService:
 
     def test_create_file_with_summary_returns_from_repo(self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         file_data = {
             "id": "f_sum_1",
@@ -103,7 +103,7 @@ class TestSummaryThroughService:
 
     def test_create_file_without_summary_returns_none(self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         file_data = {
             "id": "f_sum_2",
@@ -141,7 +141,7 @@ class TestSummaryThroughService:
 
     def test_update_file_summary(self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """update_file can set or change the summary field."""
         file_data = {

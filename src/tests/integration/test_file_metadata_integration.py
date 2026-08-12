@@ -23,10 +23,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.services.file_service import FileService
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File, FileStatus, SourceType
-from src.domain.entities.file_chunk import FileChunk
-from src.domain.entities.file_relation import FileRelation, RelationType
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.file_chunk_entity import FileChunk
+from src.domain.file_relation_entity import FileRelation, RelationType
 from src.domain.events.file_events import (
     FileChunkAddedEvent,
     FileCreatedEvent,
@@ -34,17 +34,17 @@ from src.domain.events.file_events import (
     FileRelationCreatedEvent,
     FileUpdatedEvent,
 )
-from src.domain.result import Result
+from src.utils.result import Result
 from src.infrastructure.storage.sqlite.file_chunk_repository import (
-    FileChunkRepositorySQLite,
+    FileChunkRepository,
 )
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
 from src.infrastructure.storage.sqlite.file_relation_repository import (
-    FileRelationRepositorySQLite,
+    FileRelationRepository,
 )
-from src.infrastructure.storage.sqlite.file_repository import FileRepositorySQLite
+from src.infrastructure.storage.sqlite.file_repository import FileRepository
 from src.utils.structured_logging import LoggerMock
 
 # ---------------------------------------------------------------------------
@@ -73,28 +73,28 @@ def conn_manager(bank_dir: Path) -> Generator[FileMetadataConnectionManager, Non
 
 
 @pytest.fixture
-def file_repo(conn_manager: FileMetadataConnectionManager) -> FileRepositorySQLite:
+def file_repo(conn_manager: FileMetadataConnectionManager) -> FileRepository:
     """SQLite-backed FileRepository."""
-    return FileRepositorySQLite(conn_manager)
+    return FileRepository(conn_manager)
 
 
 @pytest.fixture
-def chunk_repo(conn_manager: FileMetadataConnectionManager) -> FileChunkRepositorySQLite:
+def chunk_repo(conn_manager: FileMetadataConnectionManager) -> FileChunkRepository:
     """SQLite-backed FileChunkRepository."""
-    return FileChunkRepositorySQLite(conn_manager)
+    return FileChunkRepository(conn_manager)
 
 
 @pytest.fixture
-def relation_repo(conn_manager: FileMetadataConnectionManager) -> FileRelationRepositorySQLite:
+def relation_repo(conn_manager: FileMetadataConnectionManager) -> FileRelationRepository:
     """SQLite-backed FileRelationRepository."""
-    return FileRelationRepositorySQLite(conn_manager)
+    return FileRelationRepository(conn_manager)
 
 
 @pytest.fixture
 def service(
-    file_repo: FileRepositorySQLite,
-    chunk_repo: FileChunkRepositorySQLite,
-    relation_repo: FileRelationRepositorySQLite,
+    file_repo: FileRepository,
+    chunk_repo: FileChunkRepository,
+    relation_repo: FileRelationRepository,
 ) -> FileService:
     """FileService wired with real SQLite repositories (no memory_client)."""
     return FileService(
@@ -146,7 +146,7 @@ class TestFileCreationWithChunksAndRelations:
     def test_create_file_persists_and_retrievable(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """File created via service is persisted and retrievable from DB."""
         data = _file_data(id="f1", path="/tmp/integration_test.py", language="python")
@@ -178,8 +178,8 @@ class TestFileCreationWithChunksAndRelations:
     def test_create_file_then_add_chunk(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
-        chunk_repo: FileChunkRepositorySQLite,
+        file_repo: FileRepository,
+        chunk_repo: FileChunkRepository,
     ) -> None:
         """Create file, then add chunk — chunk persisted and linked to file."""
         # Create file
@@ -188,7 +188,7 @@ class TestFileCreationWithChunksAndRelations:
         assert create_result.is_ok is True
 
         # Add chunk
-        chunk_result = service.create_chunk(
+        chunk_result = service.link_chunk(
             file_id="f11",
             memory_id="mem_alpha",
             chunk_index=0,
@@ -209,16 +209,16 @@ class TestFileCreationWithChunksAndRelations:
     def test_create_file_add_multiple_chunks(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
+        chunk_repo: FileChunkRepository,
     ) -> None:
         """Create file with multiple ordered chunks — all survive via service."""
         data = _file_data(id="f12", path="/tmp/multi_chunk.py")
         service.create_file(data)
 
         # Add chunks via the service
-        service.create_chunk("f12", "mem_c1", chunk_index=0, start_line=1, end_line=30)
-        service.create_chunk("f12", "mem_c2", chunk_index=1, start_line=31, end_line=60)
-        service.create_chunk("f12", "mem_c3", chunk_index=2, start_line=61, end_line=90)
+        service.link_chunk("f12", "mem_c1", chunk_index=0, start_line=1, end_line=30)
+        service.link_chunk("f12", "mem_c2", chunk_index=1, start_line=31, end_line=60)
+        service.link_chunk("f12", "mem_c3", chunk_index=2, start_line=61, end_line=90)
 
         # All three chunks survive — save_file uses INSERT ... ON CONFLICT(id)
         # DO UPDATE SET, which does NOT trigger ON DELETE CASCADE on file_chunks.
@@ -249,7 +249,7 @@ class TestFileCreationWithChunksAndRelations:
         data = _file_data(id="f13", path="/tmp/event_chunk.py")
         service.create_file(data)
 
-        chunk_result = service.create_chunk("f13", "mem_ev", chunk_index=0)
+        chunk_result = service.link_chunk("f13", "mem_ev", chunk_index=0)
         assert chunk_result.is_ok is True
         assert chunk_result.has_events() is True
         events = chunk_result.get_events()
@@ -263,8 +263,8 @@ class TestFileCreationWithChunksAndRelations:
         data = _file_data(id="f14", path="/tmp/dup_chunk.py")
         service.create_file(data)
 
-        service.create_chunk("f14", "mem_dup", chunk_index=0)
-        dup_result = service.create_chunk("f14", "mem_dup", chunk_index=1)
+        service.link_chunk("f14", "mem_dup", chunk_index=0)
+        dup_result = service.link_chunk("f14", "mem_dup", chunk_index=1)
 
         assert dup_result.is_ko is True
         assert dup_result.errors[0].error_code == "CHUNK_ALREADY_EXISTS"
@@ -272,7 +272,7 @@ class TestFileCreationWithChunksAndRelations:
     def test_create_file_then_add_relation(
         self,
         service: FileService,
-        relation_repo: FileRelationRepositorySQLite,
+        relation_repo: FileRelationRepository,
     ) -> None:
         """Create two files, then create a relation between them."""
         service.create_file(_file_data(id="f20", path="/tmp/parent.py"))
@@ -332,9 +332,9 @@ class TestFileCreationWithChunksAndRelations:
     def test_full_lifecycle_create_chunks_and_relations(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
-        chunk_repo: FileChunkRepositorySQLite,
-        relation_repo: FileRelationRepositorySQLite,
+        file_repo: FileRepository,
+        chunk_repo: FileChunkRepository,
+        relation_repo: FileRelationRepository,
     ) -> None:
         """End-to-end: create files, add chunks, add relations, verify all persisted."""
         # Create files
@@ -342,7 +342,7 @@ class TestFileCreationWithChunksAndRelations:
         service.create_file(_file_data(id="f101", path="/tmp/full_b.py", keywords=["infra", "repo"]))
 
         # Add chunks via repository directly to avoid INSERT OR REPLACE cascade
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         chunk_repo.save_chunk(
             FileChunk.of({
                 "id": "fc_f100_mem_a1",
@@ -409,7 +409,7 @@ class TestFileSearchWithMetadataEnrichment:
     def test_search_by_path(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Search finds file by path content."""
         service.create_file(_file_data(id="f300", path="/tmp/searchable_file.py"))
@@ -423,7 +423,7 @@ class TestFileSearchWithMetadataEnrichment:
     def test_search_by_keywords(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Search finds file by aggregated keywords."""
         service.create_file(_file_data(id="f302", path="/tmp/x.py", keywords=["architecture", "patterns"]))
@@ -437,7 +437,7 @@ class TestFileSearchWithMetadataEnrichment:
     def test_search_by_tags(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Search finds file by aggregated tags."""
         service.create_file(_file_data(id="f304", path="/tmp/a.py", tags=["core", "critical"]))
@@ -451,7 +451,7 @@ class TestFileSearchWithMetadataEnrichment:
     def test_search_returns_empty_for_no_matches(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Search returns empty list when no files match."""
         service.create_file(_file_data(id="f306", path="/tmp/no_match.py"))
@@ -463,7 +463,7 @@ class TestFileSearchWithMetadataEnrichment:
     def test_search_with_metadata_enrichment(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Search returns files with full metadata (type, size, language, etc.)."""
         service.create_file(_file_data(
@@ -490,13 +490,13 @@ class TestFileSearchWithMetadataEnrichment:
     def test_get_file_with_chunks_aggregate(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
+        chunk_repo: FileChunkRepository,
     ) -> None:
         """get_file returns aggregate with file, chunks, and relations."""
         service.create_file(_file_data(id="f308", path="/tmp/agg.py"))
 
         # Add chunks directly to avoid INSERT OR REPLACE cascade
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         chunk_repo.save_chunk(
             FileChunk.of({
                 "id": "fc_f308_mem_agg1",
@@ -593,14 +593,14 @@ class TestRelationExpansion:
     def test_relation_expansion_with_chunks(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
+        chunk_repo: FileChunkRepository,
     ) -> None:
         """Full aggregate: file with chunks and relations."""
         service.create_file(_file_data(id="f410", path="/tmp/full_rel.py", keywords=["expand"]))
         service.create_file(_file_data(id="f411", path="/tmp/related.py"))
 
         # Add chunks directly to avoid INSERT OR REPLACE cascade
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         chunk_repo.save_chunk(
             FileChunk.of({
                 "id": "fc_f410_mem_fr1",
@@ -647,7 +647,7 @@ class TestRelationExpansion:
     def test_relation_found_by_target_file_id(
         self,
         service: FileService,
-        relation_repo: FileRelationRepositorySQLite,
+        relation_repo: FileRelationRepository,
     ) -> None:
         """Relations are found when querying by target file_id (bidirectional lookup)."""
         service.create_file(_file_data(id="f420", path="/tmp/target_rel.py"))
@@ -667,12 +667,12 @@ class TestRelationExpansion:
 class TestErrorCases:
     """Integration: error handling with real repositories."""
 
-    def test_create_chunk_on_missing_file(
+    def test_link_chunk_on_missing_file(
         self,
         service: FileService,
     ) -> None:
         """Creating a chunk for a nonexistent file returns ko."""
-        result = service.create_chunk("nonexistent", "mem_err1", chunk_index=0)
+        result = service.link_chunk("nonexistent", "mem_err1", chunk_index=0)
         assert result.is_ko is True
 
     def test_create_relation_on_missing_source(
@@ -717,7 +717,7 @@ class TestErrorCases:
     def test_delete_file_removes_from_db(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Deleting a file marks it as DELETED in the DB."""
         service.create_file(_file_data(id="f502", path="/tmp/delete_verify.py"))
@@ -757,7 +757,7 @@ class TestErrorCases:
     ) -> None:
         """find_files_by_memory returns file when chunk links to it."""
         service.create_file(_file_data(id="f505", path="/tmp/memory_link.py"))
-        service.create_chunk("f505", "mem_link", chunk_index=0)
+        service.link_chunk("f505", "mem_link", chunk_index=0)
 
         result = service.find_files_by_memory("mem_link")
 
@@ -784,7 +784,7 @@ class TestUpsertOperations:
     def test_upsert_creates_new_file(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Upsert creates a new file when path doesn't exist."""
         data = _file_data(id="f600", path="/tmp/upsert_new.py")
@@ -802,7 +802,7 @@ class TestUpsertOperations:
     def test_upsert_updates_existing_file(
         self,
         service: FileService,
-        file_repo: FileRepositorySQLite,
+        file_repo: FileRepository,
     ) -> None:
         """Upsert updates an existing file by path."""
         # Create initial file
@@ -851,7 +851,7 @@ class TestEventEmissionFullStack:
         """FileChunkAddedEvent contains correct file_id, memory_id, chunk_index."""
         service.create_file(_file_data(id="f701", path="/tmp/chunk_event.py"))
 
-        result = service.create_chunk("f701", "mem_ce", chunk_index=42)
+        result = service.link_chunk("f701", "mem_ce", chunk_index=42)
 
         assert result.is_ok is True
         events = result.get_events()
@@ -910,9 +910,9 @@ class TestForgetMemoryUseCaseIntegration:
     @pytest.fixture
     def service(
         self,
-        file_repo: FileRepositorySQLite,
-        chunk_repo: FileChunkRepositorySQLite,
-        relation_repo: FileRelationRepositorySQLite,
+        file_repo: FileRepository,
+        chunk_repo: FileChunkRepository,
+        relation_repo: FileRelationRepository,
     ) -> FileService:
         """FileService wired with real SQLite repositories."""
         return FileService(
@@ -938,8 +938,8 @@ class TestForgetMemoryUseCaseIntegration:
     def test_forget_removes_chunk_and_deletes_empty_file(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
-        file_repo: FileRepositorySQLite,
+        chunk_repo: FileChunkRepository,
+        file_repo: FileRepository,
         mnemosyne_client: MagicMock,
         hash_index_service: MagicMock,
         logger: LoggerMock,
@@ -949,7 +949,7 @@ class TestForgetMemoryUseCaseIntegration:
 
         # Create a file with a single chunk
         service.create_file(_file_data(id="f_int_1", path="/tmp/forget_test.py"))
-        chunk_result = service.create_chunk(
+        chunk_result = service.link_chunk(
             file_id="f_int_1",
             memory_id="mem_int_1",
             chunk_index=0,
@@ -1004,8 +1004,8 @@ class TestForgetMemoryUseCaseIntegration:
     def test_forget_removes_chunk_but_keeps_file_with_remaining_chunks(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
-        file_repo: FileRepositorySQLite,
+        chunk_repo: FileChunkRepository,
+        file_repo: FileRepository,
         mnemosyne_client: MagicMock,
         hash_index_service: MagicMock,
         logger: LoggerMock,
@@ -1015,8 +1015,8 @@ class TestForgetMemoryUseCaseIntegration:
 
         # Create a file with two chunks
         service.create_file(_file_data(id="f_int_2", path="/tmp/forget_multi.py"))
-        service.create_chunk(file_id="f_int_2", memory_id="mem_int_2a", chunk_index=0)
-        service.create_chunk(file_id="f_int_2", memory_id="mem_int_2b", chunk_index=1)
+        service.link_chunk(file_id="f_int_2", memory_id="mem_int_2a", chunk_index=0)
+        service.link_chunk(file_id="f_int_2", memory_id="mem_int_2b", chunk_index=1)
 
         # Verify two chunks
         chunks_before = chunk_repo.get_chunks_by_file_id("f_int_2")
@@ -1081,7 +1081,7 @@ class TestForgetMemoryUseCaseIntegration:
     def test_forget_no_chunk_cleanup_when_memory_not_found(
         self,
         service: FileService,
-        chunk_repo: FileChunkRepositorySQLite,
+        chunk_repo: FileChunkRepository,
         mnemosyne_client: MagicMock,
         hash_index_service: MagicMock,
         logger: LoggerMock,
@@ -1091,7 +1091,7 @@ class TestForgetMemoryUseCaseIntegration:
 
         # Create a file with a chunk
         service.create_file(_file_data(id="f_int_4", path="/tmp/forget_notfound.py"))
-        service.create_chunk(file_id="f_int_4", memory_id="mem_int_4", chunk_index=0)
+        service.link_chunk(file_id="f_int_4", memory_id="mem_int_4", chunk_index=0)
 
         mnemosyne_client.forget.return_value = {"status": "not_found", "memory_id": "mem_int_4"}
 

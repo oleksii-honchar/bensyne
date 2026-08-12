@@ -7,11 +7,10 @@ plus in-memory repository implementations for unit testing.
 from datetime import datetime
 from typing import List, Optional
 
-from src.domain.aggregates.memory_bank_aggregate import MemoryBankAggregate
-from src.domain.entities.memory import Memory
-from src.domain.entities.memory_bank import MemoryBank
-from src.domain.interfaces import MemoryBankRepository, MemoryRepository
-from src.domain.result import Result
+from src.domain.memory_bank_aggregate import MemoryBank
+from src.domain.memory_entity import Memory
+
+from src.utils.result import Result
 from src.domain.value_objects.file_hash import FileHash
 
 
@@ -54,6 +53,7 @@ def a_memory_bank(
     created_at: Optional[datetime] = None,
     last_accessed: Optional[datetime] = None,
     memory_count: int = 0,
+    memories: Optional[List[Memory]] = None,
 ) -> MemoryBank:
     """Create a valid MemoryBank instance with sensible defaults.
 
@@ -66,14 +66,15 @@ def a_memory_bank(
         created_at=created_at or datetime.now(),
         last_accessed=last_accessed,
         memory_count=memory_count,
+        memories=memories or [],
     )
 
 
 def a_memory_bank_aggregate(
     bank: Optional[MemoryBank] = None,
     memories: Optional[List[Memory]] = None,
-) -> MemoryBankAggregate:
-    """Create a valid MemoryBankAggregate with sensible defaults.
+) -> MemoryBank:
+    """Create a valid MemoryBank with sensible defaults.
 
     By default creates an active bank with no memories.
     Accepts partial overrides via keyword arguments.
@@ -82,7 +83,7 @@ def a_memory_bank_aggregate(
         bank = a_memory_bank()
     if memories is None:
         memories = []
-    return MemoryBankAggregate(bank=bank, memories=memories)
+    return bank.replace(memories=memories)
 
 
 def a_file_hash(
@@ -99,8 +100,8 @@ def a_file_hash(
 # Fake repositories
 # ---------------------------------------------------------------------------
 
-class InMemoryMemoryRepository(MemoryRepository):
-    """In-memory implementation of MemoryRepository for testing."""
+class InMemoryMemoryRepository:
+    """In-memory repository for Memory entities for testing."""
 
     def __init__(self, data: Optional[List[Memory]] = None) -> None:
         self._store: dict[str, Memory] = {}
@@ -126,23 +127,23 @@ class InMemoryMemoryRepository(MemoryRepository):
         return Result.ok(False)
 
 
-class InMemoryMemoryBankRepository(MemoryBankRepository):
-    """In-memory implementation of MemoryBankRepository for testing."""
+class InMemoryMemoryBankRepository:
+    """In-memory repository for MemoryBank entities for testing."""
 
-    def __init__(self, data: Optional[List[MemoryBankAggregate]] = None) -> None:
-        self._store: dict[str, MemoryBankAggregate] = {}
+    def __init__(self, data: Optional[List[MemoryBank]] = None) -> None:
+        self._store: dict[str, MemoryBank] = {}
         if data:
-            for agg in data:
-                self._store[agg.bank.name] = agg
+            for bank in data:
+                self._store[bank.name] = bank
 
-    def save(self, aggregate: MemoryBankAggregate) -> Result[None]:
-        self._store[aggregate.bank.name] = aggregate
+    def save(self, aggregate: MemoryBank) -> Result[None]:
+        self._store[aggregate.name] = aggregate
         return Result.ok(None)
 
-    def find_by_id(self, bank_name: str) -> Result[Optional[MemoryBankAggregate]]:
+    def find_by_id(self, bank_name: str) -> Result[Optional[MemoryBank]]:
         return Result.ok(self._store.get(bank_name))
 
-    def list(self) -> Result[List[MemoryBankAggregate]]:
+    def list(self) -> Result[List[MemoryBank]]:
         return Result.ok(list(self._store.values()))
 
     def delete(self, bank_name: str) -> bool:
@@ -161,6 +162,6 @@ def a_memory_repository(data: Optional[List[Memory]] = None) -> InMemoryMemoryRe
     return InMemoryMemoryRepository(data)
 
 
-def a_memory_bank_repository(data: Optional[List[MemoryBankAggregate]] = None) -> InMemoryMemoryBankRepository:
-    """Create an in-memory MemoryBankAggregate repository, optionally seeded with data."""
+def a_memory_bank_repository(data: Optional[List[MemoryBank]] = None) -> InMemoryMemoryBankRepository:
+    """Create an in-memory MemoryBank repository, optionally seeded with data."""
     return InMemoryMemoryBankRepository(data)

@@ -1,12 +1,12 @@
-"""Unit tests for UpdateMemoryUseCase and SleepMemoryUseCase."""
+"""Unit tests for UpdateMemoryUseCase and SleepUseCase."""
 
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
-from src.application.use_cases.sleep_memory_use_case import SleepMemoryUseCase
-from src.domain.result import ErrorWithDetails, Result
+from src.application.use_cases.sleep_use_case import SleepUseCase
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 
@@ -124,8 +124,8 @@ class TestUpdateMemoryUseCase:
         assert result.value["memory_bank"] == "default"
 
 
-class TestSleepMemoryUseCase:
-    """Test SleepMemoryUseCase orchestration logic."""
+class TestSleepUseCase:
+    """Test SleepUseCase orchestration logic."""
 
     @pytest.fixture
     def mnemosyne_client(self) -> MagicMock:
@@ -136,8 +136,8 @@ class TestSleepMemoryUseCase:
         return LoggerMock()
 
     @pytest.fixture
-    def use_case(self, mnemosyne_client, logger) -> SleepMemoryUseCase:
-        return SleepMemoryUseCase(
+    def use_case(self, mnemosyne_client, logger) -> SleepUseCase:
+        return SleepUseCase(
             mnemosyne_client=mnemosyne_client,
             logger=logger,
         )
@@ -145,7 +145,7 @@ class TestSleepMemoryUseCase:
     # -- Delegation --
 
     def test_execute_delegates_to_mnemosyne_client_sleep(self, use_case, mnemosyne_client) -> None:
-        """SleepMemoryUseCase should delegate to MnemosyneClient.sleep()."""
+        """SleepUseCase should delegate to MnemosyneClient.sleep()."""
         sleep_result = {"status": "consolidated", "merged": 5}
         mnemosyne_client.sleep.return_value = sleep_result
 

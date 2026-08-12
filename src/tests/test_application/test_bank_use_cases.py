@@ -6,7 +6,7 @@ import pytest
 
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 

@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from src.domain.entities.memory import Memory, MemoryNotFoundError
-from src.domain.result import ErrorWithDetails, Result
+from src.domain.memory_entity import Memory, MemoryNotFoundError
+from src.utils.result import ErrorWithDetails, Result
 
 
 class TestMemoryOfValidData:

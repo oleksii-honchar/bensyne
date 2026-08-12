@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
-from src.domain.result import DomainEvent, ErrorWithDetails, Result
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 
 @dataclass(frozen=True)

@@ -15,11 +15,11 @@ from typing import Callable, Dict, List, Optional
 import structlog.stdlib
 from src.application.services.file_service import FileService
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.aggregates.file_metadata_aggregate import FileMetadataAggregate
-from src.domain.entities.file import File
-from src.domain.entities.file_relation import FileRelation, RelationType
-from src.domain.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepositorySQLite
+from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_entity import File
+from src.domain.file_relation_entity import FileRelation, RelationType
+from src.utils.result import ErrorWithDetails, Result
+from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepository
 
 
 class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
@@ -34,7 +34,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
         self,
         mnemosyne_client: Callable[[str], Optional[dict]],
         file_service: FileService,
-        relation_repository: FileRelationRepositorySQLite,
+        relation_repository: FileRelationRepository,
         logger: structlog.stdlib.BoundLogger,
     ) -> None:
         super().__init__(logger)

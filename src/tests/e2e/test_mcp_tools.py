@@ -215,7 +215,7 @@ class TestSleep:
 
         sleep_result = mcp_call_tool(
             mcp_client,
-            "sleepMemory",
+            "sleep",
             {"memory_bank": bank},
             request_id=50,
         )

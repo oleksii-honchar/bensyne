@@ -5,6 +5,7 @@ Manages SQLite connections for the file metadata layer with:
 - Connection pooling for concurrent access
 - Migration support for schema evolution
 - WAL mode for concurrent reads
+- SQLAlchemy ORM support via Engine and Session
 """
 
 from __future__ import annotations
@@ -12,8 +13,16 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from src.infrastructure.storage.sqlite.file_metadata_migrations import MIGRATIONS
+
+if TYPE_CHECKING:
+    from src.infrastructure.storage.sqlite.models import Base
 
 
 class FileMetadataConnectionManager:
@@ -42,6 +51,10 @@ class FileMetadataConnectionManager:
 
         # Apply migrations (creates DB and tables if needed)
         self._apply_migrations()
+
+        # SQLAlchemy Engine and Session factory
+        self._engine = self._create_engine()
+        self._session_factory = sessionmaker(bind=self._engine)
 
     # ------------------------------------------------------------------
     # Migration internals
@@ -109,6 +122,24 @@ class FileMetadataConnectionManager:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def _create_engine(self) -> Engine:
+        """Create a SQLAlchemy Engine for this database.
+
+        Configures WAL mode and foreign keys via connection events.
+        """
+
+        def _set_sqlite_pragma(dbapi_conn: sqlite3.Connection, _record: object) -> None:
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.close()
+
+        event.listen(Engine, "connect", _set_sqlite_pragma)
+        return create_engine(
+            f"sqlite:///{self.db_path}",
+            connect_args={"check_same_thread": False},
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -218,3 +249,36 @@ class FileMetadataConnectionManager:
                 current_version = migration.version
 
         return current_version
+
+    # ------------------------------------------------------------------
+    # SQLAlchemy Session API
+    # ------------------------------------------------------------------
+
+    def get_session(self) -> Session:
+        """Get a SQLAlchemy Session for ORM operations.
+
+        Returns:
+            A new Session bound to the SQLAlchemy Engine.
+
+        Raises:
+            RuntimeError: If the manager is closed.
+        """
+        if self._closed:
+            raise RuntimeError("Connection manager is closed")
+        return self._session_factory()
+
+    def close_session(self, session: Session) -> None:
+        """Close a SQLAlchemy Session.
+
+        Args:
+            session: The Session to close.
+        """
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    @property
+    def engine(self) -> Engine:
+        """Return the SQLAlchemy Engine for this database."""
+        return self._engine

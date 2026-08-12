@@ -7,7 +7,7 @@ and returns Result with results and memory_bank.
 import structlog.stdlib
 from src.infrastructure.mnemosyne.client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 
 
 class RecallMemoryUseCase(BaseUseCase[dict, dict]):

@@ -6,7 +6,7 @@ import pytest
 
 from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
-from src.domain.result import ErrorWithDetails, Result
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 
@@ -240,7 +240,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_removes_chunks_for_deleted_memory(self, mnemosyne_client, hash_index_service, logger) -> None:
         """When memory is deleted, all file chunks referencing it must be removed."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.domain.models.file_chunk_model import ContentType as ChunkContentType
         from datetime import datetime
 
@@ -333,7 +333,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_deletes_file_when_no_remaining_chunks(self, mnemosyne_client, hash_index_service, logger) -> None:
         """After removing a chunk, if the file has no remaining chunks, delete the file."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.domain.models.file_chunk_model import ContentType as ChunkContentType
         from datetime import datetime
 
@@ -380,7 +380,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_does_not_delete_file_when_chunks_remain(self, mnemosyne_client, hash_index_service, logger) -> None:
         """After removing a chunk, if the file has remaining chunks, do not delete the file."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.domain.models.file_chunk_model import ContentType as ChunkContentType
         from datetime import datetime
 
@@ -429,7 +429,7 @@ class TestForgetMemoryUseCase:
 
     def test_execute_cleans_hash_index_after_chunk_cleanup(self, mnemosyne_client, hash_index_service, logger) -> None:
         """Hash index cleanup still happens after chunk cleanup on successful deletion."""
-        from src.domain.entities.file_chunk import FileChunk
+        from src.domain.file_chunk_entity import FileChunk
         from src.domain.models.file_chunk_model import ContentType as ChunkContentType
         from datetime import datetime
 

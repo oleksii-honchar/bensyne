@@ -5,7 +5,7 @@ from typing import List
 
 import pytest
 
-from src.domain.result import DomainEvent, ErrorWithDetails, Result
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 
 class TestErrorWithDetails:

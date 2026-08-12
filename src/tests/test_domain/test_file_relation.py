@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.entities.file_relation import (
+from src.domain.file_relation_entity import (
     Direction,
     FileRelation,
     RelationType,
@@ -13,7 +13,7 @@ from src.domain.events.file_relation_events import (
     FileRelationCreatedEvent,
     FileRelationUpdatedEvent,
 )
-from src.domain.result import DomainEvent, ErrorWithDetails, Result
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 
 
 class TestFileRelationOfValidData:

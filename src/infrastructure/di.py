@@ -18,7 +18,7 @@ from dependency_injector import containers, providers
 
 from src.domain.config_models import InstancePoolConfig
 from src.infrastructure.mnemosyne.bank_manager import BankManager
-from src.services.bank.router import MemoryBankRouter
+from src.infrastructure.bank.router import MemoryBankRouter
 from src.tests.test_domain.domain_test_utils import (
     InMemoryMemoryBankRepository,
     InMemoryMemoryRepository,
