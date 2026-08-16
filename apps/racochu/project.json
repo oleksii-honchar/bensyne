@@ -2,5 +2,35 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "racochu",
   "projectType": "application",
-  "sourceRoot": "src"
+  "sourceRoot": "src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run build"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm test"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run lint"
+      }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run test:e2e"
+      }
+    }
+  }
 }

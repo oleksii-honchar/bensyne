@@ -15,7 +15,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/bensyne-mcp",
-        "command": ".venv/bin/python -m ruff check src/"
+        "command": ".venv/bin/python -m flake8 src/"
       }
     },
     "type-check": {
