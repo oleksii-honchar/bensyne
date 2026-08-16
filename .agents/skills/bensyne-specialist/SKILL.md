@@ -6,8 +6,8 @@ description: |
   or running the MCP server locally.
   Also trigger on: "run bensyne tests", "start bensyne server", "bensyne gotcha", "bensyne python",
   "bensyne pytest", "bensyne fastmcp", "bensyne env setup", "bensyne e2e failing".
-version: "1.1"
-updatedAt: "2026-08-16T12:00:00+02:00"
+version: "1.2"
+updatedAt: "2026-08-16T14:00:00+02:00"
 author: "oleksii"
 status: "draft"
 tags: ["bensyne", "python", "operational", "mcp-server"]
@@ -70,10 +70,9 @@ typed parameters, then delegate to `handlers.handle_*()`.
 **When working in Bensyne, first check:**
 
 1. **Which Python?** — Confirm you're using `.venv/bin/python` (not `python3`)
-2. **Vault lookup** — The monorepo has a single consolidated vault at `.vault/` (root; `.vault/_Vault-Home.md` documents the layout and the three ID series). Check the vault before asking:
-   - bensyne-mcp-specific knowledge → `.vault/systems/bensyne-mcp/`
-   - shared/cross-system protocol knowledge (ADRs, memories, architectures; `ADR-SYS-`/`MEM-SYS-` ID series) → root areas: `.vault/adrs/`, `.vault/memories/`, `.vault/architectures/`
-   - racochu system knowledge → `.vault/systems/racochu/`
+2. **Vault lookup** — The monorepo has a single flat vault at `.vault/` with area folders (`decisions/`, `concepts/`, `memories/`, `specifications/`, `runbooks/`, `architectures/<system>/`; `.vault/_Vault-Home.md` documents the layout). Check the vault before asking:
+   - Scope nodes by the `system` frontmatter field: `shared | bensyne-mcp | racochu`
+   - ID series: `DEC-NNNN` (decisions), `MEM-NNNN` (shared memories only)
 3. **Test boundaries** — Domain: `test_domain/`, Infra: `test_infrastructure/`, App: `test_application/`, Integration: `integration/`.
 
 ---
@@ -163,18 +162,18 @@ Stop and ask when you encounter:
 - [ ] Domain changes: entities are frozen, Result pattern used, no domain exceptions
 - [ ] Infrastructure changes: `ON CONFLICT DO UPDATE` used for upserts (not `INSERT OR REPLACE`)
 - [ ] New tools registered in `app.py` following the handler pattern
-- [ ] Checked the consolidated vault (`.vault/` — `.vault/systems/bensyne-mcp/` for bensyne-specific, root areas for shared/protocol) for relevant architecture before making design decisions
+- [ ] Checked the flat vault (`.vault/` — scope by `system` frontmatter: `shared | bensyne-mcp | racochu`) for relevant architecture before making design decisions
 - [ ] No TODO/FIXME left behind
 
 ---
 
 ## Shared Patterns / References
 
-- `.vault/` — Consolidated monorepo vault (root), the single source of architectural knowledge for the whole monorepo: architecture, ADRs, concepts, runbooks, specs.
-  - Shared/cross-system protocol knowledge → root areas: `.vault/adrs/`, `.vault/memories/`, `.vault/architectures/` (nodes use the `ADR-SYS-`/`MEM-SYS-` ID series)
-  - bensyne-mcp-specific knowledge → `.vault/systems/bensyne-mcp/` (bensyne's own ADRs, concepts, memories, specs, architectures)
-  - racochu system knowledge → `.vault/systems/racochu/`
-  - `.vault/_Vault-Home.md` — documents the layout and the three ID series. Read when you need architectural context.
+- `.vault/` — Single flat monorepo vault, the single source of architectural knowledge for the whole monorepo: decisions, concepts, memories, runbooks, specs, C4 architectures.
+  - Area folders: `decisions/`, `concepts/`, `memories/`, `specifications/`, `runbooks/`, `architectures/<system>/` (per-system C4)
+  - Scope by the `system` frontmatter field: `shared | bensyne-mcp | racochu` — flat areas stay flat, no per-system sub-vaults
+  - ID series: `DEC-NNNN` (decisions), `MEM-NNNN` (shared memories only)
+  - `.vault/_Vault-Home.md` — documents the layout. Read when you need architectural context.
 - `src/domain/result.py` — Result pattern with domain events. Read when implementing domain methods.
 - `src/app.py` — Tool registration pattern. Read when adding new MCP tools.
 - `src/domain/interfaces.py` — Repository interfaces. Read when implementing a new domain entity.

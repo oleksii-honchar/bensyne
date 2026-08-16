@@ -1,14 +1,15 @@
 ---
 type: memory
-id: MEM-SYS-0001
+id: MEM-0001
+system: shared
 title: "MCP Transport: SSE Deprecated"
 createdAt: "2026-08-16"
 updatedAt: "2026-08-16"
 tags: [transport, mcp, memory-bank]
 see_also:
-  - "systems/bensyne-mcp/memories/0001-sse-transport-deprecated.memory.md"
-  - "systems/racochu/memories/0001-mnemosyne-sse-deprecated.memory.md"
-  - "memories/0002-mcp-transport-streamable-http.memory.md"
+  - memories/0003-sse-transport-deprecated.memory.md
+  - memories/0008-mnemosyne-sse-deprecated.memory.md
+  - memories/0002-mcp-transport-streamable-http.memory.md
 ---
 
 # Memory: MCP Transport — SSE Deprecated

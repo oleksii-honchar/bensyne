@@ -1,14 +1,15 @@
 ---
 type: memory
-id: MEM-SYS-0002
+id: MEM-0002
+system: shared
 title: "MCP Transport: Streamable HTTP Recommended"
 createdAt: "2026-08-16"
 updatedAt: "2026-08-16"
 tags: [transport, mcp, memory-bank]
 see_also:
-  - "systems/bensyne-mcp/memories/0002-streamable-http-recommended.memory.md"
-  - "systems/racochu/memories/0005-mnemosyne-client-streamable-http.memory.md"
-  - "memories/0001-mcp-transport-sse-deprecated.memory.md"
+  - memories/0004-streamable-http-recommended.memory.md
+  - memories/0012-mnemosyne-client-streamable-http.memory.md
+  - memories/0001-mcp-transport-sse-deprecated.memory.md
 ---
 
 # Memory: MCP Transport — Streamable HTTP Recommended
@@ -33,7 +34,7 @@ The RAG Content Chunker's `MnemosyneClient` (now `BensyneClient`) was rewritten 
 
 ### bensyne-mcp
 
-Server exposes the Streamable HTTP `/mcp` endpoint; SSE is deprecated (see MEM-SYS-0001). This transport is the standard for all clients of the memory server.
+Server exposes the Streamable HTTP `/mcp` endpoint; SSE is deprecated (see MEM-0001). This transport is the standard for all clients of the memory server.
 
 ### racochu
 

@@ -7,11 +7,11 @@ createdAt: "2026-08-16"
 updatedAt: "2026-08-16"
 tags: [architecture, container, mcp, streamable-http]
 see_also:
-  - "adrs/0001-namespace-registration-protocol.adr.md"
-  - "memories/0002-mcp-transport-streamable-http.memory.md"
-  - "systems/racochu/architectures/rag-content-chunker/containers/0001-server-container.container.md"
-  - "systems/bensyne-mcp/_Vault-Home.md"
-  - "systems/racochu/_Vault-Home.md"
+  - decisions/0001-namespace-registration-protocol.decision.md
+  - memories/0002-mcp-transport-streamable-http.memory.md
+  - architectures/racochu/containers/0001-server-container.container.md
+  - architectures/bensyne-mcp/_index.md
+  - architectures/racochu/_index.md
 linked_elements: []
 deprecated:
   date: null
@@ -70,6 +70,6 @@ C4Container
 ## Notes
 
 - **Transport:** Streamable HTTP is the only supported remote transport across the MCP boundary — SSE was deprecated due to init handshake races (see `memories/0001-mcp-transport-sse-deprecated.memory.md`); mcp-proxy bridges stdio→HTTP where needed (e.g. e2e tests).
-- **Protocol decisions:** memory bank registration (ADR-SYS-0001), bank parameter enforcement (ADR-SYS-0002), and in-memory bank registry (ADR-SYS-0003) live at the vault root `adrs/` area.
+- **Protocol decisions:** memory bank registration (DEC-0001), bank parameter enforcement (DEC-0002), and in-memory bank registry (DEC-0003) live at the vault root `decisions/` area.
 - **Ephemeral racochu side:** no durable database on the racochu side — all state is stored in bensyne-mcp's per-bank SQLite databases.
-- **Per-system detail:** see `systems/racochu/architectures/rag-content-chunker/` (component level) and `systems/bensyne-mcp/architectures/`.
+- **Per-system detail:** see `architectures/racochu/` (component level) and `architectures/bensyne-mcp/`.

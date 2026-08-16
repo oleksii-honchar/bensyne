@@ -1,17 +1,20 @@
 ---
 type: index
-title: "Shared Architecture Maps"
+title: "Architectures"
 createdAt: "2026-08-16"
 updatedAt: "2026-08-16"
 tags: []
 ---
 
-# Shared Architecture Maps
+# Architectures
 
-Cross-system C4 architecture for the Bensyne monorepo — the whole-system view spanning bensyne-mcp, racochu, and the MCP protocol boundary. Per-system architectures live under `systems/bensyne-mcp/architectures/` and `systems/racochu/architectures/`.
+C4 architecture maps for the Bensyne monorepo. The whole-system container node sits at this level; per-system C4 trees live under `bensyne-mcp/` and `racochu/`.
 
-## Nodes
+## Whole System
 
-### Whole System
+- [[0001-system-container]] — Bensyne Monorepo — System Container (bensyne-mcp + racochu)
 
-- [[0001-system-container]] — Container level (C4 Level 2): bensyne-mcp + racochu + MCP protocol boundary (Streamable HTTP; SSE deprecated)
+## Per-System
+
+- [[bensyne-mcp/_index]] — bensyne-mcp C4 (containers, components, code)
+- [[racochu/_index]] — racochu C4 (containers, components, code)
