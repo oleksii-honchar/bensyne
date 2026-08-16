@@ -97,7 +97,4 @@ class Result(Generic[T]):
         Each error is formatted as: error_code: details_json
         Errors are joined with ", ". Returns empty string when no errors.
         """
-        return ", ".join(
-            f"{error.error_code}: {json.dumps(error.details)}"
-            for error in self.errors
-        )
+        return ", ".join(f"{error.error_code}: {json.dumps(error.details)}" for error in self.errors)

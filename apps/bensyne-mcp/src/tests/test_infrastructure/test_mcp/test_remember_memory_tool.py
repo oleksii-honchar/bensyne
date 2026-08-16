@@ -26,6 +26,7 @@ from src.infrastructure.bank.router import MemoryBankRouter
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _mock_mnemosyne_instance() -> MagicMock:
     """Create a fully configured mock Mnemosyne instance."""
     mock = MagicMock()
@@ -43,9 +44,7 @@ def router(tmp_path: Path) -> MemoryBankRouter:
         {
             "mnemosyne": MagicMock(),
             "mnemosyne.core": MagicMock(),
-            "mnemosyne.core.memory": MagicMock(
-                Mnemosyne=lambda **kwargs: mock_instance
-            ),
+            "mnemosyne.core.memory": MagicMock(Mnemosyne=lambda **kwargs: mock_instance),
         },
     ):
         config = InstancePoolConfig(
@@ -161,10 +160,7 @@ class TestRememberMemoryToolRegistration:
         register_tools(mock_mcp, mock_router)
 
         # Check that mcp.tool was called with name="rememberMemory"
-        tool_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "rememberMemory"
-        ]
+        tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "rememberMemory"]
         assert len(tool_calls) == 1, "rememberMemory tool should be registered exactly once"
 
     def test_old_memory_remember_tool_not_registered(self) -> None:
@@ -176,10 +172,7 @@ class TestRememberMemoryToolRegistration:
 
         register_tools(mock_mcp, mock_router)
 
-        tool_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "memory_remember"
-        ]
+        tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "memory_remember"]
         assert len(tool_calls) == 0, "memory_remember tool should NOT be registered"
 
     def test_remember_memory_tool_accepts_content_and_optional_params(self) -> None:
@@ -193,14 +186,14 @@ class TestRememberMemoryToolRegistration:
 
         # Find the rememberMemory tool registration
         remember_memory_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "rememberMemory"
+            call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "rememberMemory"
         ]
         assert len(remember_memory_calls) == 1
 
         # Inspect the source of app.py to verify the remember function signature
         import inspect
         from src.app import register_tools as _register_tools
+
         source = inspect.getsource(_register_tools)
         # The remember function should have content, memory_bank, and optional params
         assert "content: str" in source
@@ -223,11 +216,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -250,11 +245,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -280,11 +277,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -310,11 +309,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -340,9 +341,7 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("CONTENT_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("CONTENT_REQUIRED", {})])
 
         async def run() -> None:
             with patch(
@@ -382,11 +381,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_xyz789",
-            "memory_bank": "my-bank",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_xyz789",
+                "memory_bank": "my-bank",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -409,11 +410,13 @@ class TestRememberMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deduplicated",
-            "memory_id": "mem_existing",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deduplicated",
+                "memory_id": "mem_existing",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -438,6 +441,9 @@ class TestRememberMemoryHandler:
         """handle_remember should use rememberMemory in @log_tool_call decorator."""
         import inspect
         from src.infrastructure.mcp.handlers import handle_remember
-        source = inspect.getsource(handle_remember.__wrapped__ if hasattr(handle_remember, '__wrapped__') else handle_remember)
+
+        source = inspect.getsource(
+            handle_remember.__wrapped__ if hasattr(handle_remember, "__wrapped__") else handle_remember
+        )
         # The @log_tool_call decorator should use "rememberMemory"
         assert "rememberMemory" in source

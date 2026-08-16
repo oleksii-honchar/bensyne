@@ -60,10 +60,12 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                     use_case="remember_memory",
                     existing_memory_id=existing_memory_id,
                 )
-                return Result.ok({
-                    "status": "deduplicated",
-                    "memory_id": existing_memory_id,
-                })
+                return Result.ok(
+                    {
+                        "status": "deduplicated",
+                        "memory_id": existing_memory_id,
+                    }
+                )
 
         # 2. Create memory entity — generate id if not provided
         create_params = dict(parameters)
@@ -108,11 +110,13 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                 file_hash=file_hash[:16],
             )
 
-        return Result.ok({
-            "status": "stored",
-            "memory_id": saved_memory.id,
-            "memory_bank": memory_bank,
-        })
+        return Result.ok(
+            {
+                "status": "stored",
+                "memory_id": saved_memory.id,
+                "memory_bank": memory_bank,
+            }
+        )
 
     @staticmethod
     def _extract_file_hash(parameters: dict) -> str | None:

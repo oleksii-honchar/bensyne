@@ -47,26 +47,30 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
                 episodic = stats.get("episodic_count") or stats.get("episodic") or 0
                 memory_count = working + episodic
 
-            banks.append({
-                "name": bank_name,
-                "bank": client.memory_bank,
-                "description": description or "",
-                "memory_count": memory_count,
-                "status": "active",
-            })
+            banks.append(
+                {
+                    "name": bank_name,
+                    "bank": client.memory_bank,
+                    "description": description or "",
+                    "memory_count": memory_count,
+                    "status": "active",
+                }
+            )
             seen.add(bank_name)
 
         # Registered but not active
         for bank_name in self.router.registry.list_banks():
             if bank_name not in seen:
                 description = self.router.get_bank_description(bank_name)
-                banks.append({
-                    "name": bank_name,
-                    "bank": bank_name,
-                    "description": description or "",
-                    "memory_count": 0,
-                    "status": "registered",
-                })
+                banks.append(
+                    {
+                        "name": bank_name,
+                        "bank": bank_name,
+                        "description": description or "",
+                        "memory_count": 0,
+                        "status": "registered",
+                    }
+                )
 
         self.logger.info(
             "Banks listed",

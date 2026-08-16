@@ -109,9 +109,7 @@ class TestConnectionInitialization:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             table_names = [row[0] for row in cursor.fetchall()]
             assert "files" in table_names
             assert "file_chunks" in table_names
@@ -180,7 +178,9 @@ class TestFileTableSchema:
         finally:
             conn.close()
 
-    def test_files_source_type_check_constraint(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
+    def test_files_source_type_check_constraint(
+        self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path
+    ) -> None:
         """source_type CHECK constraint rejects invalid values."""
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
@@ -215,7 +215,9 @@ class TestFileTableSchema:
 class TestFileChunksTableSchema:
     """file_chunks table has the correct schema per spec."""
 
-    def test_file_chunks_table_has_required_columns(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
+    def test_file_chunks_table_has_required_columns(
+        self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path
+    ) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
@@ -231,7 +233,9 @@ class TestFileChunksTableSchema:
         finally:
             conn.close()
 
-    def test_file_chunks_composite_primary_key(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
+    def test_file_chunks_composite_primary_key(
+        self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path
+    ) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
@@ -309,7 +313,9 @@ class TestFileChunksTableSchema:
 class TestFileRelationsTableSchema:
     """file_relations table has the correct schema per spec."""
 
-    def test_file_relations_table_has_required_columns(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
+    def test_file_relations_table_has_required_columns(
+        self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path
+    ) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
@@ -322,7 +328,9 @@ class TestFileRelationsTableSchema:
         finally:
             conn.close()
 
-    def test_file_relations_composite_primary_key(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
+    def test_file_relations_composite_primary_key(
+        self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path
+    ) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
@@ -369,9 +377,7 @@ class TestFileRelationsTableSchema:
             conn.commit()
             conn.execute("DELETE FROM files WHERE id = ?", ("f1",))
             conn.commit()
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM file_relations WHERE source_file_id = ?", ("f1",)
-            )
+            cursor = conn.execute("SELECT COUNT(*) FROM file_relations WHERE source_file_id = ?", ("f1",))
             count = cursor.fetchone()[0]
             assert count == 0
         finally:
@@ -395,8 +401,7 @@ class TestFileRelationsTableSchema:
             )
             conn.commit()
             cursor = conn.execute(
-                "SELECT source_file_id, target_file_id, relation_type FROM file_relations "
-                "WHERE source_file_id = ?",
+                "SELECT source_file_id, target_file_id, relation_type FROM file_relations " "WHERE source_file_id = ?",
                 ("f1",),
             )
             row = cursor.fetchone()
@@ -517,9 +522,7 @@ class TestCreateTables:
         db_path = tmp_bank_dir / "file_metadata.db"
         conn = sqlite3.connect(str(db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             table_names = [row[0] for row in cursor.fetchall()]
             assert "files" in table_names
             assert "file_chunks" in table_names
@@ -578,9 +581,7 @@ class TestCheckMigrations:
         # Verify tables exist
         conn = sqlite3.connect(str(db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             table_names = [row[0] for row in cursor.fetchall()]
             assert "files" in table_names
             assert "file_chunks" in table_names

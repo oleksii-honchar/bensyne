@@ -25,11 +25,18 @@ class FileChunkCreatedEvent(DomainEvent):
     @classmethod
     def of(cls, chunk_id: str, file_id: str, memory_id: str) -> Result["FileChunkCreatedEvent"]:
         if not chunk_id or not file_id or not memory_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK_CREATED_EVENT", {
-                "chunk_id": chunk_id,
-                "file_id": file_id,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CHUNK_CREATED_EVENT",
+                        {
+                            "chunk_id": chunk_id,
+                            "file_id": file_id,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(chunk_id=chunk_id, file_id=file_id, memory_id=memory_id))
 
     @property
@@ -55,9 +62,16 @@ class FileChunkUpdatedEvent(DomainEvent):
     @classmethod
     def of(cls, chunk_id: str, changed_fields: list[str]) -> Result["FileChunkUpdatedEvent"]:
         if not chunk_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK_UPDATED_EVENT", {
-                "chunk_id": chunk_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CHUNK_UPDATED_EVENT",
+                        {
+                            "chunk_id": chunk_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(chunk_id=chunk_id, changed_fields=changed_fields))
 
     @property

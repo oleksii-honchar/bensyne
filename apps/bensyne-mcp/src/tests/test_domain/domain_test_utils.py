@@ -18,6 +18,7 @@ from src.domain.value_objects.file_hash import FileHash
 # Stub builders
 # ---------------------------------------------------------------------------
 
+
 def a_memory(
     id: str = "test_memory_id",
     content: str = "Test memory content",
@@ -100,6 +101,7 @@ def a_file_hash(
 # Fake repositories
 # ---------------------------------------------------------------------------
 
+
 class InMemoryMemoryRepository:
     """In-memory repository for Memory entities for testing."""
 
@@ -156,6 +158,7 @@ class InMemoryMemoryBankRepository:
 # ---------------------------------------------------------------------------
 # Factory helpers for fake repositories
 # ---------------------------------------------------------------------------
+
 
 def a_memory_repository(data: Optional[List[Memory]] = None) -> InMemoryMemoryRepository:
     """Create an in-memory Memory repository, optionally seeded with data."""

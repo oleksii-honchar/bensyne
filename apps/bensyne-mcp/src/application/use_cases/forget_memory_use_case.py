@@ -65,10 +65,17 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
         # Guard: only allow on pure_memories banks
         bank_type = self.bank_type_checker(memory_bank)
         if bank_type != "pure_memories":
-            return Result.ko([ErrorWithDetails("MEMORY_BANK_NOT_SUPPORTED", {
-                "memory_bank": memory_bank,
-                "bank_type": bank_type,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "MEMORY_BANK_NOT_SUPPORTED",
+                        {
+                            "memory_bank": memory_bank,
+                            "bank_type": bank_type,
+                        },
+                    )
+                ]
+            )
 
         self.logger.debug(
             "Bank type check passed",
@@ -114,11 +121,13 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
             status=status,
         )
 
-        return Result.ok({
-            "status": status,
-            "memory_id": memory_id,
-            "memory_bank": memory_bank,
-        })
+        return Result.ok(
+            {
+                "status": status,
+                "memory_id": memory_id,
+                "memory_bank": memory_bank,
+            }
+        )
 
     def _cleanup_chunks_and_files(self, memory_id: str) -> None:
         """Remove all file chunks referencing the memory and delete empty files."""

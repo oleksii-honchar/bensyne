@@ -48,6 +48,7 @@ _DEFAULT_LOG_FILE = os.path.expanduser("~/.local/share/bensyne/logs/bensyne.json
 # Structlog configuration
 # ---------------------------------------------------------------------------
 
+
 def _get_env(env_var: str, default: str) -> str:
     """Read an environment variable with a fallback default."""
     return os.environ.get(env_var, default)
@@ -196,6 +197,7 @@ def init_structlog() -> None:
 
 _FILE_LOGGER: Any = None
 
+
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a configured structlog logger for the given module.
 
@@ -236,6 +238,7 @@ def get_file_logger() -> Any:
 # ---------------------------------------------------------------------------
 # Logger mock for unit tests
 # ---------------------------------------------------------------------------
+
 
 class LoggerMock:
     """A logger mock that captures log calls without side effects.

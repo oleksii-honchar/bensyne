@@ -1,4 +1,3 @@
-
 """Unit tests for FileHash value object."""
 
 import pytest

@@ -92,9 +92,7 @@ class TestSetupLogging:
         log_content = Path(log_file).read_text()
         assert "file logging test" in log_content
 
-    def test_log_directory_created(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
-    ) -> None:
+    def test_log_directory_created(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
         """Parent directories for log file are created if missing."""
         monkeypatch.setenv("LOG_LEVEL", "INFO")
 
@@ -107,9 +105,7 @@ class TestSetupLogging:
 
         assert Path(log_file).parent.is_dir()
 
-    def test_default_log_file_path(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_log_file_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Default log file uses ~/.local/share/bensyne/logs/bensyne.log."""
         monkeypatch.delenv("LOG_LEVEL", raising=False)
 

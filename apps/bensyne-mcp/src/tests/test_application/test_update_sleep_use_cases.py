@@ -57,56 +57,58 @@ class TestUpdateMemoryUseCase:
         """When update succeeds, return Result.ok with status and memory_bank."""
         mnemosyne_client.update.return_value = Result.ok(True)
 
-        result = use_case.execute({
-            "memory_id": "mem_123",
-            "content": "new content",
-            "importance": 0.9,
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_123",
+                "content": "new content",
+                "importance": 0.9,
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "updated"
         assert result.value["memory_bank"] == "my_bank"
-        mnemosyne_client.update.assert_called_once_with(
-            "mem_123", content="new content", importance=0.9
-        )
+        mnemosyne_client.update.assert_called_once_with("mem_123", content="new content", importance=0.9)
 
     def test_execute_passes_only_content_when_importance_not_provided(self, use_case, mnemosyne_client) -> None:
         """When only content is provided, importance should be None."""
         mnemosyne_client.update.return_value = Result.ok(True)
 
-        result = use_case.execute({
-            "memory_id": "mem_123",
-            "content": "new content",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_123",
+                "content": "new content",
+            }
+        )
 
         assert result.is_ok is True
-        mnemosyne_client.update.assert_called_once_with(
-            "mem_123", content="new content", importance=None
-        )
+        mnemosyne_client.update.assert_called_once_with("mem_123", content="new content", importance=None)
 
     def test_execute_passes_only_importance_when_content_not_provided(self, use_case, mnemosyne_client) -> None:
         """When only importance is provided, content should be None."""
         mnemosyne_client.update.return_value = Result.ok(True)
 
-        result = use_case.execute({
-            "memory_id": "mem_123",
-            "importance": 0.5,
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_123",
+                "importance": 0.5,
+            }
+        )
 
         assert result.is_ok is True
-        mnemosyne_client.update.assert_called_once_with(
-            "mem_123", content=None, importance=0.5
-        )
+        mnemosyne_client.update.assert_called_once_with("mem_123", content=None, importance=0.5)
 
     def test_execute_returns_not_found_when_memory_not_found(self, use_case, mnemosyne_client) -> None:
         """When memory is not found, return status not_found."""
         mnemosyne_client.update.return_value = Result.ok(False)
 
-        result = use_case.execute({
-            "memory_id": "mem_999",
-            "content": "new content",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_999",
+                "content": "new content",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "not_found"
@@ -115,10 +117,12 @@ class TestUpdateMemoryUseCase:
         """When no memory_bank is provided, use default."""
         mnemosyne_client.update.return_value = Result.ok(True)
 
-        result = use_case.execute({
-            "memory_id": "mem_123",
-            "content": "new content",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_123",
+                "content": "new content",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["memory_bank"] == "default"
@@ -149,9 +153,11 @@ class TestSleepUseCase:
         sleep_result = {"status": "consolidated", "merged": 5}
         mnemosyne_client.sleep.return_value = Result.ok(sleep_result)
 
-        result = use_case.execute({
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         mnemosyne_client.sleep.assert_called_once()
@@ -163,9 +169,11 @@ class TestSleepUseCase:
         sleep_result = {"status": "consolidated", "merged": 3, "discarded": 1}
         mnemosyne_client.sleep.return_value = Result.ok(sleep_result)
 
-        result = use_case.execute({
-            "memory_bank": "default",
-        })
+        result = use_case.execute(
+            {
+                "memory_bank": "default",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["result"] == sleep_result

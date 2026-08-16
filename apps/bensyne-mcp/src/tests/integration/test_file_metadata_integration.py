@@ -58,6 +58,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def bank_dir(tmp_path: Path) -> Path:
     """Temporary directory simulating a memory bank's data dir."""
@@ -105,9 +106,11 @@ def service(
         memory_client=None,
     )
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _file_data(
     id: str = "f1",
@@ -136,9 +139,11 @@ def _file_data(
         "created_at": NOW,
     }
 
+
 # ===================================================================
 # Test 1: File creation with chunks and relations
 # ===================================================================
+
 
 class TestFileCreationWithChunksAndRelations:
     """Integration: create file, add chunks, add relations — full flow."""
@@ -343,35 +348,42 @@ class TestFileCreationWithChunksAndRelations:
 
         # Add chunks via repository directly to avoid INSERT OR REPLACE cascade
         from src.domain.file_chunk_entity import FileChunk
+
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f100_mem_a1",
-                "file_id": "f100",
-                "memory_id": "mem_a1",
-                "chunk_index": 0,
-                "start_line": 1,
-                "end_line": 100,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f100_mem_a1",
+                    "file_id": "f100",
+                    "memory_id": "mem_a1",
+                    "chunk_index": 0,
+                    "start_line": 1,
+                    "end_line": 100,
+                }
+            ).value
         )
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f100_mem_a2",
-                "file_id": "f100",
-                "memory_id": "mem_a2",
-                "chunk_index": 1,
-                "start_line": 101,
-                "end_line": 200,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f100_mem_a2",
+                    "file_id": "f100",
+                    "memory_id": "mem_a2",
+                    "chunk_index": 1,
+                    "start_line": 101,
+                    "end_line": 200,
+                }
+            ).value
         )
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f101_mem_b1",
-                "file_id": "f101",
-                "memory_id": "mem_b1",
-                "chunk_index": 0,
-                "start_line": 1,
-                "end_line": 50,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f101_mem_b1",
+                    "file_id": "f101",
+                    "memory_id": "mem_b1",
+                    "chunk_index": 0,
+                    "start_line": 1,
+                    "end_line": 50,
+                }
+            ).value
         )
 
         # Add relation
@@ -399,9 +411,11 @@ class TestFileCreationWithChunksAndRelations:
         assert len(rels_result.value) == 1
         assert rels_result.value[0].relation_type == RelationType.CROSS_REFERENCE
 
+
 # ===================================================================
 # Test 3: File search with metadata enrichment
 # ===================================================================
+
 
 class TestFileSearchWithMetadataEnrichment:
     """Integration: search files and verify metadata is enriched from DB."""
@@ -466,15 +480,17 @@ class TestFileSearchWithMetadataEnrichment:
         file_repo: FileRepository,
     ) -> None:
         """Search returns files with full metadata (type, size, language, etc.)."""
-        service.create_file(_file_data(
-            id="f307",
-            path="/tmp/enriched.py",
-            file_type="python",
-            size=4096,
-            language="python",
-            keywords=["domain"],
-            tags=["core"],
-        ))
+        service.create_file(
+            _file_data(
+                id="f307",
+                path="/tmp/enriched.py",
+                file_type="python",
+                size=4096,
+                language="python",
+                keywords=["domain"],
+                tags=["core"],
+            )
+        )
 
         result = file_repo.search_files_by_query("enriched")
         assert result.is_ok is True
@@ -497,21 +513,26 @@ class TestFileSearchWithMetadataEnrichment:
 
         # Add chunks directly to avoid INSERT OR REPLACE cascade
         from src.domain.file_chunk_entity import FileChunk
+
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f308_mem_agg1",
-                "file_id": "f308",
-                "memory_id": "mem_agg1",
-                "chunk_index": 0,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f308_mem_agg1",
+                    "file_id": "f308",
+                    "memory_id": "mem_agg1",
+                    "chunk_index": 0,
+                }
+            ).value
         )
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f308_mem_agg2",
-                "file_id": "f308",
-                "memory_id": "mem_agg2",
-                "chunk_index": 1,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f308_mem_agg2",
+                    "file_id": "f308",
+                    "memory_id": "mem_agg2",
+                    "chunk_index": 1,
+                }
+            ).value
         )
 
         result = service.get_file("f308")
@@ -532,9 +553,11 @@ class TestFileSearchWithMetadataEnrichment:
         result = service.get_file("nonexistent")
         assert result.is_ko is True
 
+
 # ===================================================================
 # Test 4: Relation expansion
 # ===================================================================
+
 
 class TestRelationExpansion:
     """Integration: expand file relations and verify connected files."""
@@ -601,25 +624,30 @@ class TestRelationExpansion:
 
         # Add chunks directly to avoid INSERT OR REPLACE cascade
         from src.domain.file_chunk_entity import FileChunk
+
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f410_mem_fr1",
-                "file_id": "f410",
-                "memory_id": "mem_fr1",
-                "chunk_index": 0,
-                "start_line": 1,
-                "end_line": 50,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f410_mem_fr1",
+                    "file_id": "f410",
+                    "memory_id": "mem_fr1",
+                    "chunk_index": 0,
+                    "start_line": 1,
+                    "end_line": 50,
+                }
+            ).value
         )
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_f410_mem_fr2",
-                "file_id": "f410",
-                "memory_id": "mem_fr2",
-                "chunk_index": 1,
-                "start_line": 51,
-                "end_line": 100,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_f410_mem_fr2",
+                    "file_id": "f410",
+                    "memory_id": "mem_fr2",
+                    "chunk_index": 1,
+                    "start_line": 51,
+                    "end_line": 100,
+                }
+            ).value
         )
 
         # Add relation
@@ -660,9 +688,11 @@ class TestRelationExpansion:
         assert len(result.value) == 1
         assert result.value[0].target_file_id == "f420"
 
+
 # ===================================================================
 # Test 5: Error cases
 # ===================================================================
+
 
 class TestErrorCases:
     """Integration: error handling with real repositories."""
@@ -774,9 +804,11 @@ class TestErrorCases:
         assert result.is_ok is True
         assert result.value == []
 
+
 # ===================================================================
 # Test 6: Upsert operations
 # ===================================================================
+
 
 class TestUpsertOperations:
     """Integration: upsert file creates or updates."""
@@ -822,9 +854,11 @@ class TestUpsertOperations:
         assert db_result.value is not None
         assert db_result.value.aggregated_keywords == ["new"]
 
+
 # ===================================================================
 # Test 7: Event emission through full stack
 # ===================================================================
+
 
 class TestEventEmissionFullStack:
     """Integration: domain events propagate through real repositories."""
@@ -900,9 +934,11 @@ class TestEventEmissionFullStack:
         assert updated_event.file_id == "f704"
         assert "hash" in updated_event.changed_fields
 
+
 # ===================================================================
 # Integration: ForgetMemoryUseCase — chunk and file cleanup
 # ===================================================================
+
 
 class TestForgetMemoryUseCaseIntegration:
     """Integration: ForgetMemoryUseCase cleans up chunks and empty files via SQLite."""
@@ -980,10 +1016,12 @@ class TestForgetMemoryUseCaseIntegration:
             bank_type_checker=lambda bank: "pure_memories",
         )
 
-        result = use_case.execute({
-            "memory_id": "mem_int_1",
-            "memory_bank": "test_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_int_1",
+                "memory_bank": "test_bank",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "deleted"
@@ -1034,10 +1072,12 @@ class TestForgetMemoryUseCaseIntegration:
             bank_type_checker=lambda bank: "pure_memories",
         )
 
-        result = use_case.execute({
-            "memory_id": "mem_int_2a",
-            "memory_bank": "test_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_int_2a",
+                "memory_bank": "test_bank",
+            }
+        )
 
         assert result.is_ok is True
 
@@ -1069,10 +1109,12 @@ class TestForgetMemoryUseCaseIntegration:
             bank_type_checker=lambda bank: "file_metadata",
         )
 
-        result = use_case.execute({
-            "memory_id": "mem_int_3",
-            "memory_bank": "test_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_int_3",
+                "memory_bank": "test_bank",
+            }
+        )
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "MEMORY_BANK_NOT_SUPPORTED"
@@ -1104,10 +1146,12 @@ class TestForgetMemoryUseCaseIntegration:
             bank_type_checker=lambda bank: "pure_memories",
         )
 
-        result = use_case.execute({
-            "memory_id": "mem_int_4",
-            "memory_bank": "test_bank",
-        })
+        result = use_case.execute(
+            {
+                "memory_id": "mem_int_4",
+                "memory_bank": "test_bank",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "not_found"

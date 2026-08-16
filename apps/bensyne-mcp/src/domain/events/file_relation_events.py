@@ -30,11 +30,18 @@ class FileRelationCreatedEvent(DomainEvent):
         target_file_id: str,
     ) -> Result["FileRelationCreatedEvent"]:
         if not relation_id or not source_file_id or not target_file_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_RELATION_CREATED_EVENT", {
-                "relation_id": relation_id,
-                "source_file_id": source_file_id,
-                "target_file_id": target_file_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_RELATION_CREATED_EVENT",
+                        {
+                            "relation_id": relation_id,
+                            "source_file_id": source_file_id,
+                            "target_file_id": target_file_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(relation_id=relation_id, source_file_id=source_file_id, target_file_id=target_file_id))
 
     @property
@@ -60,9 +67,16 @@ class FileRelationUpdatedEvent(DomainEvent):
     @classmethod
     def of(cls, relation_id: str, changed_fields: list[str]) -> Result["FileRelationUpdatedEvent"]:
         if not relation_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_RELATION_UPDATED_EVENT", {
-                "relation_id": relation_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_RELATION_UPDATED_EVENT",
+                        {
+                            "relation_id": relation_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(relation_id=relation_id, changed_fields=changed_fields))
 
     @property

@@ -23,9 +23,7 @@ def _mock_mnemosyne_instance() -> MagicMock:
     """Create a fully configured mock Mnemosyne instance."""
     mock = MagicMock()
     mock.remember.return_value = "mem_abc123"
-    mock.recall.return_value = [
-        {"id": "mem_abc123", "content": "test memory", "score": 0.9}
-    ]
+    mock.recall.return_value = [{"id": "mem_abc123", "content": "test memory", "score": 0.9}]
     mock.forget.return_value = True
     mock.update.return_value = True
     mock.sleep.return_value = {"status": "ok", "consolidated": 0}
@@ -59,9 +57,7 @@ def router(tmp_path: Path) -> MemoryBankRouter:
         {
             "mnemosyne": MagicMock(),
             "mnemosyne.core": MagicMock(),
-            "mnemosyne.core.memory": MagicMock(
-                Mnemosyne=lambda **kwargs: mock_instance
-            ),
+            "mnemosyne.core.memory": MagicMock(Mnemosyne=lambda **kwargs: mock_instance),
         },
     ):
         config = InstancePoolConfig(
@@ -173,11 +169,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deduplicated",
-            "memory_id": "mem_existing_001",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deduplicated",
+                "memory_id": "mem_existing_001",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -205,11 +203,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -236,11 +236,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -266,11 +268,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -297,11 +301,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -329,11 +335,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -361,11 +369,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "my-bank",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "my-bank",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -394,11 +404,13 @@ class TestHandleRememberDedup:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_raw_result",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_raw_result",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -428,11 +440,13 @@ class TestHandleRemember:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -473,11 +487,13 @@ class TestHandleRemember:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -515,10 +531,12 @@ class TestHandleRecall:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [{"id": "mem_abc123", "content": "test memory", "score": 0.9}],
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [{"id": "mem_abc123", "content": "test memory", "score": 0.9}],
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -565,10 +583,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -606,10 +626,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -634,10 +656,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -659,10 +683,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -684,10 +710,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -709,10 +737,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "not_found",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "not_found",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -742,10 +772,12 @@ class TestHandleUpdate:
         from src.infrastructure.mcp.handlers import handle_update
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "updated",
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "updated",
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -794,10 +826,12 @@ class TestHandleSleep:
         from src.infrastructure.mcp.handlers import handle_sleep
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "result": {"status": "ok", "consolidated": 0},
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "result": {"status": "ok", "consolidated": 0},
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -862,13 +896,15 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {"name": "default", "status": "active"},
-                {"name": "ns1", "status": "active"},
-                {"name": "ns2", "status": "active"},
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {"name": "default", "status": "active"},
+                    {"name": "ns1", "status": "active"},
+                    {"name": "ns2", "status": "active"},
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -897,18 +933,20 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {
-                    "name": "default",
-                    "description": "Default personal memory — general conversation context, preferences, and facts",
-                },
-                {
-                    "name": "custom-ns",
-                    "description": "My custom description",
-                },
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {
+                        "name": "default",
+                        "description": "Default personal memory — general conversation context, preferences, and facts",
+                    },
+                    {
+                        "name": "custom-ns",
+                        "description": "My custom description",
+                    },
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -921,7 +959,10 @@ class TestHandleListBanks:
             custom_ns = next(ns for ns in result["banks"] if ns["name"] == "custom-ns")
 
             assert "description" in default_ns
-            assert default_ns["description"] == "Default personal memory — general conversation context, preferences, and facts"
+            assert (
+                default_ns["description"]
+                == "Default personal memory — general conversation context, preferences, and facts"
+            )
 
             assert "description" in custom_ns
             assert custom_ns["description"] == "My custom description"
@@ -934,11 +975,13 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {"name": "counted-ns", "memory_count": 15},
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {"name": "counted-ns", "memory_count": 15},
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -959,11 +1002,13 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {"name": "sparse-ns", "memory_count": 0},
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {"name": "sparse-ns", "memory_count": 0},
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -984,17 +1029,19 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {
-                    "name": "default",
-                    "bank": "default",
-                    "description": "Default",
-                    "memory_count": 5,
-                    "status": "active",
-                },
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {
+                        "name": "default",
+                        "bank": "default",
+                        "description": "Default",
+                        "memory_count": 5,
+                        "status": "active",
+                    },
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -1024,14 +1071,16 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {
-                    "name": "default",
-                    "description": "Default personal memory — general conversation context, preferences, and facts",
-                },
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {
+                        "name": "default",
+                        "description": "Default personal memory — general conversation context, preferences, and facts",
+                    },
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -1041,7 +1090,10 @@ class TestHandleListBanks:
                 result = await handle_list_banks(router, {})
 
             default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
-            assert default_ns["description"] == "Default personal memory — general conversation context, preferences, and facts"
+            assert (
+                default_ns["description"]
+                == "Default personal memory — general conversation context, preferences, and facts"
+            )
 
         asyncio.run(run())
 
@@ -1051,11 +1103,13 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {"name": "unregistered-ns", "description": ""},
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {"name": "unregistered-ns", "description": ""},
+                ],
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -1133,9 +1187,7 @@ class TestToolCallIntegration:
             {
                 "mnemosyne": MagicMock(),
                 "mnemosyne.core": MagicMock(),
-                "mnemosyne.core.memory": MagicMock(
-                    Mnemosyne=lambda **kwargs: mock_instance
-                ),
+                "mnemosyne.core.memory": MagicMock(Mnemosyne=lambda **kwargs: mock_instance),
             },
         ):
             config = InstancePoolConfig(
@@ -1154,17 +1206,21 @@ class TestToolCallIntegration:
         from src.infrastructure.mcp.handlers import handle_remember, handle_recall
 
         mock_remember_uc = MagicMock()
-        mock_remember_uc.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "user-123",
-        })
+        mock_remember_uc.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "user-123",
+            }
+        )
 
         mock_recall_uc = MagicMock()
-        mock_recall_uc.execute.return_value = Result.ok({
-            "results": [{"id": "mem_abc123", "content": "user prefers dark mode"}],
-            "memory_bank": "user-123",
-        })
+        mock_recall_uc.execute.return_value = Result.ok(
+            {
+                "results": [{"id": "mem_abc123", "content": "user prefers dark mode"}],
+                "memory_bank": "user-123",
+            }
+        )
 
         async def run() -> None:
             with patch("src.infrastructure.mcp.handlers.RememberMemoryUseCase", return_value=mock_remember_uc):
@@ -1185,19 +1241,19 @@ class TestToolCallIntegration:
 
         asyncio.run(run())
 
-    def test_memory_bank_isolation_between_remember_and_recall(
-        self, router: MemoryBankRouter
-    ) -> None:
+    def test_memory_bank_isolation_between_remember_and_recall(self, router: MemoryBankRouter) -> None:
         """Memories stored in one memory bank are not visible in another."""
         from src.infrastructure.mcp.handlers import handle_remember
         from src.utils.result import Result
 
         mock_uc = MagicMock()
-        mock_uc.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem_abc123",
-            "memory_bank": "ns-a",
-        })
+        mock_uc.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "ns-a",
+            }
+        )
 
         async def run() -> None:
             with patch("src.infrastructure.mcp.handlers.RememberMemoryUseCase", return_value=mock_uc):
@@ -1227,9 +1283,13 @@ class TestToolCallIntegration:
         async def run() -> None:
             # remember response
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "stored", "memory_id": "x", "memory_bank": "spec-ns",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "stored",
+                    "memory_id": "x",
+                    "memory_bank": "spec-ns",
+                }
+            )
             with patch("src.infrastructure.mcp.handlers.RememberMemoryUseCase", return_value=mock_uc):
                 r = await handle_remember(router, {"content": "test", "memory_bank": "spec-ns"})
                 assert "status" in r
@@ -1241,9 +1301,12 @@ class TestToolCallIntegration:
 
             # recall response
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "results": [{"id": "x"}], "memory_bank": "spec-ns",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "results": [{"id": "x"}],
+                    "memory_bank": "spec-ns",
+                }
+            )
             with patch("src.infrastructure.mcp.handlers.RecallMemoryUseCase", return_value=mock_uc):
                 r = await handle_recall(router, {"query": "test", "memory_bank": "spec-ns"})
                 assert "results" in r
@@ -1252,9 +1315,12 @@ class TestToolCallIntegration:
 
             # forget response
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "deleted", "memory_bank": "spec-ns",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "deleted",
+                    "memory_bank": "spec-ns",
+                }
+            )
             with patch("src.infrastructure.mcp.handlers.ForgetMemoryUseCase", return_value=mock_uc):
                 r = await handle_forget(router, {"memory_id": "x", "memory_bank": "spec-ns"})
                 assert "status" in r
@@ -1262,9 +1328,12 @@ class TestToolCallIntegration:
 
             # update response
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "updated", "memory_bank": "spec-ns",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "updated",
+                    "memory_bank": "spec-ns",
+                }
+            )
             with patch("src.infrastructure.mcp.handlers.UpdateMemoryUseCase", return_value=mock_uc):
                 r = await handle_update(router, {"memory_id": "x", "memory_bank": "spec-ns"})
                 assert "status" in r
@@ -1272,9 +1341,12 @@ class TestToolCallIntegration:
 
             # sleep response
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "result": {"status": "ok"}, "memory_bank": "spec-ns",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "result": {"status": "ok"},
+                    "memory_bank": "spec-ns",
+                }
+            )
             with patch("src.infrastructure.mcp.handlers.SleepUseCase", return_value=mock_uc):
                 r = await handle_sleep(router, {"memory_bank": "spec-ns"})
                 assert "memory_bank" in r
@@ -1327,10 +1399,12 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "registered",
-            "name": "my-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "registered",
+                "name": "my-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -1352,10 +1426,12 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "registered",
-            "name": "my-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "registered",
+                "name": "my-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -1434,10 +1510,12 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "registered",
-            "name": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "registered",
+                "name": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(

@@ -22,10 +22,12 @@ class FileHash:
         Returns Result.ok(FileHash) on valid input, Result.ko on invalid input.
         """
         if not isinstance(hash_value, str) or not _SHA256_PATTERN.match(hash_value):
-            return Result.ko([
-                ErrorWithDetails(
-                    "INVALID_FILE_HASH",
-                    {"given": hash_value, "expected": "64 hex characters (SHA-256)"},
-                )
-            ])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_HASH",
+                        {"given": hash_value, "expected": "64 hex characters (SHA-256)"},
+                    )
+                ]
+            )
         return Result.ok(cls(hash_value=hash_value))

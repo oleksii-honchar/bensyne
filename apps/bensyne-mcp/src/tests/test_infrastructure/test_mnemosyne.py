@@ -92,9 +92,7 @@ class TestMnemosyneClientCreation:
         mock.get.return_value = None
         return mock
 
-    def test_creates_instance_for_given_bank(
-        self, tmp_path: Path
-    ) -> None:
+    def test_creates_instance_for_given_bank(self, tmp_path: Path) -> None:
         """MnemosyneClient instantiates Mnemosyne with correct bank and db_path."""
         mock_instance = self._mock_mnemosyne_instance()
 

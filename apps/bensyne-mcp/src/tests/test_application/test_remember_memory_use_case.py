@@ -64,10 +64,12 @@ class TestRememberMemoryUseCase:
         existing_id = "existing_memory_id"
         hash_index_service.lookup.return_value = Result.ok(existing_id)
 
-        result = use_case.execute({
-            "content": "file content",
-            "hash": "a" * 64,
-        })
+        result = use_case.execute(
+            {
+                "content": "file content",
+                "hash": "a" * 64,
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "deduplicated"
@@ -84,10 +86,12 @@ class TestRememberMemoryUseCase:
         memory = a_memory(id="new_memory_id")
         memory_repository.save.return_value = Result.ok(memory)
 
-        result = use_case.execute({
-            "id": "new_memory_id",
-            "content": "new memory content",
-        })
+        result = use_case.execute(
+            {
+                "id": "new_memory_id",
+                "content": "new memory content",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "stored"
@@ -98,11 +102,13 @@ class TestRememberMemoryUseCase:
         memory = a_memory(id="new_memory_id")
         memory_repository.save.return_value = Result.ok(memory)
 
-        result = use_case.execute({
-            "id": "new_memory_id",
-            "content": "new memory content",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "id": "new_memory_id",
+                "content": "new memory content",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["memory_bank"] == "my_bank"
@@ -114,11 +120,13 @@ class TestRememberMemoryUseCase:
         hash_index_service.lookup.return_value = Result.ok(None)  # No dedup — new hash
         test_hash = "b" * 64
 
-        use_case.execute({
-            "id": "new_memory_id",
-            "content": "file content",
-            "hash": test_hash,
-        })
+        use_case.execute(
+            {
+                "id": "new_memory_id",
+                "content": "file content",
+                "hash": test_hash,
+            }
+        )
 
         hash_index_service.store.assert_called_once_with(test_hash, "new_memory_id")
 
@@ -128,10 +136,12 @@ class TestRememberMemoryUseCase:
         """When repository save fails, return Result.ko."""
         memory_repository.save.return_value = Result.ko([ErrorWithDetails("SAVE_ERROR", {})])
 
-        result = use_case.execute({
-            "id": "new_memory_id",
-            "content": "new memory content",
-        })
+        result = use_case.execute(
+            {
+                "id": "new_memory_id",
+                "content": "new memory content",
+            }
+        )
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "SAVE_ERROR"
@@ -141,9 +151,11 @@ class TestRememberMemoryUseCase:
     def test_execute_returns_ko_when_memory_of_fails(self, use_case) -> None:
         """When Memory.of fails validation, return Result.ko."""
         # Invalid scope triggers Memory.of validation failure
-        result = use_case.execute({
-            "content": "some content",
-            "scope": "invalid_scope",
-        })
+        result = use_case.execute(
+            {
+                "content": "some content",
+                "scope": "invalid_scope",
+            }
+        )
 
         assert result.is_ko is True

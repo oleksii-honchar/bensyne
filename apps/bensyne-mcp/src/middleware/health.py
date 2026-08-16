@@ -49,6 +49,7 @@ def _add_log(source: str, message: str) -> None:
 # Health route handlers
 # ---------------------------------------------------------------------------
 
+
 async def health_handler(request: Request) -> JSONResponse:
     """GET /health — returns overall health status with instance count."""
     instances = 0
@@ -99,6 +100,7 @@ async def health_log_handler(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 # Starlette app factory
 # ---------------------------------------------------------------------------
+
 
 def create_health_app() -> Starlette:
     """Create a Starlette app with health check routes.

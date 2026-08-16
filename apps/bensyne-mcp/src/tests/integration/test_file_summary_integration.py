@@ -36,9 +36,11 @@ VALID_HASH = "a" * 64
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def bank_dir(tmp_path: Path) -> Path:
     return tmp_path / "test_bank"
+
 
 @pytest.fixture
 def conn_manager(bank_dir: Path) -> Generator[FileMetadataConnectionManager, None, None]:
@@ -46,17 +48,21 @@ def conn_manager(bank_dir: Path) -> Generator[FileMetadataConnectionManager, Non
     yield mgr
     mgr.close()
 
+
 @pytest.fixture
 def file_repo(conn_manager: FileMetadataConnectionManager) -> FileRepository:
     return FileRepository(conn_manager)
+
 
 @pytest.fixture
 def chunk_repo(conn_manager: FileMetadataConnectionManager) -> FileChunkRepository:
     return FileChunkRepository(conn_manager)
 
+
 @pytest.fixture
 def relation_repo(conn_manager: FileMetadataConnectionManager) -> FileRelationRepository:
     return FileRelationRepository(conn_manager)
+
 
 @pytest.fixture
 def service(
@@ -72,14 +78,17 @@ def service(
         memory_client=None,
     )
 
+
 # ===================================================================
 # Summary through FileService + SQLite
 # ===================================================================
 
+
 class TestSummaryThroughService:
     """Summary persists through FileService.create_file and retrieval."""
 
-    def test_create_file_with_summary_returns_from_repo(self,
+    def test_create_file_with_summary_returns_from_repo(
+        self,
         service: FileService,
         file_repo: FileRepository,
     ) -> None:
@@ -101,7 +110,8 @@ class TestSummaryThroughService:
         assert get_result.value is not None
         assert get_result.value.summary == "This file contains important config data"
 
-    def test_create_file_without_summary_returns_none(self,
+    def test_create_file_without_summary_returns_none(
+        self,
         service: FileService,
         file_repo: FileRepository,
     ) -> None:
@@ -121,7 +131,8 @@ class TestSummaryThroughService:
         assert get_result.value is not None
         assert get_result.value.summary is None
 
-    def test_aggregate_with_summary(self,
+    def test_aggregate_with_summary(
+        self,
         service: FileService,
     ) -> None:
         """FileMetadataAggregate returned by get_file includes summary."""
@@ -139,7 +150,8 @@ class TestSummaryThroughService:
         assert agg_result.is_ok is True
         assert agg_result.value.file.summary == "Aggregate summary test"
 
-    def test_update_file_summary(self,
+    def test_update_file_summary(
+        self,
         service: FileService,
         file_repo: FileRepository,
     ) -> None:

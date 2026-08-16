@@ -35,6 +35,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -59,6 +60,7 @@ def _a_file(
         updated_at=NOW,
     )
 
+
 def _a_chunk(
     id: str = "c1",
     file_id: str = "f1",
@@ -81,6 +83,7 @@ def _a_chunk(
         updated_at=NOW,
     )
 
+
 def _a_relation(
     id: str = "r1",
     source_file_id: str = "f1",
@@ -100,6 +103,7 @@ def _a_relation(
         updated_at=NOW,
     )
 
+
 def _a_aggregate(
     file: File,
     chunks: list[FileChunk] | None = None,
@@ -107,9 +111,11 @@ def _a_aggregate(
 ) -> FileMetadataAggregate:
     return FileMetadataAggregate.of(file, chunks=chunks or [], relations=relations or []).value
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mnemosyne_client() -> MagicMock:
@@ -117,17 +123,21 @@ def mnemosyne_client() -> MagicMock:
     # Use MagicMock (not AsyncMock) — the use case calls get() synchronously
     return client
 
+
 @pytest.fixture
 def file_service() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def relation_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def logger() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def use_case(
@@ -143,9 +153,11 @@ def use_case(
         logger=logger,
     )
 
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsValidation:
     def test_returns_ko_when_file_id_missing(self, use_case: ExpandFileRelationsUseCase) -> None:
@@ -163,9 +175,11 @@ class TestExpandFileRelationsValidation:
         assert result.is_ok is True
         assert result.value["file_id"] == "f1"
 
+
 # ---------------------------------------------------------------------------
 # Source file not found
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsSourceNotFound:
     def test_returns_ko_when_source_file_not_found(
@@ -179,9 +193,11 @@ class TestExpandFileRelationsSourceNotFound:
         assert result.is_ko is True
         assert result.errors[0].error_code == "FILE_NOT_FOUND"
 
+
 # ---------------------------------------------------------------------------
 # No relations
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsNoRelations:
     def test_returns_empty_related_files_when_no_relations(
@@ -202,9 +218,11 @@ class TestExpandFileRelationsNoRelations:
         assert val["source_file"]["path"] == "/tmp/source.txt"
         assert val["related_files"] == []
 
+
 # ---------------------------------------------------------------------------
 # Basic relation expansion
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsBasic:
     def test_returns_related_file_with_metadata(
@@ -242,9 +260,11 @@ class TestExpandFileRelationsBasic:
         assert rf["content"] == ""
         assert rf["chunks_count"] == 0
 
+
 # ---------------------------------------------------------------------------
 # Content composition from chunks via aggregate
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsContentComposition:
     def test_composes_content_from_ordered_chunks(
@@ -324,9 +344,11 @@ class TestExpandFileRelationsContentComposition:
         assert rf["content"] == "Found content"
         assert rf["chunks_count"] == 2
 
+
 # ---------------------------------------------------------------------------
 # Relation type filtering
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsFiltering:
     def test_filters_by_relation_types(
@@ -341,11 +363,15 @@ class TestExpandFileRelationsFiltering:
         parent = _a_file(id="f3", path="/tmp/parent.txt")
 
         rel_sibling = _a_relation(
-            id="r1", source_file_id="f1", target_file_id="f2",
+            id="r1",
+            source_file_id="f1",
+            target_file_id="f2",
             relation_type=RelationType.SIBLING,
         )
         rel_parent = _a_relation(
-            id="r2", source_file_id="f1", target_file_id="f3",
+            id="r2",
+            source_file_id="f1",
+            target_file_id="f3",
             relation_type=RelationType.PARENT_CHILD,
         )
 
@@ -358,20 +384,24 @@ class TestExpandFileRelationsFiltering:
         ]
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel_sibling, rel_parent])
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "relation_types": ["sibling"],
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "relation_types": ["sibling"],
+            }
+        )
 
         assert result.is_ok is True
         val = result.value
         assert len(val["related_files"]) == 1
         assert val["related_files"][0]["file"]["id"] == "f2"
 
+
 # ---------------------------------------------------------------------------
 # Multiple related files
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsMultiple:
     def test_returns_multiple_related_files(
@@ -408,9 +438,11 @@ class TestExpandFileRelationsMultiple:
         assert "f2" in ids
         assert "f3" in ids
 
+
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsErrors:
     def test_continues_when_related_file_not_found(
@@ -449,9 +481,11 @@ class TestExpandFileRelationsErrors:
         assert result.is_ko is True
         assert result.errors[0].error_code == "FILE_NOT_FOUND"
 
+
 # ---------------------------------------------------------------------------
 # Summary in relation expansion
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsSummary:
     """Relation expansion populates summary first, then full composed content."""
@@ -614,9 +648,11 @@ class TestExpandFileRelationsSummary:
         assert rf["content"] == "Chunk content"
         assert rf["summary"] is None
 
+
 # ---------------------------------------------------------------------------
 # Summary-only mode
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsSummaryOnly:
     """summary_only=True skips chunk content composition, returns only file.summary."""
@@ -650,11 +686,13 @@ class TestExpandFileRelationsSummaryOnly:
         ]
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "summary_only": True,
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "summary_only": True,
+            }
+        )
         assert result.is_ok is True
 
         rf = result.value["related_files"][0]
@@ -685,11 +723,13 @@ class TestExpandFileRelationsSummaryOnly:
         ]
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "summary_only": True,
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "summary_only": True,
+            }
+        )
         assert result.is_ok is True
 
         rf = result.value["related_files"][0]
@@ -730,10 +770,12 @@ class TestExpandFileRelationsSummaryOnly:
         ]
 
         # Default: summary_only not provided (defaults to False)
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+            }
+        )
         assert result.is_ok is True
 
         rf = result.value["related_files"][0]
@@ -769,11 +811,13 @@ class TestExpandFileRelationsSummaryOnly:
         ]
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel1, rel2])
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "summary_only": True,
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "summary_only": True,
+            }
+        )
         assert result.is_ok is True
 
         val = result.value
@@ -791,6 +835,7 @@ class TestExpandFileRelationsSummaryOnly:
         # Mnemosyne should NOT have been called at all
         assert mnemosyne_client.call_count == 0
 
+
 # ---------------------------------------------------------------------------
 # Aggregate delegation
 # ---------------------------------------------------------------------------
@@ -798,6 +843,7 @@ class TestExpandFileRelationsSummaryOnly:
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsLogging:
     """Verify structured log entries at each step of execute_internal."""
@@ -815,11 +861,13 @@ class TestExpandFileRelationsLogging:
         file_service.get_file.return_value = Result.ok(source_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
-        use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "relation_types": ["sibling"],
-        })
+        use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "relation_types": ["sibling"],
+            }
+        )
 
         # First info call should be the entry log
         info_calls = [c for c in logger.info.call_args_list]
@@ -984,14 +1032,14 @@ class TestExpandFileRelationsLogging:
         info_calls = logger.info.call_args_list
         assert len(info_calls) >= 1
         # The event string or kwargs should reference the service
-        any_has_service = any(
-            "expand_file_relations" in str(c) for c in info_calls
-        )
+        any_has_service = any("expand_file_relations" in str(c) for c in info_calls)
         assert any_has_service is True
+
 
 # ---------------------------------------------------------------------------
 # Aggregate delegation
 # ---------------------------------------------------------------------------
+
 
 class TestExpandFileRelationsAggregateDelegation:
     """Use case delegates content composition to aggregate.compose_content."""

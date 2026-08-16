@@ -19,6 +19,7 @@ from src.utils.structured_logging import (
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestInitStructlog:
     """Tests for init_structlog() configuration."""
 
@@ -31,9 +32,7 @@ class TestInitStructlog:
 
         config = get_config()
         processor_names = [type(p).__name__ for p in config.get("processors", [])]
-        assert "JSONRenderer" in processor_names, (
-            f"Expected JSONRenderer in processors, got: {processor_names}"
-        )
+        assert "JSONRenderer" in processor_names, f"Expected JSONRenderer in processors, got: {processor_names}"
 
     def test_console_renderer_in_development(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """structlog uses console renderer when BENSYNE_ENV=development or unset."""
@@ -44,9 +43,7 @@ class TestInitStructlog:
 
         config = get_config()
         processor_names = [type(p).__name__ for p in config.get("processors", [])]
-        assert "ConsoleRenderer" in processor_names, (
-            f"Expected ConsoleRenderer in processors, got: {processor_names}"
-        )
+        assert "ConsoleRenderer" in processor_names, f"Expected ConsoleRenderer in processors, got: {processor_names}"
 
     def test_default_renderer_is_console(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Default (no BENSYNE_ENV) uses ConsoleRenderer."""
@@ -57,13 +54,9 @@ class TestInitStructlog:
 
         config = get_config()
         processor_names = [type(p).__name__ for p in config.get("processors", [])]
-        assert "ConsoleRenderer" in processor_names, (
-            f"Expected ConsoleRenderer in processors, got: {processor_names}"
-        )
+        assert "ConsoleRenderer" in processor_names, f"Expected ConsoleRenderer in processors, got: {processor_names}"
 
-    def test_json_output_contains_context_fields(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_json_output_contains_context_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """JSON output includes bound context fields like request_id and memory_bank.
 
         We verify this by using LoggerMock which demonstrates the same
@@ -90,9 +83,7 @@ class TestInitStructlog:
         config = get_config()
         processors = config.get("processors", [])
         # filter_by_level is the first processor
-        assert processors[0] is stdlib_filter, (
-            f"Expected filter_by_level as first processor, got: {processors[0]}"
-        )
+        assert processors[0] is stdlib_filter, f"Expected filter_by_level as first processor, got: {processors[0]}"
 
     def test_default_log_level_is_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Default log level is INFO when BENSYNE_LOG_LEVEL is unset.
@@ -106,9 +97,7 @@ class TestInitStructlog:
         import logging
 
         level = _get_log_level()
-        assert level == logging.INFO, (
-            f"Expected INFO level ({logging.INFO}), got {level}"
-        )
+        assert level == logging.INFO, f"Expected INFO level ({logging.INFO}), got {level}"
 
     def test_debug_log_level_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """BENSYNE_LOG_LEVEL=debug sets DEBUG level."""
@@ -144,18 +133,21 @@ class TestInitStructlog:
         """_is_production returns True when BENSYNE_ENV=production."""
         monkeypatch.setenv("BENSYNE_ENV", "production")
         from src.utils.structured_logging import _is_production
+
         assert _is_production() is True
 
     def test_is_production_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_is_production returns False when BENSYNE_ENV is not production."""
         monkeypatch.setenv("BENSYNE_ENV", "development")
         from src.utils.structured_logging import _is_production
+
         assert _is_production() is False
 
     def test_is_production_false_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_is_production returns False when BENSYNE_ENV is unset."""
         monkeypatch.delenv("BENSYNE_ENV", raising=False)
         from src.utils.structured_logging import _is_production
+
         assert _is_production() is False
 
 
@@ -418,14 +410,14 @@ class TestJsonlFileHandler:
     def test_file_handler_is_rotating(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The file handler is a RotatingFileHandler with correct rotation settings."""
         import tempfile
+
         log_file = os.path.join(tempfile.gettempdir(), "test_bensyne_jsonl.jsonl")
         monkeypatch.setenv("BENSYNE_LOG_FILE", log_file)
         monkeypatch.delenv("BENSYNE_ENV", raising=False)
         init_structlog()
 
         file_logger = logging.getLogger("bensyne.file")
-        file_handlers = [h for h in file_logger.handlers
-                         if isinstance(h, logging.handlers.RotatingFileHandler)]
+        file_handlers = [h for h in file_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
         assert len(file_handlers) == 1
         handler = file_handlers[0]
         assert handler.maxBytes == 10 * 1024 * 1024  # 10 MB
@@ -434,48 +426,49 @@ class TestJsonlFileHandler:
     def test_file_handler_has_10mb_max(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """RotatingFileHandler maxBytes is 10 MB."""
         import tempfile
+
         log_file = os.path.join(tempfile.gettempdir(), "test_bensyne_10mb.jsonl")
         monkeypatch.setenv("BENSYNE_LOG_FILE", log_file)
         monkeypatch.delenv("BENSYNE_ENV", raising=False)
         init_structlog()
 
         file_logger = logging.getLogger("bensyne.file")
-        file_handlers = [h for h in file_logger.handlers
-                         if isinstance(h, logging.handlers.RotatingFileHandler)]
+        file_handlers = [h for h in file_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
         assert len(file_handlers) == 1
         assert file_handlers[0].maxBytes == 10 * 1024 * 1024
 
     def test_file_handler_has_5_backups(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """RotatingFileHandler backupCount is 5."""
         import tempfile
+
         log_file = os.path.join(tempfile.gettempdir(), "test_bensyne_5bk.jsonl")
         monkeypatch.setenv("BENSYNE_LOG_FILE", log_file)
         monkeypatch.delenv("BENSYNE_ENV", raising=False)
         init_structlog()
 
         file_logger = logging.getLogger("bensyne.file")
-        file_handlers = [h for h in file_logger.handlers
-                         if isinstance(h, logging.handlers.RotatingFileHandler)]
+        file_handlers = [h for h in file_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
         assert len(file_handlers) == 1
         assert file_handlers[0].backupCount == 5
 
     def test_log_file_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """BENSYNE_LOG_FILE env var controls the log file path."""
         import tempfile
+
         custom_path = os.path.join(tempfile.gettempdir(), "custom_bensyne.jsonl")
         monkeypatch.setenv("BENSYNE_LOG_FILE", custom_path)
         monkeypatch.delenv("BENSYNE_ENV", raising=False)
         init_structlog()
 
         file_logger = logging.getLogger("bensyne.file")
-        file_handlers = [h for h in file_logger.handlers
-                         if isinstance(h, logging.handlers.RotatingFileHandler)]
+        file_handlers = [h for h in file_logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
         assert len(file_handlers) == 1
         assert file_handlers[0].baseFilename == custom_path
 
     def test_file_logger_writes_jsonl(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """File logger writes valid JSON lines (one JSON object per line)."""
         import tempfile
+
         log_file = os.path.join(tempfile.gettempdir(), "test_jsonl_output.jsonl")
         # Clean up any existing file
         if os.path.exists(log_file):
@@ -502,6 +495,7 @@ class TestJsonlFileHandler:
     def test_jsonl_contains_structured_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """JSONL output contains the structured fields (service, method, file_id)."""
         import tempfile
+
         log_file = os.path.join(tempfile.gettempdir(), "test_jsonl_fields.jsonl")
         if os.path.exists(log_file):
             os.remove(log_file)

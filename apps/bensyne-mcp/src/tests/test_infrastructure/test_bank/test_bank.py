@@ -18,6 +18,7 @@ from src.infrastructure.bank.router import MemoryBankRouter
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_mock_client(memory_bank: str) -> MagicMock:
     """Create a mock MnemosyneClient with required attributes."""
     mock = MagicMock(spec=MnemosyneClient)
@@ -43,6 +44,7 @@ def _make_router(tmp_path: Path, max_instances: int = 5) -> MemoryBankRouter:
 # MemoryBankRouter creation and default instance
 # ---------------------------------------------------------------------------
 
+
 class TestMemoryBankRouterCreation:
     """MemoryBankRouter initializes with default instance at boot."""
 
@@ -65,6 +67,7 @@ class TestMemoryBankRouterCreation:
 # ---------------------------------------------------------------------------
 # get_instance — caching and creation
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryBankRouterGetInstance:
     """MemoryBankRouter.get_instance returns cached instance on second call."""
@@ -120,6 +123,7 @@ class TestMemoryBankRouterGetInstance:
 # ---------------------------------------------------------------------------
 # LRU eviction — oldest created non-default evicted at max_instances
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryBankRouterLRUEviction:
     """LRU eviction works at max_instances limit."""
@@ -182,6 +186,7 @@ class TestMemoryBankRouterLRUEviction:
 # Concurrency — simultaneous requests don't create duplicates
 # ---------------------------------------------------------------------------
 
+
 class TestMemoryBankRouterConcurrency:
     """Simultaneous requests for same memory bank don't create duplicates."""
 
@@ -208,6 +213,7 @@ class TestMemoryBankRouterConcurrency:
 # ---------------------------------------------------------------------------
 # Health integration — get_active_instances and get_active_banks
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryBankRouterHealthIntegration:
     """Router exposes instance count and memory bank list for health endpoint."""
@@ -238,6 +244,7 @@ class TestMemoryBankRouterHealthIntegration:
 # ---------------------------------------------------------------------------
 # MemoryBankRegistry wiring
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryBankRouterRegistryWiring:
     """MemoryBankRouter wires MemoryBankRegistry and exposes description methods."""

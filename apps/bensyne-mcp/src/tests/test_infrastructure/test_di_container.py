@@ -120,9 +120,7 @@ class TestContainerOverride:
         container = ProductionContainer()
         mock_repo = MagicMock()
 
-        with container.override_providers(
-            memory_repository=providers.Singleton(lambda: mock_repo)
-        ):
+        with container.override_providers(memory_repository=providers.Singleton(lambda: mock_repo)):
             repo = container.memory_repository()
             assert repo is mock_repo
 

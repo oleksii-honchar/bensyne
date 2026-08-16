@@ -20,12 +20,14 @@ class TestFileRelationOfValidData:
     """FileRelation.of accepts valid data and returns Result.ok."""
 
     def test_of_returns_ok_with_minimal_required_fields(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ok is True
         rel = result.value
         assert rel.id == "fr1"
@@ -40,17 +42,19 @@ class TestFileRelationOfValidData:
 
     def test_of_returns_ok_with_all_fields(self):
         now = datetime.now()
-        result = FileRelation.of({
-            "id": "fr2",
-            "source_file_id": "f3",
-            "target_file_id": "f4",
-            "relation_type": RelationType.PARENT_CHILD,
-            "strength": 0.85,
-            "direction": Direction.BIDIRECTIONAL,
-            "description": "Parent config and child config",
-            "created_at": now,
-            "updated_at": now,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr2",
+                "source_file_id": "f3",
+                "target_file_id": "f4",
+                "relation_type": RelationType.PARENT_CHILD,
+                "strength": 0.85,
+                "direction": Direction.BIDIRECTIONAL,
+                "description": "Parent config and child config",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
         assert result.is_ok is True
         rel = result.value
         assert rel.id == "fr2"
@@ -64,24 +68,28 @@ class TestFileRelationOfValidData:
         assert rel.updated_at == now
 
     def test_of_sets_timestamps_when_not_provided(self):
-        result = FileRelation.of({
-            "id": "fr3",
-            "source_file_id": "f5",
-            "target_file_id": "f6",
-            "relation_type": RelationType.BACKLINK,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr3",
+                "source_file_id": "f5",
+                "target_file_id": "f6",
+                "relation_type": RelationType.BACKLINK,
+            }
+        )
         assert result.is_ok is True
         rel = result.value
         assert isinstance(rel.created_at, datetime)
         assert isinstance(rel.updated_at, datetime)
 
     def test_of_returns_frozen_instance(self):
-        result = FileRelation.of({
-            "id": "fr4",
-            "source_file_id": "f7",
-            "target_file_id": "f8",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr4",
+                "source_file_id": "f7",
+                "target_file_id": "f8",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ok is True
         rel = result.value
         with pytest.raises(Exception):
@@ -89,87 +97,103 @@ class TestFileRelationOfValidData:
 
     def test_of_accepts_all_relation_types(self):
         for rt in RelationType:
-            result = FileRelation.of({
-                "id": f"fr_rt_{rt.value}",
-                "source_file_id": "f_rt",
-                "target_file_id": "f_rt2",
-                "relation_type": rt,
-            })
+            result = FileRelation.of(
+                {
+                    "id": f"fr_rt_{rt.value}",
+                    "source_file_id": "f_rt",
+                    "target_file_id": "f_rt2",
+                    "relation_type": rt,
+                }
+            )
             assert result.is_ok is True
             assert result.value.relation_type == rt
 
     def test_of_accepts_all_directions(self):
         for d in Direction:
-            result = FileRelation.of({
-                "id": f"fr_d_{d.value}",
-                "source_file_id": "f_d",
-                "target_file_id": "f_d2",
-                "relation_type": RelationType.SIBLING,
-                "direction": d,
-            })
+            result = FileRelation.of(
+                {
+                    "id": f"fr_d_{d.value}",
+                    "source_file_id": "f_d",
+                    "target_file_id": "f_d2",
+                    "relation_type": RelationType.SIBLING,
+                    "direction": d,
+                }
+            )
             assert result.is_ok is True
             assert result.value.direction == d
 
     def test_of_with_zero_strength(self):
-        result = FileRelation.of({
-            "id": "fr5",
-            "source_file_id": "f10",
-            "target_file_id": "f11",
-            "relation_type": RelationType.SIBLING,
-            "strength": 0.0,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr5",
+                "source_file_id": "f10",
+                "target_file_id": "f11",
+                "relation_type": RelationType.SIBLING,
+                "strength": 0.0,
+            }
+        )
         assert result.is_ok is True
         assert result.value.strength == 0.0
 
     def test_of_with_max_strength(self):
-        result = FileRelation.of({
-            "id": "fr6",
-            "source_file_id": "f12",
-            "target_file_id": "f13",
-            "relation_type": RelationType.SIBLING,
-            "strength": 1.0,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr6",
+                "source_file_id": "f12",
+                "target_file_id": "f13",
+                "relation_type": RelationType.SIBLING,
+                "strength": 1.0,
+            }
+        )
         assert result.is_ok is True
         assert result.value.strength == 1.0
 
     def test_of_with_default_strength(self):
-        result = FileRelation.of({
-            "id": "fr7",
-            "source_file_id": "f14",
-            "target_file_id": "f15",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr7",
+                "source_file_id": "f14",
+                "target_file_id": "f15",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ok is True
         assert result.value.strength == 1.0
 
     def test_of_with_default_direction(self):
-        result = FileRelation.of({
-            "id": "fr8",
-            "source_file_id": "f16",
-            "target_file_id": "f17",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr8",
+                "source_file_id": "f16",
+                "target_file_id": "f17",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ok is True
         assert result.value.direction == Direction.UNIDIRECTIONAL
 
     def test_of_with_none_description(self):
-        result = FileRelation.of({
-            "id": "fr9",
-            "source_file_id": "f18",
-            "target_file_id": "f19",
-            "relation_type": RelationType.SIBLING,
-            "description": None,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr9",
+                "source_file_id": "f18",
+                "target_file_id": "f19",
+                "relation_type": RelationType.SIBLING,
+                "description": None,
+            }
+        )
         assert result.is_ok is True
         assert result.value.description is None
 
     def test_of_emits_created_event(self):
-        result = FileRelation.of({
-            "id": "fr10",
-            "source_file_id": "f20",
-            "target_file_id": "f21",
-            "relation_type": RelationType.DEPENDENCY,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr10",
+                "source_file_id": "f20",
+                "target_file_id": "f21",
+                "relation_type": RelationType.DEPENDENCY,
+            }
+        )
         assert result.is_ok is True
         assert result.has_events() is True
         events = result.get_events()
@@ -181,12 +205,14 @@ class TestFileRelationOfValidData:
         assert event.target_file_id == "f21"
 
     def test_of_is_domain_event(self):
-        result = FileRelation.of({
-            "id": "fr11",
-            "source_file_id": "f22",
-            "target_file_id": "f23",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr11",
+                "source_file_id": "f22",
+                "target_file_id": "f23",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         event = result.get_events()[0]
         assert isinstance(event, DomainEvent)
 
@@ -195,107 +221,129 @@ class TestFileRelationOfRejectsInvalidData:
     """FileRelation.of rejects invalid data and returns Result.ko."""
 
     def test_of_rejects_missing_id(self):
-        result = FileRelation.of({
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_source_file_id(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_target_file_id(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_relation_type(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_empty_source_file_id(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_empty_target_file_id(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_strength_below_zero(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-            "strength": -0.1,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+                "strength": -0.1,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_strength_above_one(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-            "strength": 1.5,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+                "strength": 1.5,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_invalid_relation_type(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": "INVALID_TYPE",
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": "INVALID_TYPE",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_invalid_direction(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-            "direction": "INVALID_DIRECTION",
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+                "direction": "INVALID_DIRECTION",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
     def test_of_rejects_self_relation(self):
-        result = FileRelation.of({
-            "id": "fr1",
-            "source_file_id": "f1",
-            "target_file_id": "f1",
-            "relation_type": RelationType.SIBLING,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr1",
+                "source_file_id": "f1",
+                "target_file_id": "f1",
+                "relation_type": RelationType.SIBLING,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_RELATION"
 
@@ -334,23 +382,27 @@ class TestFileRelationStrengthValidation:
         assert rel.strength == 0.999
 
     def test_strength_rejected_for_negative(self):
-        result = FileRelation.of({
-            "id": "fr_neg",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-            "strength": -0.001,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr_neg",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+                "strength": -0.001,
+            }
+        )
         assert result.is_ko is True
 
     def test_strength_rejected_over_one(self):
-        result = FileRelation.of({
-            "id": "fr_over",
-            "source_file_id": "f1",
-            "target_file_id": "f2",
-            "relation_type": RelationType.SIBLING,
-            "strength": 1.001,
-        })
+        result = FileRelation.of(
+            {
+                "id": "fr_over",
+                "source_file_id": "f1",
+                "target_file_id": "f2",
+                "relation_type": RelationType.SIBLING,
+                "strength": 1.001,
+            }
+        )
         assert result.is_ko is True
 
 

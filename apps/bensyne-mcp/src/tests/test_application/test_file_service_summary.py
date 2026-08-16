@@ -26,6 +26,7 @@ VALID_HASH = "a" * 64
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -51,25 +52,31 @@ def _a_file(
         updated_at=NOW,
     )
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def file_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def chunk_repo() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def relation_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def memory_repo() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def service(
@@ -86,9 +93,11 @@ def service(
         memory_client=memory_repo,
     )
 
+
 # ===================================================================
 # create_file with summary
 # ===================================================================
+
 
 class TestCreateFileWithSummary:
     """create_file accepts summary in file_data and persists it."""
@@ -134,14 +143,17 @@ class TestCreateFileWithSummary:
         assert result.is_ok is True
         assert result.value.summary is None
 
+
 # ===================================================================
 # update_file with summary
 # ===================================================================
 
+
 class TestUpdateFileWithSummary:
     """update_file accepts summary and updates it via the entity."""
 
-    def test_update_file_with_summary(self,
+    def test_update_file_with_summary(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:

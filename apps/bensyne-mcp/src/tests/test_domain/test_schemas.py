@@ -20,34 +20,42 @@ class TestMemorySchemaValidImportance:
     """MemorySchema accepts importance within 0.0-1.0 range."""
 
     def test_accepts_importance_zero(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-            "importance": 0.0,
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "importance": 0.0,
+            }
+        )
         assert schema.importance == 0.0
 
     def test_accepts_importance_one(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-            "importance": 1.0,
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "importance": 1.0,
+            }
+        )
         assert schema.importance == 1.0
 
     def test_accepts_importance_half(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-            "importance": 0.5,
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "importance": 0.5,
+            }
+        )
         assert schema.importance == 0.5
 
     def test_defaults_importance_to_half(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.importance == 0.5
 
 
@@ -56,27 +64,33 @@ class TestMemorySchemaRejectsInvalidImportance:
 
     def test_rejects_importance_negative(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "importance": -0.1,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "importance": -0.1,
+                }
+            )
 
     def test_rejects_importance_above_one(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "importance": 1.1,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "importance": 1.1,
+                }
+            )
 
     def test_rejects_importance_two(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "importance": 2.0,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "importance": 2.0,
+                }
+            )
 
 
 class TestMemorySchemaValidScope:
@@ -84,18 +98,22 @@ class TestMemorySchemaValidScope:
 
     @pytest.mark.parametrize("scope", ["working", "episodic", "semantic", "suspended"])
     def test_accepts_valid_scope(self, scope):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-            "scope": scope,
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "scope": scope,
+            }
+        )
         assert schema.scope == scope
 
     def test_defaults_scope_to_working(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.scope == "working"
 
 
@@ -105,11 +123,13 @@ class TestMemorySchemaRejectsInvalidScope:
     @pytest.mark.parametrize("scope", ["invalid", "long_term", "", "WORKING"])
     def test_rejects_invalid_scope(self, scope):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "scope": scope,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "scope": scope,
+                }
+            )
 
 
 class TestMemorySchemaContentValidation:
@@ -117,16 +137,20 @@ class TestMemorySchemaContentValidation:
 
     def test_rejects_empty_content(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "",
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "",
+                }
+            )
 
     def test_accepts_non_empty_content(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "Hello world",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "Hello world",
+            }
+        )
         assert schema.content == "Hello world"
 
 
@@ -134,52 +158,66 @@ class TestMemorySchemaDefaults:
     """MemorySchema applies default values correctly."""
 
     def test_defaults_source_to_conversation(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.source == "conversation"
 
     def test_defaults_scope_to_working(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.scope == "working"
 
     def test_defaults_importance_to_half(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.importance == 0.5
 
     def test_created_at_is_set(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.created_at is not None
 
     def test_updated_at_defaults_to_none(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.updated_at is None
 
     def test_veracity_defaults_to_none(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.veracity is None
 
     def test_metadata_defaults_to_none(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+            }
+        )
         assert schema.metadata is None
 
 
@@ -187,120 +225,149 @@ class TestMemorySchemaVeracityValidation:
     """MemorySchema validates optional veracity field."""
 
     def test_accepts_veracity_in_range(self):
-        schema = MemorySchema.model_validate({
-            "id": "m1",
-            "content": "test",
-            "veracity": 0.75,
-        })
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "veracity": 0.75,
+            }
+        )
         assert schema.veracity == 0.75
 
     def test_rejects_veracity_above_one(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "veracity": 1.5,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "veracity": 1.5,
+                }
+            )
 
     def test_rejects_veracity_negative(self):
         with pytest.raises(ValidationError):
-            MemorySchema.model_validate({
-                "id": "m1",
-                "content": "test",
-                "veracity": -0.1,
-            })
+            MemorySchema.model_validate(
+                {
+                    "id": "m1",
+                    "content": "test",
+                    "veracity": -0.1,
+                }
+            )
 
 
 class TestMemoryBankSchemaValidName:
     """MemoryBankSchema accepts valid names."""
 
     def test_accepts_alphanumeric_name(self):
-        schema = MemoryBankSchema.model_validate({
-            "name": "mybank123",
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": "mybank123",
+                "description": "A test bank",
+            }
+        )
         assert schema.name == "mybank123"
 
     def test_accepts_name_with_underscores(self):
-        schema = MemoryBankSchema.model_validate({
-            "name": "my_bank_name",
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": "my_bank_name",
+                "description": "A test bank",
+            }
+        )
         assert schema.name == "my_bank_name"
 
     def test_accepts_single_char_name(self):
-        schema = MemoryBankSchema.model_validate({
-            "name": "a",
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": "a",
+                "description": "A test bank",
+            }
+        )
         assert schema.name == "a"
 
     def test_accepts_name_with_numbers(self):
-        schema = MemoryBankSchema.model_validate({
-            "name": "bank2",
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": "bank2",
+                "description": "A test bank",
+            }
+        )
         assert schema.name == "bank2"
 
     def test_accepts_long_name_up_to_100(self):
         long_name = "a" * 100
-        schema = MemoryBankSchema.model_validate({
-            "name": long_name,
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": long_name,
+                "description": "A test bank",
+            }
+        )
         assert schema.name == long_name
 
 
 class TestMemoryBankSchemaRejectsInvalidName:
     """MemoryBankSchema rejects names with special characters or invalid format."""
 
-    @pytest.mark.parametrize("name", [
-        "my-bank",        # hyphen
-        "my bank",        # space
-        "my@bank",        # special char
-        "my.bank",        # dot
-        "my/bank",        # slash
-        "my!bank",        # exclamation
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "my-bank",  # hyphen
+            "my bank",  # space
+            "my@bank",  # special char
+            "my.bank",  # dot
+            "my/bank",  # slash
+            "my!bank",  # exclamation
+        ],
+    )
     def test_rejects_name_with_special_characters(self, name):
         with pytest.raises(ValidationError):
-            MemoryBankSchema.model_validate({
-                "name": name,
-                "description": "A test bank",
-            })
+            MemoryBankSchema.model_validate(
+                {
+                    "name": name,
+                    "description": "A test bank",
+                }
+            )
 
     def test_rejects_empty_name(self):
         with pytest.raises(ValidationError):
-            MemoryBankSchema.model_validate({
-                "name": "",
-                "description": "A test bank",
-            })
+            MemoryBankSchema.model_validate(
+                {
+                    "name": "",
+                    "description": "A test bank",
+                }
+            )
 
     def test_rejects_name_over_100_chars(self):
         long_name = "a" * 101
         with pytest.raises(ValidationError):
-            MemoryBankSchema.model_validate({
-                "name": long_name,
-                "description": "A test bank",
-            })
+            MemoryBankSchema.model_validate(
+                {
+                    "name": long_name,
+                    "description": "A test bank",
+                }
+            )
 
 
 class TestMemoryBankSchemaDefaults:
     """MemoryBankSchema applies default values correctly."""
 
     def test_defaults_status_to_registered(self):
-        schema = MemoryBankSchema.model_validate({
-            "name": "mybank",
-            "description": "A test bank",
-        })
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": "mybank",
+                "description": "A test bank",
+            }
+        )
         assert schema.status == "registered"
 
     def test_rejects_empty_description(self):
         with pytest.raises(ValidationError):
-            MemoryBankSchema.model_validate({
-                "name": "mybank",
-                "description": "",
-            })
+            MemoryBankSchema.model_validate(
+                {
+                    "name": "mybank",
+                    "description": "",
+                }
+            )
 
 
 class TestMemoryOperationRequest:

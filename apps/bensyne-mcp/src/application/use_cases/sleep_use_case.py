@@ -29,7 +29,9 @@ class SleepUseCase(BaseUseCase[dict, dict]):
         if not sleep_result.is_ok:
             return sleep_result
 
-        return Result.ok({
-            "result": sleep_result.value,
-            "memory_bank": memory_bank,
-        })
+        return Result.ok(
+            {
+                "result": sleep_result.value,
+                "memory_bank": memory_bank,
+            }
+        )

@@ -129,9 +129,7 @@ class TestLazyCreation:
         HashIndexService("test_bank", tmp_db_path)
         conn = sqlite3.connect(str(tmp_db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='hash_index'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hash_index'")
             assert cursor.fetchone() is not None
         finally:
             conn.close()

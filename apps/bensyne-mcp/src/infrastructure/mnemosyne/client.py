@@ -30,7 +30,9 @@ class MnemosyneClient:
         db_path = bank_manager.get_bank_db_path(memory_bank)
         logger.info("[MnemosyneClient] Initializing: memory_bank=%s, db_path=%s", memory_bank, db_path)
         self._instance = Mnemosyne(bank=memory_bank, db_path=str(db_path))
-        logger.info("[MnemosyneClient] Created instance: memory_bank=%s, db_path=%s", memory_bank, self._instance.db_path)
+        logger.info(
+            "[MnemosyneClient] Created instance: memory_bank=%s, db_path=%s", memory_bank, self._instance.db_path
+        )
 
     # ------------------------------------------------------------------
     # MnemosyneClient implementation

@@ -36,11 +36,13 @@ class TestHandleRemember:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem-1",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem-1",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
@@ -58,11 +60,13 @@ class TestHandleRemember:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "stored",
-            "memory_id": "mem-1",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem-1",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
@@ -79,9 +83,7 @@ class TestHandleRemember:
         from src.infrastructure.mcp.handlers import handle_remember
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("CONTENT_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("CONTENT_REQUIRED", {})])
 
         with patch(
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
@@ -119,10 +121,12 @@ class TestHandleRecall:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [{"content": "result"}],
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [{"content": "result"}],
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
@@ -140,10 +144,12 @@ class TestHandleRecall:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [{"content": "result"}],
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [{"content": "result"}],
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
@@ -159,9 +165,7 @@ class TestHandleRecall:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("QUERY_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("QUERY_REQUIRED", {})])
 
         with patch(
             "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
@@ -192,10 +196,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
@@ -213,10 +219,12 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "deleted",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "deleted",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
@@ -232,9 +240,7 @@ class TestHandleForget:
         from src.infrastructure.mcp.handlers import handle_forget
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("MEMORY_ID_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("MEMORY_ID_REQUIRED", {})])
 
         with patch(
             "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
@@ -266,10 +272,12 @@ class TestHandleUpdate:
         from src.infrastructure.mcp.handlers import handle_update
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "updated",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "updated",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.UpdateMemoryUseCase",
@@ -287,10 +295,12 @@ class TestHandleUpdate:
         from src.infrastructure.mcp.handlers import handle_update
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "updated",
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "updated",
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.UpdateMemoryUseCase",
@@ -306,9 +316,7 @@ class TestHandleUpdate:
         from src.infrastructure.mcp.handlers import handle_update
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("MEMORY_ID_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("MEMORY_ID_REQUIRED", {})])
 
         with patch(
             "src.infrastructure.mcp.handlers.UpdateMemoryUseCase",
@@ -338,10 +346,12 @@ class TestHandleSleep:
         from src.infrastructure.mcp.handlers import handle_sleep
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "result": {"status": "consolidated"},
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "result": {"status": "consolidated"},
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.SleepUseCase",
@@ -358,10 +368,12 @@ class TestHandleSleep:
         from src.infrastructure.mcp.handlers import handle_sleep
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "result": {"status": "consolidated"},
-            "memory_bank": "default",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "result": {"status": "consolidated"},
+                "memory_bank": "default",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.SleepUseCase",
@@ -384,9 +396,11 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [{"name": "default", "status": "active"}],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [{"name": "default", "status": "active"}],
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.ListBanksUseCase",
@@ -401,12 +415,14 @@ class TestHandleListBanks:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "banks": [
-                {"name": "default", "status": "active"},
-                {"name": "ns1", "status": "registered"},
-            ],
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "banks": [
+                    {"name": "default", "status": "active"},
+                    {"name": "ns1", "status": "registered"},
+                ],
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.ListBanksUseCase",
@@ -437,10 +453,12 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "registered",
-            "name": "my-bank",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "registered",
+                "name": "my-bank",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RegisterBankUseCase",
@@ -458,10 +476,12 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "status": "registered",
-            "name": "my-bank",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "registered",
+                "name": "my-bank",
+            }
+        )
 
         with patch(
             "src.infrastructure.mcp.handlers.RegisterBankUseCase",
@@ -477,9 +497,7 @@ class TestHandleRegisterBank:
         from src.infrastructure.mcp.handlers import handle_register_bank
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("NAME_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("NAME_REQUIRED", {})])
 
         with patch(
             "src.infrastructure.mcp.handlers.RegisterBankUseCase",

@@ -76,9 +76,7 @@ class FileMetadataConnectionManager:
         """
         conn = self._create_raw_connection()
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
             if not cursor.fetchone():
                 return 0
 
@@ -171,9 +169,7 @@ class FileMetadataConnectionManager:
 
             # Check pool size limit
             if self._active_count >= self._pool_size:
-                raise RuntimeError(
-                    f"Connection pool exhausted (max {self._pool_size} connections)"
-                )
+                raise RuntimeError(f"Connection pool exhausted (max {self._pool_size} connections)")
 
         # Create a new connection outside the lock
         conn = sqlite3.connect(str(self.db_path))

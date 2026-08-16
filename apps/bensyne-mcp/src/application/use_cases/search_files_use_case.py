@@ -82,10 +82,12 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
             include_relations=include_relations,
         )
 
-        return Result.ok({
-            "results": results,
-            "total_count": len(results),
-        })
+        return Result.ok(
+            {
+                "results": results,
+                "total_count": len(results),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Phase 2: Enrichment
@@ -137,9 +139,7 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
                 )
 
             # Add this memory to the file's matched_memories
-            file_results[file_id]["matched_memories"].append(
-                self._build_matched_memory(memory, chunk)
-            )
+            file_results[file_id]["matched_memories"].append(self._build_matched_memory(memory, chunk))
 
         # Merge file results into all_results
         all_results.extend(file_results.values())

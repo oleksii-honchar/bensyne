@@ -165,9 +165,18 @@ class FileService:
         Emits FileChunkAddedEvent on success.
         """
         self._log_info("Linking chunk", method="link_chunk", file_id=file_id, memory_id=memory_id)
-        return self._with_aggregate(file_id, lambda agg: self._add_chunk_to_aggregate(
-            agg, file_id, memory_id, chunk_index, start_line, end_line,
-        ), method="link_chunk")
+        return self._with_aggregate(
+            file_id,
+            lambda agg: self._add_chunk_to_aggregate(
+                agg,
+                file_id,
+                memory_id,
+                chunk_index,
+                start_line,
+                end_line,
+            ),
+            method="link_chunk",
+        )
 
     def _add_chunk_to_aggregate(
         self,
@@ -182,14 +191,16 @@ class FileService:
         sl = start_line if start_line is not None else 0
         el = end_line if end_line is not None else 0
 
-        chunk_result = FileChunk.of({
-            "id": f"fc_{file_id}_{memory_id}",
-            "file_id": file_id,
-            "memory_id": memory_id,
-            "chunk_index": chunk_index,
-            "start_line": sl,
-            "end_line": el,
-        })
+        chunk_result = FileChunk.of(
+            {
+                "id": f"fc_{file_id}_{memory_id}",
+                "file_id": file_id,
+                "memory_id": memory_id,
+                "chunk_index": chunk_index,
+                "start_line": sl,
+                "end_line": el,
+            }
+        )
         if chunk_result.is_ko:
             return chunk_result
 
@@ -232,11 +243,21 @@ class FileService:
         and persists the new relation entity.
         Emits FileRelationCreatedEvent on success.
         """
-        self._log_info("Creating relation", method="create_relation",
-                       source_file_id=source_file_id, target_file_id=target_file_id)
-        return self._with_aggregate(source_file_id, lambda agg: self._add_relation_to_aggregate(
-            agg, source_file_id, target_file_id, relation_type, strength, description,
-        ), method="create_relation")
+        self._log_info(
+            "Creating relation", method="create_relation", source_file_id=source_file_id, target_file_id=target_file_id
+        )
+        return self._with_aggregate(
+            source_file_id,
+            lambda agg: self._add_relation_to_aggregate(
+                agg,
+                source_file_id,
+                target_file_id,
+                relation_type,
+                strength,
+                description,
+            ),
+            method="create_relation",
+        )
 
     def _add_relation_to_aggregate(
         self,
@@ -248,14 +269,16 @@ class FileService:
         description: str | None,
     ) -> Result[FileRelation]:
         """Build a FileRelation via FileRelation.of(), add to aggregate, persist."""
-        relation_result = FileRelation.of({
-            "id": f"fr_{source_file_id}_{target_file_id}",
-            "source_file_id": source_file_id,
-            "target_file_id": target_file_id,
-            "relation_type": relation_type,
-            "strength": strength,
-            "description": description,
-        })
+        relation_result = FileRelation.of(
+            {
+                "id": f"fr_{source_file_id}_{target_file_id}",
+                "source_file_id": source_file_id,
+                "target_file_id": target_file_id,
+                "relation_type": relation_type,
+                "strength": strength,
+                "description": description,
+            }
+        )
         if relation_result.is_ko:
             return relation_result
 
@@ -328,8 +351,9 @@ class FileService:
         if relation_types:
             relations = [r for r in relations if r.relation_type in relation_types]
 
-        self._log_debug("Aggregate built", method=method, file_id=file_id,
-                        chunk_count=len(chunks), relation_count=len(relations))
+        self._log_debug(
+            "Aggregate built", method=method, file_id=file_id, chunk_count=len(chunks), relation_count=len(relations)
+        )
         return FileMetadataAggregate.of(file, chunks=chunks, relations=relations)
 
     # ------------------------------------------------------------------
@@ -390,9 +414,15 @@ class FileService:
         Returns the updated aggregate on success.
         """
         self._log_info("Removing chunk", method="remove_chunk", file_id=file_id, memory_id=memory_id)
-        return self._with_aggregate(file_id, lambda agg: self._remove_chunk_from_aggregate(
-            agg, file_id, memory_id,
-        ), method="remove_chunk")
+        return self._with_aggregate(
+            file_id,
+            lambda agg: self._remove_chunk_from_aggregate(
+                agg,
+                file_id,
+                memory_id,
+            ),
+            method="remove_chunk",
+        )
 
     def _remove_chunk_from_aggregate(
         self,
@@ -440,8 +470,7 @@ class FileService:
 
         Returns Result.ko if file not found.
         """
-        aggregate_result = self._build_aggregate(file_id, include_chunks=True, include_relations=True,
-                                                 method=method)
+        aggregate_result = self._build_aggregate(file_id, include_chunks=True, include_relations=True, method=method)
         if aggregate_result.is_ko:
             return aggregate_result
 

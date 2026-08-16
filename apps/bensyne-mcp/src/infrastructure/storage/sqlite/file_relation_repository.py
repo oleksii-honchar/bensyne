@@ -18,6 +18,7 @@ from src.infrastructure.storage.sqlite.models import FileRelationORM
 # ORM ↔ FileRelation mapping helpers
 # ---------------------------------------------------------------------------
 
+
 def _orm_to_relation(orm: FileRelationORM) -> FileRelation:
     """Map a FileRelationORM instance to a FileRelation entity."""
     created_at = orm.created_at if orm.created_at else datetime.now()
@@ -50,9 +51,11 @@ def _relation_to_orm(relation: FileRelation) -> FileRelationORM:
         updated_at=relation.updated_at,
     )
 
+
 # ---------------------------------------------------------------------------
 # Repository
 # ---------------------------------------------------------------------------
+
 
 class FileRelationRepository:
     """SQLite-backed FileRelation repository using SQLAlchemy ORM.
@@ -93,9 +96,7 @@ class FileRelationRepository:
         """Find a relation by its id."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileRelationORM).filter(
-                FileRelationORM.id == relation_id
-            ).first()
+            orm = session.query(FileRelationORM).filter(FileRelationORM.id == relation_id).first()
             if orm is None:
                 return Result.ok(None)
             return Result.ok(_orm_to_relation(orm))
@@ -112,10 +113,11 @@ class FileRelationRepository:
         """Find all relations where the given file is either source or target."""
         session = self._conn_manager.get_session()
         try:
-            orms = session.query(FileRelationORM).filter(
-                (FileRelationORM.source_file_id == file_id) |
-                (FileRelationORM.target_file_id == file_id)
-            ).all()
+            orms = (
+                session.query(FileRelationORM)
+                .filter((FileRelationORM.source_file_id == file_id) | (FileRelationORM.target_file_id == file_id))
+                .all()
+            )
             relations = [_orm_to_relation(orm) for orm in orms]
             return Result.ok(relations)
         except Exception as e:
@@ -131,9 +133,7 @@ class FileRelationRepository:
         """Find all relations of a given type."""
         session = self._conn_manager.get_session()
         try:
-            orms = session.query(FileRelationORM).filter(
-                FileRelationORM.relation_type == relation_type.value
-            ).all()
+            orms = session.query(FileRelationORM).filter(FileRelationORM.relation_type == relation_type.value).all()
             relations = [_orm_to_relation(orm) for orm in orms]
             return Result.ok(relations)
         except Exception as e:
@@ -149,9 +149,7 @@ class FileRelationRepository:
         """Delete a relation by id, returning True if it existed."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileRelationORM).filter(
-                FileRelationORM.id == relation_id
-            ).first()
+            orm = session.query(FileRelationORM).filter(FileRelationORM.id == relation_id).first()
             if orm is None:
                 return Result.ok(False)
             session.delete(orm)

@@ -21,12 +21,14 @@ class TestFileChunkOfValidData:
     """FileChunk.of accepts valid data and returns Result.ok."""
 
     def test_of_returns_ok_with_minimal_required_fields(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ok is True
         chunk = result.value
         assert chunk.id == "fc1"
@@ -43,19 +45,21 @@ class TestFileChunkOfValidData:
 
     def test_of_returns_ok_with_all_fields(self):
         now = datetime.now()
-        result = FileChunk.of({
-            "id": "fc2",
-            "file_id": "f2",
-            "memory_id": "m2",
-            "chunk_index": 3,
-            "start_line": 50,
-            "end_line": 100,
-            "content_hash": VALID_CONTENT_HASH,
-            "content_type": ContentType.CODE,
-            "is_partial": True,
-            "created_at": now,
-            "updated_at": now,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc2",
+                "file_id": "f2",
+                "memory_id": "m2",
+                "chunk_index": 3,
+                "start_line": 50,
+                "end_line": 100,
+                "content_hash": VALID_CONTENT_HASH,
+                "content_type": ContentType.CODE,
+                "is_partial": True,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
         assert result.is_ok is True
         chunk = result.value
         assert chunk.id == "fc2"
@@ -71,24 +75,28 @@ class TestFileChunkOfValidData:
         assert chunk.updated_at == now
 
     def test_of_sets_timestamps_when_not_provided(self):
-        result = FileChunk.of({
-            "id": "fc3",
-            "file_id": "f3",
-            "memory_id": "m3",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc3",
+                "file_id": "f3",
+                "memory_id": "m3",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ok is True
         chunk = result.value
         assert isinstance(chunk.created_at, datetime)
         assert isinstance(chunk.updated_at, datetime)
 
     def test_of_returns_frozen_instance(self):
-        result = FileChunk.of({
-            "id": "fc4",
-            "file_id": "f4",
-            "memory_id": "m4",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc4",
+                "file_id": "f4",
+                "memory_id": "m4",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ok is True
         chunk = result.value
         with pytest.raises(Exception):
@@ -96,79 +104,93 @@ class TestFileChunkOfValidData:
 
     def test_of_accepts_all_content_types(self):
         for ct in ContentType:
-            result = FileChunk.of({
-                "id": f"fc_ct_{ct.value}",
-                "file_id": "f_ct",
-                "memory_id": "m_ct",
-                "chunk_index": 0,
-                "content_type": ct,
-            })
+            result = FileChunk.of(
+                {
+                    "id": f"fc_ct_{ct.value}",
+                    "file_id": "f_ct",
+                    "memory_id": "m_ct",
+                    "chunk_index": 0,
+                    "content_type": ct,
+                }
+            )
             assert result.is_ok is True
             assert result.value.content_type == ct
 
     def test_of_with_zero_chunk_index(self):
-        result = FileChunk.of({
-            "id": "fc5",
-            "file_id": "f5",
-            "memory_id": "m5",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc5",
+                "file_id": "f5",
+                "memory_id": "m5",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ok is True
         assert result.value.chunk_index == 0
 
     def test_of_with_is_partial_false(self):
-        result = FileChunk.of({
-            "id": "fc6",
-            "file_id": "f6",
-            "memory_id": "m6",
-            "chunk_index": 0,
-            "is_partial": False,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc6",
+                "file_id": "f6",
+                "memory_id": "m6",
+                "chunk_index": 0,
+                "is_partial": False,
+            }
+        )
         assert result.is_ok is True
         assert result.value.is_partial is False
 
     def test_of_with_is_partial_true(self):
-        result = FileChunk.of({
-            "id": "fc7",
-            "file_id": "f7",
-            "memory_id": "m7",
-            "chunk_index": 0,
-            "is_partial": True,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc7",
+                "file_id": "f7",
+                "memory_id": "m7",
+                "chunk_index": 0,
+                "is_partial": True,
+            }
+        )
         assert result.is_ok is True
         assert result.value.is_partial is True
 
     def test_of_with_zero_line_range(self):
-        result = FileChunk.of({
-            "id": "fc8",
-            "file_id": "f8",
-            "memory_id": "m8",
-            "chunk_index": 0,
-            "start_line": 0,
-            "end_line": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc8",
+                "file_id": "f8",
+                "memory_id": "m8",
+                "chunk_index": 0,
+                "start_line": 0,
+                "end_line": 0,
+            }
+        )
         assert result.is_ok is True
         assert result.value.start_line == 0
         assert result.value.end_line == 0
 
     def test_of_with_none_content_hash(self):
-        result = FileChunk.of({
-            "id": "fc9",
-            "file_id": "f9",
-            "memory_id": "m9",
-            "chunk_index": 0,
-            "content_hash": None,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc9",
+                "file_id": "f9",
+                "memory_id": "m9",
+                "chunk_index": 0,
+                "content_hash": None,
+            }
+        )
         assert result.is_ok is True
         assert result.value.content_hash is None
 
     def test_of_emits_created_event(self):
-        result = FileChunk.of({
-            "id": "fc10",
-            "file_id": "f10",
-            "memory_id": "m10",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc10",
+                "file_id": "f10",
+                "memory_id": "m10",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ok is True
         assert result.has_events() is True
         events = result.get_events()
@@ -180,12 +202,14 @@ class TestFileChunkOfValidData:
         assert event.memory_id == "m10"
 
     def test_of_is_domain_event(self):
-        result = FileChunk.of({
-            "id": "fc11",
-            "file_id": "f11",
-            "memory_id": "m11",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc11",
+                "file_id": "f11",
+                "memory_id": "m11",
+                "chunk_index": 0,
+            }
+        )
         event = result.get_events()[0]
         assert isinstance(event, DomainEvent)
 
@@ -194,120 +218,144 @@ class TestFileChunkOfRejectsInvalidData:
     """FileChunk.of rejects invalid data and returns Result.ko."""
 
     def test_of_rejects_missing_id(self):
-        result = FileChunk.of({
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_file_id(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_memory_id(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_chunk_index(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_negative_chunk_index(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": -1,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": -1,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_negative_start_line(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-            "start_line": -1,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "start_line": -1,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_negative_end_line(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-            "end_line": -1,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "end_line": -1,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_end_line_before_start_line(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-            "start_line": 100,
-            "end_line": 50,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "start_line": 100,
+                "end_line": 50,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_invalid_content_hash(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-            "content_hash": "not-a-valid-hash",
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "content_hash": "not-a-valid-hash",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_invalid_content_type(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "m1",
-            "chunk_index": 0,
-            "content_type": "INVALID_TYPE",
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "content_type": "INVALID_TYPE",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_empty_file_id(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "",
-            "memory_id": "m1",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "",
+                "memory_id": "m1",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 
     def test_of_rejects_empty_memory_id(self):
-        result = FileChunk.of({
-            "id": "fc1",
-            "file_id": "f1",
-            "memory_id": "",
-            "chunk_index": 0,
-        })
+        result = FileChunk.of(
+            {
+                "id": "fc1",
+                "file_id": "f1",
+                "memory_id": "",
+                "chunk_index": 0,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE_CHUNK"
 

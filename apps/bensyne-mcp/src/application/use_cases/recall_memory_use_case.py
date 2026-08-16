@@ -51,7 +51,9 @@ class RecallMemoryUseCase(BaseUseCase[dict, dict]):
             memory_bank=memory_bank,
         )
 
-        return Result.ok({
-            "results": results,
-            "memory_bank": memory_bank,
-        })
+        return Result.ok(
+            {
+                "results": results,
+                "memory_bank": memory_bank,
+            }
+        )

@@ -65,11 +65,18 @@ class FileRelation:
         Emits FileRelationUpdatedEvent on success.
         """
         if strength < 0.0 or strength > 1.0:
-            return Result.ko([ErrorWithDetails("INVALID_STRENGTH", {
-                "given": strength,
-                "min": 0.0,
-                "max": 1.0,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_STRENGTH",
+                        {
+                            "given": strength,
+                            "min": 0.0,
+                            "max": 1.0,
+                        },
+                    )
+                ]
+            )
 
         if strength == self.strength:
             return Result.ok(self)

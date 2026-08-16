@@ -60,9 +60,7 @@ def setup_logging(log_file: str | None = None) -> logging.Logger:
 
     # Avoid duplicate handlers on repeated calls
     if not logger.handlers:
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
         # Console handler — always on
         console_handler = logging.StreamHandler()

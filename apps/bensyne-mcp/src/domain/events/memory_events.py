@@ -25,10 +25,17 @@ class MemoryRememberedEvent(DomainEvent):
     @classmethod
     def of(cls, bank_name: str, memory_id: str) -> Result["MemoryRememberedEvent"]:
         if not bank_name or not memory_id:
-            return Result.ko([ErrorWithDetails("INVALID_MEMORY_REMEMBERED_EVENT", {
-                "bank_name": bank_name,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_MEMORY_REMEMBERED_EVENT",
+                        {
+                            "bank_name": bank_name,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(bank_name=bank_name, memory_id=memory_id))
 
     @property
@@ -54,10 +61,17 @@ class MemoryForgottenEvent(DomainEvent):
     @classmethod
     def of(cls, bank_name: str, memory_id: str) -> Result["MemoryForgottenEvent"]:
         if not bank_name or not memory_id:
-            return Result.ko([ErrorWithDetails("INVALID_MEMORY_FORGOTTEN_EVENT", {
-                "bank_name": bank_name,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_MEMORY_FORGOTTEN_EVENT",
+                        {
+                            "bank_name": bank_name,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(bank_name=bank_name, memory_id=memory_id))
 
     @property

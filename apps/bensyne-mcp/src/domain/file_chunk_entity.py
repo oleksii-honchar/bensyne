@@ -74,9 +74,16 @@ class FileChunk:
         """
         # Validate content_type if provided
         if content_type is not None and not isinstance(content_type, ContentType):
-            return Result.ko([ErrorWithDetails("INVALID_CONTENT_TYPE", {
-                "given": content_type,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_CONTENT_TYPE",
+                        {
+                            "given": content_type,
+                        },
+                    )
+                ]
+            )
 
         # Validate content_hash if provided
         if content_hash is not None:
@@ -89,21 +96,42 @@ class FileChunk:
         new_end = end_line if end_line is not None else self.end_line
 
         if start_line is not None and start_line < 0:
-            return Result.ko([ErrorWithDetails("INVALID_LINE_RANGE", {
-                "start_line": start_line,
-                "reason": "must be >= 0",
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_LINE_RANGE",
+                        {
+                            "start_line": start_line,
+                            "reason": "must be >= 0",
+                        },
+                    )
+                ]
+            )
         if end_line is not None and end_line < 0:
-            return Result.ko([ErrorWithDetails("INVALID_LINE_RANGE", {
-                "end_line": end_line,
-                "reason": "must be >= 0",
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_LINE_RANGE",
+                        {
+                            "end_line": end_line,
+                            "reason": "must be >= 0",
+                        },
+                    )
+                ]
+            )
         if new_end < new_start:
-            return Result.ko([ErrorWithDetails("INVALID_LINE_RANGE", {
-                "start_line": new_start,
-                "end_line": new_end,
-                "reason": "end_line must be >= start_line",
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_LINE_RANGE",
+                        {
+                            "start_line": new_start,
+                            "end_line": new_end,
+                            "reason": "end_line must be >= start_line",
+                        },
+                    )
+                ]
+            )
 
         changed = []
         new_content_type = content_type if content_type is not None else self.content_type

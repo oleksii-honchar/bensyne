@@ -47,7 +47,5 @@ class FileChunkSchema(BaseModel):
     @model_validator(mode="after")
     def validate_line_range(self) -> "FileChunkSchema":
         if self.end_line < self.start_line:
-            raise ValueError(
-                f"end_line ({self.end_line}) must be >= start_line ({self.start_line})"
-            )
+            raise ValueError(f"end_line ({self.end_line}) must be >= start_line ({self.start_line})")
         return self

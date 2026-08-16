@@ -27,6 +27,7 @@ from src.infrastructure.storage.sqlite.file_repository import FileRepository
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_bank_dir(tmp_path: Path) -> Path:
     """Return a temporary directory simulating a memory bank's data dir."""
@@ -53,9 +54,11 @@ def file_repo(manager: FileMetadataConnectionManager) -> FileRepository:
     """Create a FileRepository for seeding files (FK constraints)."""
     return FileRepository(manager)
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _a_file(
     id: str = "f1",
@@ -65,13 +68,15 @@ def _a_file(
     created_at: Optional[datetime] = None,
 ) -> File:
     """Create a valid File instance with sensible defaults."""
-    result = File.of({
-        "id": id,
-        "path": path,
-        "source_type": source_type,
-        "status": status,
-        "created_at": created_at or datetime.now(),
-    })
+    result = File.of(
+        {
+            "id": id,
+            "path": path,
+            "source_type": source_type,
+            "status": status,
+            "created_at": created_at or datetime.now(),
+        }
+    )
     assert result.is_ok, f"Failed to create test file: {result.errors}"
     return result.value
 
@@ -97,29 +102,35 @@ def _a_chunk(
     created_at: Optional[datetime] = None,
 ) -> FileChunk:
     """Create a valid FileChunk instance with sensible defaults."""
-    result = FileChunk.of({
-        "id": id,
-        "file_id": file_id,
-        "memory_id": memory_id,
-        "chunk_index": chunk_index,
-        "start_line": start_line,
-        "end_line": end_line,
-        "content_hash": content_hash,
-        "content_type": content_type,
-        "is_partial": is_partial,
-        "created_at": created_at or datetime.now(),
-    })
+    result = FileChunk.of(
+        {
+            "id": id,
+            "file_id": file_id,
+            "memory_id": memory_id,
+            "chunk_index": chunk_index,
+            "start_line": start_line,
+            "end_line": end_line,
+            "content_hash": content_hash,
+            "content_type": content_type,
+            "is_partial": is_partial,
+            "created_at": created_at or datetime.now(),
+        }
+    )
     assert result.is_ok, f"Failed to create test chunk: {result.errors}"
     return result.value
+
 
 # ---------------------------------------------------------------------------
 # save_chunk
 # ---------------------------------------------------------------------------
 
+
 class TestSaveChunk:
     """FileChunkRepository.save_chunk operations."""
 
-    def test_save_chunk_returns_result_ok_with_chunk(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_save_chunk_returns_result_ok_with_chunk(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="sc1")
         result = repo.save_chunk(chunk)
@@ -192,9 +203,11 @@ class TestSaveChunk:
         assert find_result.value is not None
         assert find_result.value.content_hash is None
 
+
 # ---------------------------------------------------------------------------
 # get_chunk_by_id
 # ---------------------------------------------------------------------------
+
 
 class TestGetChunkById:
     """FileChunkRepository.get_chunk_by_id operations."""
@@ -215,14 +228,18 @@ class TestGetChunkById:
         assert result.is_ok is True
         assert result.value is None
 
+
 # ---------------------------------------------------------------------------
 # get_chunks_by_file_id
 # ---------------------------------------------------------------------------
 
+
 class TestGetChunksByFileId:
     """FileChunkRepository.get_chunks_by_file_id operations."""
 
-    def test_get_chunks_by_file_id_returns_all_chunks(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunks_by_file_id_returns_all_chunks(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f1")
         _seed_file(file_repo, "f2")
         c1 = _a_chunk(id="fc1", file_id="f1", memory_id="m1", chunk_index=0)
@@ -239,7 +256,9 @@ class TestGetChunksByFileId:
         ids = {c.id for c in result.value}
         assert ids == {"fc1", "fc2"}
 
-    def test_get_chunks_by_file_id_returns_empty_when_no_chunks(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunks_by_file_id_returns_empty_when_no_chunks(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f2")
         c1 = _a_chunk(id="fc4", file_id="f2", chunk_index=0)
         repo.save_chunk(c1)
@@ -249,7 +268,9 @@ class TestGetChunksByFileId:
         assert result.value is not None
         assert len(result.value) == 0
 
-    def test_get_chunks_by_file_id_returns_ordered_by_chunk_index(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunks_by_file_id_returns_ordered_by_chunk_index(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f1")
         # Save in reverse order to test ordering
         c2 = _a_chunk(id="fo2", file_id="f1", memory_id="mo2", chunk_index=2)
@@ -265,7 +286,9 @@ class TestGetChunksByFileId:
         indices = [c.chunk_index for c in result.value]
         assert indices == [0, 1, 2]
 
-    def test_get_chunks_by_file_id_returns_all_fields(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunks_by_file_id_returns_all_fields(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f5")
         chunk = _a_chunk(
             id="fc5",
@@ -293,9 +316,11 @@ class TestGetChunksByFileId:
         assert f.content_type == ContentType.TEXT
         assert f.is_partial is False
 
+
 # ---------------------------------------------------------------------------
 # get_chunk_by_memory_id
 # ---------------------------------------------------------------------------
+
 
 class TestGetChunkByMemoryId:
     """FileChunkRepository.get_chunk_by_memory_id operations."""
@@ -309,7 +334,9 @@ class TestGetChunkByMemoryId:
         assert result.value is not None
         assert result.value.id == "mc1"
 
-    def test_get_chunk_by_memory_id_returns_none_when_not_found(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunk_by_memory_id_returns_none_when_not_found(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f1")
         chunk = _a_chunk(id="mc2", memory_id="mem2")
         repo.save_chunk(chunk)
@@ -317,7 +344,9 @@ class TestGetChunkByMemoryId:
         assert result.is_ok is True
         assert result.value is None
 
-    def test_get_chunk_by_memory_id_returns_first_match(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+    def test_get_chunk_by_memory_id_returns_first_match(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
         _seed_file(file_repo, "f1")
         c1 = _a_chunk(id="mc3", memory_id="mem3")
         c2 = _a_chunk(id="mc4", memory_id="mem4")
@@ -328,9 +357,11 @@ class TestGetChunkByMemoryId:
         assert result.value is not None
         assert result.value.id == "mc3"
 
+
 # ---------------------------------------------------------------------------
 # delete_chunk
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteChunk:
     """FileChunkRepository.delete_chunk operations."""
@@ -357,9 +388,11 @@ class TestDeleteChunk:
         assert find_result.is_ok is True
         assert find_result.value is None
 
+
 # ---------------------------------------------------------------------------
 # Round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestRoundTrip:
     """End-to-end round-trip tests for FileChunkRepository."""

@@ -202,6 +202,7 @@ class TestDomainEvent:
 
 # --- Helpers ---
 
+
 class _ConcreteEvent(DomainEvent):
     """Minimal concrete DomainEvent for testing."""
 

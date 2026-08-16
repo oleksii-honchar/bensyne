@@ -24,6 +24,7 @@ from src.tests.test_domain.domain_test_utils import (
 # Fixtures — full application setup with real dependencies
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_mnemosyne_client() -> MagicMock:
     """Create a mock MnemosyneClient that returns realistic responses.
@@ -41,9 +42,13 @@ def mock_mnemosyne_client() -> MagicMock:
     client.save = MagicMock(return_value=Result.ok(a_memory(id="mem-001")))
 
     # recall: used by RecallMemoryUseCase → returns Result[List[Dict]]
-    client.recall = MagicMock(return_value=Result.ok([
-        {"id": "mem-001", "content": "test memory", "score": 0.9},
-    ]))
+    client.recall = MagicMock(
+        return_value=Result.ok(
+            [
+                {"id": "mem-001", "content": "test memory", "score": 0.9},
+            ]
+        )
+    )
 
     # forget: used by ForgetMemoryUseCase → returns Result[bool]
     client.forget = MagicMock(return_value=Result.ok(True))
@@ -52,15 +57,23 @@ def mock_mnemosyne_client() -> MagicMock:
     client.update = MagicMock(return_value=Result.ok(True))
 
     # sleep: used by SleepUseCase → returns Result[Dict]
-    client.sleep = MagicMock(return_value=Result.ok({
-        "status": "consolidated",
-    }))
+    client.sleep = MagicMock(
+        return_value=Result.ok(
+            {
+                "status": "consolidated",
+            }
+        )
+    )
 
     # stats: used directly by handlers → returns Result (handler checks .is_ok)
-    client.stats = MagicMock(return_value=Result.ok({
-        "working_count": 1,
-        "episodic_count": 0,
-    }))
+    client.stats = MagicMock(
+        return_value=Result.ok(
+            {
+                "working_count": 1,
+                "episodic_count": 0,
+            }
+        )
+    )
     return client
 
 
@@ -85,6 +98,7 @@ def in_memory_repo() -> InMemoryMemoryRepository:
 # ---------------------------------------------------------------------------
 # Test: Complete memory lifecycle (create → recall → update → forget)
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryLifecycle:
     """E2E: complete memory lifecycle through handler → use case → domain → infra."""
@@ -113,11 +127,13 @@ class TestMemoryLifecycle:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "stored",
-                "memory_id": "mem-lifecycle-1",
-                "memory_bank": bank,
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "stored",
+                    "memory_id": "mem-lifecycle-1",
+                    "memory_bank": bank,
+                }
+            )
             MockUc.return_value = mock_uc
 
             remember_result = await handle_remember(
@@ -213,11 +229,13 @@ class TestMemoryLifecycle:
             logger=logger,
         )
 
-        create_result = process_uc.execute({
-            "id": "e2e-mem-1",
-            "content": "In-memory test memory",
-            "memory_bank": "test_bank",
-        })
+        create_result = process_uc.execute(
+            {
+                "id": "e2e-mem-1",
+                "content": "In-memory test memory",
+                "memory_bank": "test_bank",
+            }
+        )
         assert create_result.is_ok is True
         assert create_result.value["status"] == "stored"
         assert create_result.value["memory_id"] == "e2e-mem-1"
@@ -241,18 +259,22 @@ class TestMemoryLifecycle:
             bank_type_checker=lambda bank: "pure_memories",
         )
 
-        forget_result = forget_uc.execute({
-            "memory_id": "e2e-mem-1",
-            "memory_bank": "test_bank",
-        })
+        forget_result = forget_uc.execute(
+            {
+                "memory_id": "e2e-mem-1",
+                "memory_bank": "test_bank",
+            }
+        )
         assert forget_result.is_ok is True
         assert forget_result.value["status"] == "deleted"
         # Hash index should be cleaned up
         mock_hash_service.remove.assert_called_once_with("e2e-mem-1")
 
+
 # ---------------------------------------------------------------------------
 # Test: Memory deduplication via hash
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryDeduplication:
     """E2E: memory deduplication via hash index."""
@@ -279,10 +301,12 @@ class TestMemoryDeduplication:
             logger=logger,
         )
 
-        result = uc.execute({
-            "content": "file content",
-            "hash": "a" * 64,  # SHA-256 hash
-        })
+        result = uc.execute(
+            {
+                "content": "file content",
+                "hash": "a" * 64,  # SHA-256 hash
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "deduplicated"
@@ -307,10 +331,12 @@ class TestMemoryDeduplication:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "deduplicated",
-                "memory_id": "dedup-mem-id",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "deduplicated",
+                    "memory_id": "dedup-mem-id",
+                }
+            )
             MockUc.return_value = mock_uc
 
             result = await handle_remember(
@@ -347,20 +373,24 @@ class TestMemoryDeduplication:
         )
 
         test_hash = "b" * 64
-        result = uc.execute({
-            "id": "new-mem-1",
-            "content": "file content",
-            "hash": test_hash,
-        })
+        result = uc.execute(
+            {
+                "id": "new-mem-1",
+                "content": "file content",
+                "hash": test_hash,
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["status"] == "stored"
         # Hash should be stored after save
         mock_hash_service.store.assert_called_once_with(test_hash, "new-mem-1")
 
+
 # ---------------------------------------------------------------------------
 # Test: Bank registration and listing
 # ---------------------------------------------------------------------------
+
 
 class TestBankRegistrationAndListing:
     """E2E: memory bank registration and listing."""
@@ -389,10 +419,12 @@ class TestBankRegistrationAndListing:
         from src.infrastructure.mcp.handlers import handle_list_banks
 
         # Setup: mock router has active instances and registered banks
-        mock_router.instances = {"default": MagicMock(
-            memory_bank="default",
-            stats=MagicMock(return_value={"working_count": 5, "episodic_count": 2}),
-        )}
+        mock_router.instances = {
+            "default": MagicMock(
+                memory_bank="default",
+                stats=MagicMock(return_value={"working_count": 5, "episodic_count": 2}),
+            )
+        }
         mock_router.get_bank_description.return_value = "Default bank"
         mock_router.registry.list_banks.return_value = ["default", "registered_only"]
 
@@ -437,9 +469,11 @@ class TestBankRegistrationAndListing:
         assert result.is_ko is True
         assert result.errors[0].error_code == "DESCRIPTION_REQUIRED"
 
+
 # ---------------------------------------------------------------------------
 # Test: Error handling — invalid inputs return proper error responses
 # ---------------------------------------------------------------------------
+
 
 class TestErrorHandling:
     """E2E: invalid inputs return proper error responses."""
@@ -495,9 +529,11 @@ class TestErrorHandling:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ko([
-                MagicMock(error_code="CONTENT_REQUIRED", details={}),
-            ])
+            mock_uc.execute.return_value = Result.ko(
+                [
+                    MagicMock(error_code="CONTENT_REQUIRED", details={}),
+                ]
+            )
             MockUc.return_value = mock_uc
 
             with pytest.raises(ValidationError):
@@ -590,9 +626,11 @@ class TestErrorHandling:
         assert result.is_ko is True
         assert result.errors[0].error_code == "MEMORY_ID_REQUIRED"
 
+
 # ---------------------------------------------------------------------------
 # Test: Memory bank isolation
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryBankIsolation:
     """E2E: memories in one bank not visible in another."""
@@ -610,15 +648,23 @@ class TestMemoryBankIsolation:
         # Create two isolated mock clients, one per bank
         client_a = MagicMock()
         client_a.memory_bank = "bank_a"
-        client_a.recall = MagicMock(return_value=Result.ok([
-            {"id": "mem-a-1", "content": "Bank A memory", "score": 0.9},
-        ]))
+        client_a.recall = MagicMock(
+            return_value=Result.ok(
+                [
+                    {"id": "mem-a-1", "content": "Bank A memory", "score": 0.9},
+                ]
+            )
+        )
 
         client_b = MagicMock()
         client_b.memory_bank = "bank_b"
-        client_b.recall = MagicMock(return_value=Result.ok([
-            {"id": "mem-b-1", "content": "Bank B memory", "score": 0.9},
-        ]))
+        client_b.recall = MagicMock(
+            return_value=Result.ok(
+                [
+                    {"id": "mem-b-1", "content": "Bank B memory", "score": 0.9},
+                ]
+            )
+        )
 
         router = MagicMock()
 
@@ -635,11 +681,13 @@ class TestMemoryBankIsolation:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "stored",
-                "memory_id": "mem-a-1",
-                "memory_bank": "bank_a",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "stored",
+                    "memory_id": "mem-a-1",
+                    "memory_bank": "bank_a",
+                }
+            )
             MockUc.return_value = mock_uc
 
             result_a = await handle_remember(
@@ -653,11 +701,13 @@ class TestMemoryBankIsolation:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "stored",
-                "memory_id": "mem-b-1",
-                "memory_bank": "bank_b",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "stored",
+                    "memory_id": "mem-b-1",
+                    "memory_bank": "bank_b",
+                }
+            )
             MockUc.return_value = mock_uc
 
             result_b = await handle_remember(
@@ -744,9 +794,11 @@ class TestMemoryBankIsolation:
         # Bank B's client should NOT have been called
         client_b.forget.assert_not_called()
 
+
 # ---------------------------------------------------------------------------
 # Test: MCP tool interfaces preserved and working
 # ---------------------------------------------------------------------------
+
 
 class TestMCPToolInterfacesPreserved:
     """E2E: all existing MCP tool interfaces preserved and working."""
@@ -766,11 +818,13 @@ class TestMCPToolInterfacesPreserved:
             "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
         ) as MockUc:
             mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok({
-                "status": "stored",
-                "memory_id": "mem-iface-1",
-                "memory_bank": "default",
-            })
+            mock_uc.execute.return_value = Result.ok(
+                {
+                    "status": "stored",
+                    "memory_id": "mem-iface-1",
+                    "memory_bank": "default",
+                }
+            )
             MockUc.return_value = mock_uc
 
             result = await handle_remember(

@@ -29,6 +29,7 @@ from src.infrastructure.storage.sqlite.models import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_bank_dir(tmp_path: Path) -> Path:
     """Return a temporary directory simulating a memory bank's data dir."""
@@ -47,15 +48,18 @@ def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None
 def session(manager: FileMetadataConnectionManager) -> Generator:
     """Create a SQLAlchemy Session with auto-flush disabled for explicit control."""
     from sqlalchemy.orm import Session
+
     s = Session(bind=manager.engine, autoflush=False)
     yield s
     s.close()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 VALID_HASH = "a" * 64
+
 
 def _a_file(
     id: str = "f1",
@@ -71,25 +75,29 @@ def _a_file(
     created_at: Optional[datetime] = None,
 ) -> File:
     """Create a valid File instance with sensible defaults."""
-    result = File.of({
-        "id": id,
-        "path": path,
-        "source_type": source_type,
-        "hash": hash,
-        "file_type": file_type,
-        "size": size,
-        "language": language,
-        "aggregated_keywords": aggregated_keywords or [],
-        "aggregated_tags": aggregated_tags or [],
-        "status": status,
-        "created_at": created_at or datetime.now(),
-    })
+    result = File.of(
+        {
+            "id": id,
+            "path": path,
+            "source_type": source_type,
+            "hash": hash,
+            "file_type": file_type,
+            "size": size,
+            "language": language,
+            "aggregated_keywords": aggregated_keywords or [],
+            "aggregated_tags": aggregated_tags or [],
+            "status": status,
+            "created_at": created_at or datetime.now(),
+        }
+    )
     assert result.is_ok, f"Failed to create test file: {result.errors}"
     return result.value
+
 
 # ---------------------------------------------------------------------------
 # FileORM model tests
 # ---------------------------------------------------------------------------
+
 
 class TestFileORM:
     """FileORM model maps correctly to the files table."""
@@ -113,6 +121,7 @@ class TestFileORM:
 
         # Retrieve via raw SQL to verify it was persisted
         import sqlite3
+
         raw_conn = sqlite3.connect(str(session.get_bind().url.database))
         raw_conn.row_factory = sqlite3.Row
         cursor = raw_conn.execute("SELECT * FROM files WHERE id = ?", ("orm1",))
@@ -174,6 +183,7 @@ class TestFileORM:
     def test_file_orm_with_json_fields(self, session: Session) -> None:
         """FileORM with JSON-encoded keywords/tags persists correctly."""
         import json
+
         orm_file = FileORM(
             id="orm4",
             path="/tmp/with_json.py",
@@ -276,9 +286,11 @@ class TestFileORM:
         assert retrieved is not None
         assert retrieved.summary == "This is a summary"
 
+
 # ---------------------------------------------------------------------------
 # FileChunkORM model tests
 # ---------------------------------------------------------------------------
+
 
 class TestFileChunkORM:
     """FileChunkORM model maps correctly to the file_chunks table."""
@@ -286,7 +298,9 @@ class TestFileChunkORM:
     def test_create_and_persist_chunk_orm(self, session: Session) -> None:
         """FileChunkORM can be created and persisted."""
         # First create a file (FK constraint)
-        orm_file = FileORM(id="fc1", path="/tmp/chunk_file.py", source_type="file_system", status="pending", created_at=datetime.now())
+        orm_file = FileORM(
+            id="fc1", path="/tmp/chunk_file.py", source_type="file_system", status="pending", created_at=datetime.now()
+        )
         session.add(orm_file)
         session.flush()
 
@@ -316,7 +330,9 @@ class TestFileChunkORM:
 
     def test_chunk_orm_ordered_by_chunk_index(self, session: Session) -> None:
         """FileChunkORM can be queried ordered by chunk_index."""
-        orm_file = FileORM(id="fc2", path="/tmp/ordered.py", source_type="file_system", status="pending", created_at=datetime.now())
+        orm_file = FileORM(
+            id="fc2", path="/tmp/ordered.py", source_type="file_system", status="pending", created_at=datetime.now()
+        )
         session.add(orm_file)
         session.flush()
 
@@ -326,25 +342,34 @@ class TestFileChunkORM:
         session.add_all([c2, c0, c1])
         session.commit()
 
-        results = session.query(FileChunkORM).filter(
-            FileChunkORM.file_id == "fc2"
-        ).order_by(FileChunkORM.chunk_index.asc()).all()
+        results = (
+            session.query(FileChunkORM)
+            .filter(FileChunkORM.file_id == "fc2")
+            .order_by(FileChunkORM.chunk_index.asc())
+            .all()
+        )
         assert len(results) == 3
         assert results[0].chunk_index == 0
         assert results[1].chunk_index == 1
         assert results[2].chunk_index == 2
 
+
 # ---------------------------------------------------------------------------
 # FileRelationORM model tests
 # ---------------------------------------------------------------------------
+
 
 class TestFileRelationORM:
     """FileRelationORM model maps correctly to the file_relations table."""
 
     def test_create_and_persist_relation_orm(self, session: Session) -> None:
         """FileRelationORM can be created and persisted."""
-        f1 = FileORM(id="fr1", path="/tmp/src.py", source_type="file_system", status="pending", created_at=datetime.now())
-        f2 = FileORM(id="fr2", path="/tmp/tgt.py", source_type="file_system", status="pending", created_at=datetime.now())
+        f1 = FileORM(
+            id="fr1", path="/tmp/src.py", source_type="file_system", status="pending", created_at=datetime.now()
+        )
+        f2 = FileORM(
+            id="fr2", path="/tmp/tgt.py", source_type="file_system", status="pending", created_at=datetime.now()
+        )
         session.add_all([f1, f2])
         session.flush()
 
@@ -374,13 +399,22 @@ class TestFileRelationORM:
         session.add_all([f1, f2])
         session.flush()
 
-        rel1 = FileRelationORM(id="fr_orm3", source_file_id="fr3", target_file_id="fr4", relation_type="sibling", strength=1.0, created_at=datetime.now())
+        rel1 = FileRelationORM(
+            id="fr_orm3",
+            source_file_id="fr3",
+            target_file_id="fr4",
+            relation_type="sibling",
+            strength=1.0,
+            created_at=datetime.now(),
+        )
         session.add(rel1)
         session.commit()
 
-        results = session.query(FileRelationORM).filter(
-            (FileRelationORM.source_file_id == "fr3") | (FileRelationORM.target_file_id == "fr3")
-        ).all()
+        results = (
+            session.query(FileRelationORM)
+            .filter((FileRelationORM.source_file_id == "fr3") | (FileRelationORM.target_file_id == "fr3"))
+            .all()
+        )
         assert len(results) == 1
         assert results[0].id == "fr_orm3"
 
@@ -391,18 +425,25 @@ class TestFileRelationORM:
         session.add_all([f1, f2])
         session.flush()
 
-        rel1 = FileRelationORM(id="fr_orm5", source_file_id="fr5", target_file_id="fr6", relation_type="dependency", strength=0.5, created_at=datetime.now())
+        rel1 = FileRelationORM(
+            id="fr_orm5",
+            source_file_id="fr5",
+            target_file_id="fr6",
+            relation_type="dependency",
+            strength=0.5,
+            created_at=datetime.now(),
+        )
         session.add(rel1)
         session.commit()
 
-        results = session.query(FileRelationORM).filter(
-            FileRelationORM.relation_type == "dependency"
-        ).all()
+        results = session.query(FileRelationORM).filter(FileRelationORM.relation_type == "dependency").all()
         assert len(results) == 1
+
 
 # ---------------------------------------------------------------------------
 # FTS5 compatibility
 # ---------------------------------------------------------------------------
+
 
 class TestFTS5Compatibility:
     """FTS5 virtual table still works after ORM models are in place."""
@@ -410,11 +451,10 @@ class TestFTS5Compatibility:
     def test_fts5_table_exists(self, manager: FileMetadataConnectionManager) -> None:
         """FTS5 virtual table is still present in the schema."""
         import sqlite3
+
         conn = sqlite3.connect(str(manager.db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='files_fts'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='files_fts'")
             row = cursor.fetchone()
             assert row is not None
         finally:
@@ -434,6 +474,7 @@ class TestFTS5Compatibility:
 
         # Search via raw SQL on FTS5
         import sqlite3
+
         conn = sqlite3.connect(str(session.get_bind().url.database))
         try:
             cursor = conn.execute(

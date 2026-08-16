@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 # ORM model
 # ---------------------------------------------------------------------------
 
+
 class _HashIndexBase(DeclarativeBase):
     """Declarative base for the hash index table."""
 
@@ -44,9 +45,11 @@ class HashIndexRow(_HashIndexBase):
     file_hash: Mapped[str] = mapped_column(Text, primary_key=True)
     memory_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
+
 # ---------------------------------------------------------------------------
 # Connection manager
 # ---------------------------------------------------------------------------
+
 
 class _HashIndexConnection:
     """Lightweight SQLAlchemy engine + session factory for the hash index DB.
@@ -85,9 +88,11 @@ class _HashIndexConnection:
         """Return a new Session bound to the engine."""
         return self._session_factory()
 
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 class HashIndexService:
     """SQLAlchemy-backed hash index mapping file_hash → memory_id.

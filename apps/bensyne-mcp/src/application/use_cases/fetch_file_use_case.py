@@ -107,13 +107,15 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
             missing_chunks_count=len(missing),
         )
 
-        return Result.ok({
-            "file": self._file_to_dict(file, len(chunks)) if include_metadata else None,
-            "content": content,
-            "chunks": chunk_details,
-            "reconstruction_status": status,
-            "missing_chunks": missing,
-        })
+        return Result.ok(
+            {
+                "file": self._file_to_dict(file, len(chunks)) if include_metadata else None,
+                "content": content,
+                "chunks": chunk_details,
+                "reconstruction_status": status,
+                "missing_chunks": missing,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Reconstruction
@@ -176,13 +178,15 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
 
     def _build_partial_response(self, file: File, include_metadata: bool) -> Result[dict]:
         """Build a partial response when chunk retrieval fails."""
-        return Result.ok({
-            "file": self._file_to_dict(file, 0) if include_metadata else None,
-            "content": "",
-            "chunks": [],
-            "reconstruction_status": "partial",
-            "missing_chunks": [],
-        })
+        return Result.ok(
+            {
+                "file": self._file_to_dict(file, 0) if include_metadata else None,
+                "content": "",
+                "chunks": [],
+                "reconstruction_status": "partial",
+                "missing_chunks": [],
+            }
+        )
 
     def _file_to_dict(self, file: File, total_chunks: int) -> dict:
         """Convert a File entity to a dict for the response."""

@@ -24,9 +24,11 @@ class TestCreateApplication:
 
     def test_create_application_returns_mcp_server(self, mock_config, mock_router) -> None:
         """create_application returns a FastMCP instance."""
-        with patch("src.app.create_server") as mock_create_server, \
-             patch("src.app.register_tools"), \
-             patch("src.app.mount_health_routes"):
+        with (
+            patch("src.app.create_server") as mock_create_server,
+            patch("src.app.register_tools"),
+            patch("src.app.mount_health_routes"),
+        ):
 
             mock_mcp = MagicMock()
             mock_create_server.return_value = mock_mcp
@@ -39,9 +41,11 @@ class TestCreateApplication:
 
     def test_create_application_calls_create_server_with_config(self, mock_config, mock_router) -> None:
         """create_application passes config to create_server."""
-        with patch("src.app.create_server") as mock_create_server, \
-             patch("src.app.register_tools"), \
-             patch("src.app.mount_health_routes"):
+        with (
+            patch("src.app.create_server") as mock_create_server,
+            patch("src.app.register_tools"),
+            patch("src.app.mount_health_routes"),
+        ):
 
             mock_mcp = MagicMock()
             mock_create_server.return_value = mock_mcp
@@ -54,9 +58,11 @@ class TestCreateApplication:
 
     def test_create_application_registers_tools(self, mock_config, mock_router) -> None:
         """create_application registers MCP tools with the router injected."""
-        with patch("src.app.create_server") as mock_create_server, \
-             patch("src.app.register_tools") as mock_register_tools, \
-             patch("src.app.mount_health_routes"):
+        with (
+            patch("src.app.create_server") as mock_create_server,
+            patch("src.app.register_tools") as mock_register_tools,
+            patch("src.app.mount_health_routes"),
+        ):
 
             mock_mcp = MagicMock()
             mock_create_server.return_value = mock_mcp
@@ -69,9 +75,11 @@ class TestCreateApplication:
 
     def test_create_application_mounts_health_routes(self, mock_config, mock_router) -> None:
         """create_application mounts health check endpoints."""
-        with patch("src.app.create_server") as mock_create_server, \
-             patch("src.app.register_tools"), \
-             patch("src.app.mount_health_routes") as mock_mount_health:
+        with (
+            patch("src.app.create_server") as mock_create_server,
+            patch("src.app.register_tools"),
+            patch("src.app.mount_health_routes") as mock_mount_health,
+        ):
 
             mock_mcp = MagicMock()
             mock_create_server.return_value = mock_mcp
@@ -137,15 +145,17 @@ class TestMainEntryPoints:
             return obj
 
         # Patch at source module level so reload picks up mocks
-        with patch.object(sys, "argv", test_args), \
-             patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
-             patch("src.utils.logging.setup_logging") as mock_setup_logging, \
-             patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager, \
-             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
-             patch("src.app.create_application") as mock_create_app, \
-             patch("src.middleware.health.mark_default_instance_ready"), \
-             patch("asyncio.get_event_loop") as mock_get_loop, \
-             patch("dataclasses.replace", side_effect=mock_replace):
+        with (
+            patch.object(sys, "argv", test_args),
+            patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
+            patch("src.utils.logging.setup_logging") as mock_setup_logging,
+            patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager,
+            patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.app.create_application") as mock_create_app,
+            patch("src.middleware.health.mark_default_instance_ready"),
+            patch("asyncio.get_event_loop") as mock_get_loop,
+            patch("dataclasses.replace", side_effect=mock_replace),
+        ):
 
             mock_config = MagicMock()
             mock_config.server.port = 3000
@@ -170,6 +180,7 @@ class TestMainEntryPoints:
             # Import after patching sys.argv and source modules
             import importlib
             import main
+
             importlib.reload(main)
 
             try:
@@ -219,14 +230,16 @@ class TestMainEntryPoints:
         mock_config.instance_pool = mock_instance_pool
 
         # Patch at source module level so reload picks up mocks
-        with patch.object(sys, "argv", test_args), \
-             patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager, \
-             patch("src.utils.logging.setup_logging") as mock_setup_logging, \
-             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter, \
-             patch("src.app.create_application") as mock_create_app, \
-             patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready, \
-             patch("asyncio.get_event_loop") as mock_get_loop, \
-             patch("dataclasses.replace", side_effect=lambda obj, **kwargs: obj):
+        with (
+            patch.object(sys, "argv", test_args),
+            patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
+            patch("src.utils.logging.setup_logging") as mock_setup_logging,
+            patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.app.create_application") as mock_create_app,
+            patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready,
+            patch("asyncio.get_event_loop") as mock_get_loop,
+            patch("dataclasses.replace", side_effect=lambda obj, **kwargs: obj),
+        ):
 
             MockConfigManager.return_value.load.return_value = mock_config
             mock_setup_logging.return_value = MagicMock()
@@ -242,6 +255,7 @@ class TestMainEntryPoints:
 
             import importlib
             import main
+
             importlib.reload(main)
 
             try:
@@ -272,6 +286,7 @@ class TestGracefulShutdown:
         with patch("sys.exit") as mock_exit:
             import importlib
             import main
+
             importlib.reload(main)
 
             loop = asyncio.new_event_loop()
@@ -293,6 +308,7 @@ class TestApplicationIntegration:
 
         # Reset health state
         import src.middleware.health as health_module
+
         health_module._default_instance_ready = False
         health_module._memory_bank_router = None
 

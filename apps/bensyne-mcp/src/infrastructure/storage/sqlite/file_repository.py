@@ -22,6 +22,7 @@ from src.infrastructure.storage.sqlite.models import FileORM
 # ORM ↔ File mapping helpers
 # ---------------------------------------------------------------------------
 
+
 def _orm_to_file(orm: FileORM) -> File:
     """Map a FileORM instance to a File entity."""
     keywords_raw = orm.keywords
@@ -68,9 +69,11 @@ def _file_to_orm(file: File) -> FileORM:
         updated_at=file.updated_at,
     )
 
+
 # ---------------------------------------------------------------------------
 # Repository
 # ---------------------------------------------------------------------------
+
 
 class FileRepository:
     """SQLite-backed File repository using SQLAlchemy ORM.
@@ -130,9 +133,7 @@ class FileRepository:
         """Find a file by its path."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileORM).filter(
-                FileORM.path == path
-            ).first()
+            orm = session.query(FileORM).filter(FileORM.path == path).first()
             if orm is None:
                 return Result.ok(None)
             return Result.ok(_orm_to_file(orm))
@@ -149,9 +150,7 @@ class FileRepository:
         """List all saved files."""
         session = self._conn_manager.get_session()
         try:
-            orms = session.query(FileORM).order_by(
-                FileORM.created_at.desc()
-            ).all()
+            orms = session.query(FileORM).order_by(FileORM.created_at.desc()).all()
             files = [_orm_to_file(orm) for orm in orms]
             return Result.ok(files)
         except Exception as e:

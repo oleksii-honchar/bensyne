@@ -29,9 +29,7 @@ def evict_if_over_limit(
     """
     while len(instances) > config.max_instances:
         # Find oldest non-default instance by created_at
-        non_default = {
-            k: v for k, v in instances.items() if k != DEFAULT_BANK
-        }
+        non_default = {k: v for k, v in instances.items() if k != DEFAULT_BANK}
 
         if not non_default:
             # Should never happen since default is excluded from eviction

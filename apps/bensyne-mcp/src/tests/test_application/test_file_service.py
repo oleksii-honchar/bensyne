@@ -36,6 +36,7 @@ VALID_HASH = "a" * 64
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -61,6 +62,7 @@ def _a_file(
         updated_at=NOW,
     )
 
+
 def _a_chunk(
     id: str = "c1",
     file_id: str = "f1",
@@ -83,6 +85,7 @@ def _a_chunk(
         updated_at=NOW,
     )
 
+
 def _a_relation(
     id: str = "r1",
     source_file_id: str = "f1",
@@ -103,25 +106,31 @@ def _a_relation(
         updated_at=NOW,
     )
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def file_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def chunk_repo() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def relation_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def memory_repo() -> MagicMock:
     return MagicMock()
+
 
 # ---------------------------------------------------------------------------
 # Import the service — will fail until implemented
@@ -129,9 +138,11 @@ def memory_repo() -> MagicMock:
 
 from src.application.services.file_service import FileService  # noqa: E402
 
+
 @pytest.fixture
 def logger_mock() -> LoggerMock:
     return LoggerMock()
+
 
 @pytest.fixture
 def service(
@@ -149,9 +160,11 @@ def service(
         logger=logger_mock,
     )
 
+
 # ===================================================================
 # create_file
 # ===================================================================
+
 
 class TestCreateFile:
     """create_file creates a new file via File.of() and saves via repository."""
@@ -219,9 +232,11 @@ class TestCreateFile:
         assert result.is_ko is True
         assert result.errors[0].error_code == "DB_ERROR"
 
+
 # ===================================================================
 # update_file
 # ===================================================================
+
 
 class TestUpdateFile:
     """update_file finds existing file and updates its metadata."""
@@ -268,9 +283,11 @@ class TestUpdateFile:
         # update_metadata emits FileUpdatedEvent
         assert result.has_events() is True
 
+
 # ===================================================================
 # delete_file
 # ===================================================================
+
 
 class TestDeleteFile:
     """delete_file marks file as deleted via mark_deleted() and saves."""
@@ -318,14 +335,17 @@ class TestDeleteFile:
         assert result.is_ko is True
         file_repo.save_file.assert_not_called()
 
+
 # ===================================================================
 # link_chunk
 # ===================================================================
 
+
 class TestCreateChunk:
     """link_chunk uses the aggregate to add a chunk, then persists."""
 
-    def test_returns_created_chunk(self,
+    def test_returns_created_chunk(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -349,7 +369,8 @@ class TestCreateChunk:
         assert result.value.memory_id == "mem_1"
         chunk_repo.save_chunk.assert_called_once()
 
-    def test_returns_ko_when_file_not_found(self,
+    def test_returns_ko_when_file_not_found(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:
@@ -359,7 +380,8 @@ class TestCreateChunk:
 
         assert result.is_ko is True
 
-    def test_emits_chunk_added_event(self,
+    def test_emits_chunk_added_event(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -379,7 +401,8 @@ class TestCreateChunk:
         assert result.has_events() is True
         assert any(isinstance(e, FileChunkAddedEvent) for e in result.get_events())
 
-    def test_rejects_duplicate_memory_id(self,
+    def test_rejects_duplicate_memory_id(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -396,7 +419,8 @@ class TestCreateChunk:
         assert result.is_ko is True
         assert result.errors[0].error_code == "CHUNK_ALREADY_EXISTS"
 
-    def test_updates_file_metadata_via_aggregate(self,
+    def test_updates_file_metadata_via_aggregate(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -417,14 +441,17 @@ class TestCreateChunk:
         # File should be saved after aggregate updates it
         file_repo.save_file.assert_called_once()
 
+
 # ===================================================================
 # create_relation
 # ===================================================================
 
+
 class TestCreateRelation:
     """create_relation uses the aggregate to add a relation, then persists."""
 
-    def test_returns_created_relation(self,
+    def test_returns_created_relation(
+        self,
         service: FileService,
         file_repo: MagicMock,
         relation_repo: MagicMock,
@@ -448,7 +475,8 @@ class TestCreateRelation:
         assert result.value.target_file_id == "f2"
         relation_repo.save_relation.assert_called_once()
 
-    def test_returns_ko_when_source_file_not_found(self,
+    def test_returns_ko_when_source_file_not_found(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:
@@ -462,7 +490,8 @@ class TestCreateRelation:
 
         assert result.is_ko is True
 
-    def test_emits_relation_created_event(self,
+    def test_emits_relation_created_event(
+        self,
         service: FileService,
         file_repo: MagicMock,
         relation_repo: MagicMock,
@@ -485,14 +514,17 @@ class TestCreateRelation:
         assert result.has_events() is True
         assert any(isinstance(e, FileRelationCreatedEvent) for e in result.get_events())
 
+
 # ===================================================================
 # get_file (unified)
 # ===================================================================
 
+
 class TestGetFile:
     """get_file returns a FileMetadataAggregate with configurable chunks and relations."""
 
-    def test_returns_aggregate_with_both_chunks_and_relations_by_default(self,
+    def test_returns_aggregate_with_both_chunks_and_relations_by_default(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -517,7 +549,8 @@ class TestGetFile:
         assert len(agg.relations) == 1
         assert agg.relations[0].target_file_id == "f2"
 
-    def test_returns_ko_when_file_not_found(self,
+    def test_returns_ko_when_file_not_found(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:
@@ -527,7 +560,8 @@ class TestGetFile:
 
         assert result.is_ko is True
 
-    def test_excludes_chunks_when_include_chunks_false(self,
+    def test_excludes_chunks_when_include_chunks_false(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -549,7 +583,8 @@ class TestGetFile:
         # Chunks repo should NOT have been called
         chunk_repo.get_chunks_by_file_id.assert_not_called()
 
-    def test_excludes_relations_when_include_relations_false(self,
+    def test_excludes_relations_when_include_relations_false(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -572,7 +607,8 @@ class TestGetFile:
         # Relations repo should NOT have been called
         relation_repo.get_relations_by_file_id.assert_not_called()
 
-    def test_filters_relations_by_relation_types(self,
+    def test_filters_relations_by_relation_types(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -593,7 +629,8 @@ class TestGetFile:
         assert len(agg.relations) == 1
         assert agg.relations[0].relation_type == RelationType.SIBLING
 
-    def test_excludes_both_chunks_and_relations(self,
+    def test_excludes_both_chunks_and_relations(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -615,7 +652,8 @@ class TestGetFile:
         chunk_repo.get_chunks_by_file_id.assert_not_called()
         relation_repo.get_relations_by_file_id.assert_not_called()
 
-    def test_relation_types_ignored_when_include_relations_false(self,
+    def test_relation_types_ignored_when_include_relations_false(
+        self,
         service: FileService,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
@@ -638,14 +676,17 @@ class TestGetFile:
         assert len(agg.relations) == 0
         relation_repo.get_relations_by_file_id.assert_not_called()
 
+
 # ===================================================================
 # upsert_file
 # ===================================================================
 
+
 class TestUpsertFile:
     """upsert_file creates new or updates existing file by path."""
 
-    def test_creates_new_file_when_not_exists(self,
+    def test_creates_new_file_when_not_exists(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:
@@ -666,7 +707,8 @@ class TestUpsertFile:
         assert result.value.id == "f1"
         file_repo.save_file.assert_called_once()
 
-    def test_updates_existing_file(self,
+    def test_updates_existing_file(
+        self,
         service: FileService,
         file_repo: MagicMock,
     ) -> None:
@@ -689,14 +731,17 @@ class TestUpsertFile:
         assert result.is_ok is True
         file_repo.save_file.assert_called_once()
 
+
 # ===================================================================
 # find_files_by_memory
 # ===================================================================
 
+
 class TestFindFilesByMemory:
     """find_files_by_memory finds files associated with a memory."""
 
-    def test_returns_files_for_memory(self,
+    def test_returns_files_for_memory(
+        self,
         service: FileService,
         chunk_repo: MagicMock,
         file_repo: MagicMock,
@@ -714,7 +759,8 @@ class TestFindFilesByMemory:
         assert len(files) == 1
         assert files[0].id == "f1"
 
-    def test_returns_empty_when_no_chunk_for_memory(self,
+    def test_returns_empty_when_no_chunk_for_memory(
+        self,
         service: FileService,
         chunk_repo: MagicMock,
     ) -> None:
@@ -725,16 +771,19 @@ class TestFindFilesByMemory:
         assert result.is_ok is True
         assert result.value == []
 
+
 # ===================================================================
 # Structured logging — each method emits info at entry, debug for
 # complex operations, with service="file_service", method="...", key
 # params (file_id, memory_id, etc.)
 # ===================================================================
 
+
 class TestStructuredLogging:
     """FileService emits structured JSONL log entries via LoggerMock."""
 
-    def test_create_file_logs_info_at_entry(self,
+    def test_create_file_logs_info_at_entry(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -765,7 +814,8 @@ class TestStructuredLogging:
         assert entry.get("event") == "Creating file"
         assert entry.get("file_id") == "f1"
 
-    def test_create_file_logs_debug_on_save(self,
+    def test_create_file_logs_debug_on_save(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -795,7 +845,8 @@ class TestStructuredLogging:
         assert entry.get("event") == "File saved to repository"
         assert entry.get("file_id") == "f1"
 
-    def test_update_file_logs_info_with_file_id(self,
+    def test_update_file_logs_info_with_file_id(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -820,7 +871,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "update_file"
         assert entry.get("file_id") == "f1"
 
-    def test_delete_file_logs_info_with_file_id(self,
+    def test_delete_file_logs_info_with_file_id(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -845,7 +897,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "delete_file"
         assert entry.get("file_id") == "f1"
 
-    def test_link_chunk_logs_info_with_file_id_and_memory_id(self,
+    def test_link_chunk_logs_info_with_file_id_and_memory_id(
+        self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         logger_mock: LoggerMock,
@@ -875,7 +928,8 @@ class TestStructuredLogging:
         assert entry.get("file_id") == "f1"
         assert entry.get("memory_id") == "mem_1"
 
-    def test_link_chunk_logs_debug_on_aggregate_load(self,
+    def test_link_chunk_logs_debug_on_aggregate_load(
+        self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         logger_mock: LoggerMock,
@@ -907,7 +961,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "link_chunk"
         assert entry.get("file_id") == "f1"
 
-    def test_create_relation_logs_info_with_source_and_target(self,
+    def test_create_relation_logs_info_with_source_and_target(
+        self,
         file_repo: MagicMock,
         relation_repo: MagicMock,
         logger_mock: LoggerMock,
@@ -940,7 +995,8 @@ class TestStructuredLogging:
         assert entry.get("source_file_id") == "f1"
         assert entry.get("target_file_id") == "f2"
 
-    def test_get_file_logs_info_with_file_id(self,
+    def test_get_file_logs_info_with_file_id(
+        self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         relation_repo: MagicMock,
@@ -967,7 +1023,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "get_file"
         assert entry.get("file_id") == "f1"
 
-    def test_get_file_logs_debug_on_aggregate_build(self,
+    def test_get_file_logs_debug_on_aggregate_build(
+        self,
         file_repo: MagicMock,
         chunk_repo: MagicMock,
         relation_repo: MagicMock,
@@ -999,7 +1056,8 @@ class TestStructuredLogging:
         assert entry.get("chunk_count") == 1
         assert entry.get("relation_count") == 1
 
-    def test_upsert_file_logs_info_with_file_id(self,
+    def test_upsert_file_logs_info_with_file_id(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -1029,7 +1087,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "upsert_file"
         assert entry.get("file_id") == "f1"
 
-    def test_find_files_by_memory_logs_info_with_memory_id(self,
+    def test_find_files_by_memory_logs_info_with_memory_id(
+        self,
         chunk_repo: MagicMock,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
@@ -1055,7 +1114,8 @@ class TestStructuredLogging:
         assert entry.get("method") == "find_files_by_memory"
         assert entry.get("memory_id") == "mem_1"
 
-    def test_log_entries_include_service_name(self,
+    def test_log_entries_include_service_name(
+        self,
         file_repo: MagicMock,
         logger_mock: LoggerMock,
     ) -> None:
@@ -1079,6 +1139,4 @@ class TestStructuredLogging:
         service.create_file(file_data)
 
         for entry in logger_mock.entries:
-            assert entry.get("service") == "file_service", (
-                f"Log entry missing service='file_service': {entry}"
-            )
+            assert entry.get("service") == "file_service", f"Log entry missing service='file_service': {entry}"

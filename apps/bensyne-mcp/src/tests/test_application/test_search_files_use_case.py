@@ -24,6 +24,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -48,6 +49,7 @@ def _a_file(
         updated_at=NOW,
     )
 
+
 def _a_chunk(
     id: str = "c1",
     file_id: str = "f1",
@@ -68,6 +70,7 @@ def _a_chunk(
         updated_at=NOW,
     )
 
+
 def _a_relation(
     id: str = "r1",
     source_file_id: str = "f1",
@@ -86,29 +89,36 @@ def _a_relation(
         updated_at=NOW,
     )
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mnemosyne_client() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def chunk_repo() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def file_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def relation_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def logger() -> LoggerMock:
     return LoggerMock()
+
 
 @pytest.fixture
 def use_case(
@@ -126,9 +136,11 @@ def use_case(
         logger=logger,
     )
 
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 class TestSearchFilesUseCaseValidation:
     def test_returns_ko_when_query_empty(self, use_case: SearchFilesUseCase) -> None:
@@ -146,32 +158,40 @@ class TestSearchFilesUseCaseValidation:
         assert result.is_ok is True
         assert result.value["query"] == "search term"
 
+
 # ---------------------------------------------------------------------------
 # Phase 1 — No memories recalled
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseNoMemories:
-    def test_returns_empty_results_when_no_memories(self,
+    def test_returns_empty_results_when_no_memories(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
     ) -> None:
         mnemosyne_client.recall.return_value = []
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         assert result.value["results"] == []
         assert result.value["total_count"] == 0
 
+
 # ---------------------------------------------------------------------------
 # Phase 2 — Memories with no file context (non-file memories)
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseNonFileMemories:
-    def test_returns_non_file_memory_when_no_chunk(self,
+    def test_returns_non_file_memory_when_no_chunk(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -182,10 +202,12 @@ class TestSearchFilesUseCaseNonFileMemories:
         ]
         chunk_repo.get_chunk_by_memory_id.return_value = Result.ok(None)
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         results = result.value["results"]
@@ -196,12 +218,15 @@ class TestSearchFilesUseCaseNonFileMemories:
         assert r["file"] is None
         assert r["matched_memories"] == []
 
+
 # ---------------------------------------------------------------------------
 # Phase 2 — Memories with file context (enriched)
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseFileMemories:
-    def test_returns_enriched_file_result(self,
+    def test_returns_enriched_file_result(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -219,10 +244,12 @@ class TestSearchFilesUseCaseFileMemories:
         file_repo.get_file_by_id.return_value = Result.ok(file)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         results = result.value["results"]
@@ -237,7 +264,8 @@ class TestSearchFilesUseCaseFileMemories:
         assert r["matched_memories"][0]["id"] == "mem_1"
         assert r["related_files_count"] == 0
 
-    def test_groups_memories_by_file(self,
+    def test_groups_memories_by_file(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -262,10 +290,12 @@ class TestSearchFilesUseCaseFileMemories:
         file_repo.get_file_by_id.return_value = Result.ok(file)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         results = result.value["results"]
@@ -274,7 +304,8 @@ class TestSearchFilesUseCaseFileMemories:
         assert r["file"]["id"] == "f1"
         assert len(r["matched_memories"]) == 2
 
-    def test_matched_memories_include_chunk_info(self,
+    def test_matched_memories_include_chunk_info(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -292,10 +323,12 @@ class TestSearchFilesUseCaseFileMemories:
         file_repo.get_file_by_id.return_value = Result.ok(file)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         r = result.value["results"][0]
@@ -307,12 +340,15 @@ class TestSearchFilesUseCaseFileMemories:
         assert m["importance"] == 0.7
         assert m["relevance_score"] == 0.85
 
+
 # ---------------------------------------------------------------------------
 # Phase 2 — Relations inclusion
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseRelations:
-    def test_related_files_count_without_relations_flag(self,
+    def test_related_files_count_without_relations_flag(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -331,11 +367,13 @@ class TestSearchFilesUseCaseRelations:
         file_repo.get_file_by_id.return_value = Result.ok(file)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([relation])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-            "include_relations": False,
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": False,
+            }
+        )
 
         assert result.is_ok is True
         r = result.value["results"][0]
@@ -343,7 +381,8 @@ class TestSearchFilesUseCaseRelations:
         # Relations not expanded
         assert "related_files" not in r or r.get("related_files") is None
 
-    def test_related_files_included_when_flag_true(self,
+    def test_related_files_included_when_flag_true(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -371,11 +410,13 @@ class TestSearchFilesUseCaseRelations:
 
         file_repo.get_file_by_id.side_effect = file_by_id_side_effect
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-            "include_relations": True,
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
 
         assert result.is_ok is True
         r = result.value["results"][0]
@@ -386,12 +427,15 @@ class TestSearchFilesUseCaseRelations:
         assert rf["id"] == "f2"
         assert rf["path"] == "/tmp/related.txt"
 
+
 # ---------------------------------------------------------------------------
 # Phase 2 — Mixed results (file + non-file memories)
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseMixedResults:
-    def test_returns_both_file_and_non_file_memories(self,
+    def test_returns_both_file_and_non_file_memories(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -414,10 +458,12 @@ class TestSearchFilesUseCaseMixedResults:
         file_repo.get_file_by_id.return_value = Result.ok(file)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         results = result.value["results"]
@@ -432,12 +478,15 @@ class TestSearchFilesUseCaseMixedResults:
         assert r_non_file[0]["memory_id"] == "mem_2"
         assert r_file[0]["file"]["id"] == "f1"
 
+
 # ---------------------------------------------------------------------------
 # Limit enforcement
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseLimit:
-    def test_respects_limit_parameter(self,
+    def test_respects_limit_parameter(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -447,49 +496,60 @@ class TestSearchFilesUseCaseLimit:
         """Limit should be passed to mnemosyne recall."""
         mnemosyne_client.recall.return_value = []
 
-        use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-            "limit": 3,
-        })
+        use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "limit": 3,
+            }
+        )
 
         mnemosyne_client.recall.assert_called_once_with("search term", 3)
 
-    def test_uses_default_limit(self,
+    def test_uses_default_limit(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
     ) -> None:
         """Default limit of 10 should be used when not specified."""
         mnemosyne_client.recall.return_value = []
 
-        use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         mnemosyne_client.recall.assert_called_once_with("search term", 10)
+
 
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 
+
 class TestSearchFilesUseCaseErrors:
-    def test_handles_recall_failure(self,
+    def test_handles_recall_failure(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
     ) -> None:
         """When mnemosyne recall fails, return Result.ko."""
         mnemosyne_client.recall.return_value = Result.ko([ErrorWithDetails("DATABASE_ERROR", {})])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "DATABASE_ERROR"
 
-    def test_continues_when_chunk_lookup_fails(self,
+    def test_continues_when_chunk_lookup_fails(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -500,17 +560,20 @@ class TestSearchFilesUseCaseErrors:
         ]
         chunk_repo.get_chunk_by_memory_id.return_value = Result.ko([ErrorWithDetails("DB_ERROR", {})])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         # Should still return ok — treat as non-file memory
         assert result.is_ok is True
         r = result.value["results"][0]
         assert r["file"] is None
 
-    def test_continues_when_file_lookup_fails(self,
+    def test_continues_when_file_lookup_fails(
+        self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         chunk_repo: MagicMock,
@@ -524,10 +587,12 @@ class TestSearchFilesUseCaseErrors:
         chunk_repo.get_chunk_by_memory_id.return_value = Result.ok(chunk)
         file_repo.get_file_by_id.return_value = Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {})])
 
-        result = use_case.execute({
-            "query": "search term",
-            "memory_bank": "my_bank",
-        })
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+            }
+        )
 
         assert result.is_ok is True
         r = result.value["results"][0]

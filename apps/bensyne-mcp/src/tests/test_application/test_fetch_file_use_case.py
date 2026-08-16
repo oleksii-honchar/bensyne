@@ -26,6 +26,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -50,6 +51,7 @@ def _a_file(
         updated_at=NOW,
     )
 
+
 def _a_chunk(
     id: str = "c1",
     file_id: str = "f1",
@@ -72,25 +74,31 @@ def _a_chunk(
         updated_at=NOW,
     )
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mnemosyne_client() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def chunk_repo() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def file_repo() -> MagicMock:
     return MagicMock()
 
+
 @pytest.fixture
 def logger() -> MagicMock:
     return MagicMock()
+
 
 @pytest.fixture
 def use_case(
@@ -106,9 +114,11 @@ def use_case(
         logger=logger,
     )
 
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileValidation:
     def test_returns_ko_when_file_id_missing(self, use_case: FetchFileUseCase) -> None:
@@ -126,9 +136,11 @@ class TestFetchFileValidation:
         assert result.is_ok is True
         assert result.value["file_id"] == "f1"
 
+
 # ---------------------------------------------------------------------------
 # File not found
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileNotFound:
     def test_returns_ko_when_file_not_found(
@@ -142,9 +154,11 @@ class TestFetchFileNotFound:
         assert result.is_ko is True
         assert result.errors[0].error_code == "FILE_NOT_FOUND"
 
+
 # ---------------------------------------------------------------------------
 # No chunks
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileNoChunks:
     def test_returns_empty_content_when_no_chunks(
@@ -165,9 +179,11 @@ class TestFetchFileNoChunks:
         assert val["chunks"] == []
         assert val["reconstruction_status"] == "partial"
 
+
 # ---------------------------------------------------------------------------
 # Basic content reconstruction
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileBasicReconstruction:
     def test_reconstructs_content_from_ordered_chunks(
@@ -225,9 +241,11 @@ class TestFetchFileBasicReconstruction:
         assert c["end_line"] == 10
         assert c["content"] == "Some content"
 
+
 # ---------------------------------------------------------------------------
 # Chunk ordering
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileChunkOrdering:
     def test_orders_by_chunk_index_not_insertion_order(
@@ -296,9 +314,11 @@ class TestFetchFileChunkOrdering:
         assert val["chunks"][0]["start_line"] == 1
         assert val["chunks"][1]["start_line"] == 11
 
+
 # ---------------------------------------------------------------------------
 # Missing chunks (partial reconstruction)
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileMissingChunks:
     def test_marks_partial_when_memory_content_missing(
@@ -364,9 +384,11 @@ class TestFetchFileMissingChunks:
         assert val["reconstruction_status"] == "partial"
         assert set(val["missing_chunks"]) == {"mem_1", "mem_5", "mem_9"}
 
+
 # ---------------------------------------------------------------------------
 # Duplicate chunks
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileDuplicateChunks:
     def test_deduplicates_by_memory_id(
@@ -397,9 +419,11 @@ class TestFetchFileDuplicateChunks:
         # Content should only contain one copy
         assert val["content"] == "Deduplicated content"
 
+
 # ---------------------------------------------------------------------------
 # File metadata
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileMetadata:
     def test_includes_file_metadata_when_requested(
@@ -422,11 +446,13 @@ class TestFetchFileMetadata:
         chunk_repo.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "Hello world"}
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "include_metadata": True,
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "include_metadata": True,
+            }
+        )
         assert result.is_ok is True
 
         val = result.value
@@ -458,19 +484,23 @@ class TestFetchFileMetadata:
         chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.return_value = {"content": "x"}
 
-        result = use_case.execute({
-            "file_id": "f1",
-            "memory_bank": "bank",
-            "include_metadata": True,
-        })
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "include_metadata": True,
+            }
+        )
         assert result.is_ok is True
 
         val = result.value
         assert val["file"]["total_chunks"] == 3
 
+
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 class TestFetchFileErrors:
     def test_handles_chunk_repo_error(

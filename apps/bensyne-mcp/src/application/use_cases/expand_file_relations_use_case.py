@@ -100,7 +100,9 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         # Step 3: Expand each related file
         related_files = self._expand_related_files(
-            source_file, relations, summary_only=summary_only,
+            source_file,
+            relations,
+            summary_only=summary_only,
         )
 
         self.logger.info(
@@ -111,10 +113,12 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
             related_files_count=len(related_files),
         )
 
-        return Result.ok({
-            "source_file": self._file_to_dict(source_file),
-            "related_files": related_files,
-        })
+        return Result.ok(
+            {
+                "source_file": self._file_to_dict(source_file),
+                "related_files": related_files,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Relations expansion
@@ -159,24 +163,26 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
             if to_dict_result.is_ko:
                 # Fallback: compose minimal output on error
                 chunks_count = 0
-                expanded.append({
-                    "file": {
-                        "id": f.id,
-                        "path": f.path,
-                        "source_type": f.source_type.value,
-                        "relation_type": rel.relation_type.value,
-                    },
-                    "summary": f.summary,
-                    "content": "",
-                    "metadata": {
-                        "keywords": f.aggregated_keywords,
-                        "tags": f.aggregated_tags,
-                        "file_type": f.file_type or "",
-                        "size": f.size,
-                        "language": f.language,
-                    },
-                    "chunks_count": 0,
-                })
+                expanded.append(
+                    {
+                        "file": {
+                            "id": f.id,
+                            "path": f.path,
+                            "source_type": f.source_type.value,
+                            "relation_type": rel.relation_type.value,
+                        },
+                        "summary": f.summary,
+                        "content": "",
+                        "metadata": {
+                            "keywords": f.aggregated_keywords,
+                            "tags": f.aggregated_tags,
+                            "file_type": f.file_type or "",
+                            "size": f.size,
+                            "language": f.language,
+                        },
+                        "chunks_count": 0,
+                    }
+                )
             else:
                 output = to_dict_result.value
                 chunks_count = output.get("chunks_count", 0)

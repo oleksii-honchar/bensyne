@@ -28,9 +28,16 @@ class MemoryBankActivatedEvent(DomainEvent):
     @classmethod
     def of(cls, bank_name: str) -> Result["MemoryBankActivatedEvent"]:
         if not bank_name:
-            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK_ACTIVATED_EVENT", {
-                "bank_name": bank_name,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_MEMORY_BANK_ACTIVATED_EVENT",
+                        {
+                            "bank_name": bank_name,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(bank_name=bank_name))
 
     @property
@@ -55,9 +62,16 @@ class MemoryBankSuspendedEvent(DomainEvent):
     @classmethod
     def of(cls, bank_name: str) -> Result["MemoryBankSuspendedEvent"]:
         if not bank_name:
-            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK_SUSPENDED_EVENT", {
-                "bank_name": bank_name,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_MEMORY_BANK_SUSPENDED_EVENT",
+                        {
+                            "bank_name": bank_name,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(bank_name=bank_name))
 
     @property

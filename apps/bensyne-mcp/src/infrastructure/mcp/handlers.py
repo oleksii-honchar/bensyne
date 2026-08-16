@@ -107,7 +107,9 @@ async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
 
 
 @log_tool_call("forgetMemory")
-async def handle_forget(router: MemoryBankRouter, arguments: dict, bank_type_checker: Callable[[str], str] | None = None) -> dict:
+async def handle_forget(
+    router: MemoryBankRouter, arguments: dict, bank_type_checker: Callable[[str], str] | None = None
+) -> dict:
     """Delete a memory from the specified memory bank.
 
     Only allowed on "pure_memories" banks — banks with file associations
@@ -151,6 +153,7 @@ async def handle_forget(router: MemoryBankRouter, arguments: dict, bank_type_che
 
     # Bank type checker: determine if this bank is "pure_memories"
     if bank_type_checker is None:
+
         def _bank_type_checker(bank_name: str) -> str:
             """Return the bank type for a given bank name.
 
@@ -168,6 +171,7 @@ async def handle_forget(router: MemoryBankRouter, arguments: dict, bank_type_che
             if db_path.exists():
                 return "file_metadata"
             return "pure_memories"
+
         bank_type_checker = _bank_type_checker
 
     params = dict(arguments)

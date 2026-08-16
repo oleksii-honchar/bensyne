@@ -50,7 +50,9 @@ class RegisterBankUseCase(BaseUseCase[dict, dict]):
             name=name,
         )
 
-        return Result.ok({
-            "status": "registered",
-            "name": name,
-        })
+        return Result.ok(
+            {
+                "status": "registered",
+                "name": name,
+            }
+        )

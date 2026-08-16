@@ -44,19 +44,13 @@ class MemoryBank:
     def of(cls, name: str, description: str) -> Result["MemoryBank"]:
         """Factory method for creating a new memory bank."""
         if not name or not name.strip():
-            return Result.ko(
-                [ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})]
-            )
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})])
         if not description or not description.strip():
-            return Result.ko(
-                [ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})]
-            )
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})])
         try:
             MemoryBankSchema(name=name, description=description)
         except ValidationError:
-            return Result.ko(
-                [ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})]
-            )
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK", {"name": name})])
         return Result.ok(
             cls(
                 name=name,
@@ -79,9 +73,7 @@ class MemoryBank:
         Emits MemoryBankActivatedEvent on success.
         """
         if self.status == "suspended":
-            return Result.ko(
-                [ErrorWithDetails("BANK_SUSPENDED", {"name": self.name})]
-            )
+            return Result.ko([ErrorWithDetails("BANK_SUSPENDED", {"name": self.name})])
 
         updated = self.replace(status="active", last_accessed=datetime.now())
         event = MemoryBankActivatedEvent.of(bank_name=updated.name)

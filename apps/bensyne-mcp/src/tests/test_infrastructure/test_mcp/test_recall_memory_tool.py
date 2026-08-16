@@ -26,12 +26,11 @@ from src.infrastructure.bank.router import MemoryBankRouter
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _mock_mnemosyne_instance() -> MagicMock:
     """Create a fully configured mock Mnemosyne instance."""
     mock = MagicMock()
-    mock.recall.return_value = [
-        {"id": "mem_abc123", "content": "test memory", "score": 0.9}
-    ]
+    mock.recall.return_value = [{"id": "mem_abc123", "content": "test memory", "score": 0.9}]
     return mock
 
 
@@ -45,9 +44,7 @@ def router(tmp_path: Path) -> MemoryBankRouter:
         {
             "mnemosyne": MagicMock(),
             "mnemosyne.core": MagicMock(),
-            "mnemosyne.core.memory": MagicMock(
-                Mnemosyne=lambda **kwargs: mock_instance
-            ),
+            "mnemosyne.core.memory": MagicMock(Mnemosyne=lambda **kwargs: mock_instance),
         },
     ):
         config = InstancePoolConfig(
@@ -142,10 +139,7 @@ class TestRecallMemoryToolRegistration:
         register_tools(mock_mcp, mock_router)
 
         # Check that mcp.tool was called with name="recallMemory"
-        tool_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "recallMemory"
-        ]
+        tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "recallMemory"]
         assert len(tool_calls) == 1, "recallMemory tool should be registered exactly once"
 
     def test_old_memory_recall_tool_not_registered(self) -> None:
@@ -157,10 +151,7 @@ class TestRecallMemoryToolRegistration:
 
         register_tools(mock_mcp, mock_router)
 
-        tool_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "memory_recall"
-        ]
+        tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "memory_recall"]
         assert len(tool_calls) == 0, "memory_recall tool should NOT be registered"
 
     def test_recall_memory_tool_accepts_query_and_limit(self) -> None:
@@ -174,8 +165,7 @@ class TestRecallMemoryToolRegistration:
 
         # Find the recallMemory tool registration — tool() is called with name=
         recall_memory_calls = [
-            call for call in mock_mcp.tool.call_args_list
-            if call.kwargs.get("name") == "recallMemory"
+            call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "recallMemory"
         ]
         assert len(recall_memory_calls) == 1
 
@@ -185,6 +175,7 @@ class TestRecallMemoryToolRegistration:
         # source of app.py to verify the recall function signature.
         import inspect
         from src.app import register_tools as _register_tools
+
         source = inspect.getsource(_register_tools)
         # The recall function should have query, memory_bank, and limit params
         assert "query: str" in source
@@ -205,10 +196,12 @@ class TestRecallMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [{"id": "mem_1", "content": "found"}],
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [{"id": "mem_1", "content": "found"}],
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -231,10 +224,12 @@ class TestRecallMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [],
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [],
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -256,9 +251,7 @@ class TestRecallMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ko([
-            ErrorWithDetails("QUERY_REQUIRED", {})
-        ])
+        mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("QUERY_REQUIRED", {})])
 
         async def run() -> None:
             with patch(
@@ -298,13 +291,15 @@ class TestRecallMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [
-                {"id": "mem_1", "content": "result one"},
-                {"id": "mem_2", "content": "result two"},
-            ],
-            "memory_bank": "my-bank",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [
+                    {"id": "mem_1", "content": "result one"},
+                    {"id": "mem_2", "content": "result two"},
+                ],
+                "memory_bank": "my-bank",
+            }
+        )
 
         async def run() -> None:
             with patch(
@@ -327,10 +322,12 @@ class TestRecallMemoryHandler:
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
-        mock_use_case.execute.return_value = Result.ok({
-            "results": [],
-            "memory_bank": "test-ns",
-        })
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [],
+                "memory_bank": "test-ns",
+            }
+        )
 
         async def run() -> None:
             with patch(

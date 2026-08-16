@@ -74,8 +74,7 @@ def assert_mcp_error(result: dict, tool_name: str, expected_message_substring: s
         message = error.get("message", "")
         if expected_message_substring:
             assert expected_message_substring.lower() in message.lower(), (
-                f"Expected '{expected_message_substring}' in error message for {tool_name}, "
-                f"got: {message}"
+                f"Expected '{expected_message_substring}' in error message for {tool_name}, " f"got: {message}"
             )
         return
 
@@ -88,8 +87,7 @@ def assert_mcp_error(result: dict, tool_name: str, expected_message_substring: s
             text = content_list[0].get("text", "")
             if expected_message_substring:
                 assert expected_message_substring.lower() in text.lower(), (
-                    f"Expected '{expected_message_substring}' in error text for {tool_name}, "
-                    f"got: {text}"
+                    f"Expected '{expected_message_substring}' in error text for {tool_name}, " f"got: {text}"
                 )
             return
 
@@ -98,8 +96,7 @@ def assert_mcp_error(result: dict, tool_name: str, expected_message_substring: s
         message = tool_result["error"]
         if expected_message_substring:
             assert expected_message_substring.lower() in str(message).lower(), (
-                f"Expected '{expected_message_substring}' in error message for {tool_name}, "
-                f"got: {message}"
+                f"Expected '{expected_message_substring}' in error message for {tool_name}, " f"got: {message}"
             )
         return
 

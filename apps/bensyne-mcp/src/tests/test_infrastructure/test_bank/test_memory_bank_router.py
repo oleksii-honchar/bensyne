@@ -27,6 +27,7 @@ from src.infrastructure.bank.router import MemoryBankRouter
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_mock_client(memory_bank: str) -> MagicMock:
     """Create a mock MnemosyneClient with required attributes."""
     mock = MagicMock(spec=MnemosyneClient)
@@ -51,6 +52,7 @@ def _make_router(tmp_path: Path, max_instances: int = 5) -> MemoryBankRouter:
 # ---------------------------------------------------------------------------
 # Router uses new MnemosyneClient
 # ---------------------------------------------------------------------------
+
 
 class TestRouterUsesNewClient:
     """Router uses new MnemosyneClient (Result-returning) instead of raw client."""
@@ -88,6 +90,7 @@ class TestRouterUsesNewClient:
 # ---------------------------------------------------------------------------
 # get_instance — caching and creation
 # ---------------------------------------------------------------------------
+
 
 class TestRouterGetInstance:
     """get_instance returns MnemosyneClient, manages pool lifecycle."""
@@ -155,6 +158,7 @@ class TestRouterGetInstance:
 # list_banks
 # ---------------------------------------------------------------------------
 
+
 class TestRouterListBanks:
     """list_banks returns list of active bank names."""
 
@@ -187,6 +191,7 @@ class TestRouterListBanks:
 # register_bank
 # ---------------------------------------------------------------------------
 
+
 class TestRouterRegisterBank:
     """register_bank registers new bank in registry."""
 
@@ -211,6 +216,7 @@ class TestRouterRegisterBank:
 # Structured logging
 # ---------------------------------------------------------------------------
 
+
 class TestRouterStructuredLogging:
     """Structured logging for router operations (instance creation, eviction)."""
 
@@ -221,6 +227,7 @@ class TestRouterStructuredLogging:
 
         # Router uses structured logging (logger from get_logger)
         from src.infrastructure.bank import router as router_module
+
         assert hasattr(router_module, "logger")
 
     def test_eviction_logs_structured(self, tmp_path: Path) -> None:

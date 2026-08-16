@@ -24,10 +24,17 @@ class FileCreatedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, path: str) -> Result["FileCreatedEvent"]:
         if not file_id or not path:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CREATED_EVENT", {
-                "file_id": file_id,
-                "path": path,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CREATED_EVENT",
+                        {
+                            "file_id": file_id,
+                            "path": path,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, path=path))
 
     @property
@@ -53,9 +60,16 @@ class FileUpdatedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, changed_fields: list[str]) -> Result["FileUpdatedEvent"]:
         if not file_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_UPDATED_EVENT", {
-                "file_id": file_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_UPDATED_EVENT",
+                        {
+                            "file_id": file_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, changed_fields=changed_fields))
 
     @property
@@ -80,9 +94,16 @@ class FileDeletedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str) -> Result["FileDeletedEvent"]:
         if not file_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_DELETED_EVENT", {
-                "file_id": file_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_DELETED_EVENT",
+                        {
+                            "file_id": file_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id))
 
     @property
@@ -108,9 +129,16 @@ class FileIndexCompletedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, chunk_count: int) -> Result["FileIndexCompletedEvent"]:
         if not file_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_INDEX_COMPLETED_EVENT", {
-                "file_id": file_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_INDEX_COMPLETED_EVENT",
+                        {
+                            "file_id": file_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, chunk_count=chunk_count))
 
     @property
@@ -137,10 +165,17 @@ class FileChunkAddedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, memory_id: str, chunk_index: int) -> Result["FileChunkAddedEvent"]:
         if not file_id or not memory_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK_ADDED_EVENT", {
-                "file_id": file_id,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CHUNK_ADDED_EVENT",
+                        {
+                            "file_id": file_id,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, memory_id=memory_id, chunk_index=chunk_index))
 
     @property
@@ -166,10 +201,17 @@ class FileChunkRemovedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, memory_id: str) -> Result["FileChunkRemovedEvent"]:
         if not file_id or not memory_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK_REMOVED_EVENT", {
-                "file_id": file_id,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CHUNK_REMOVED_EVENT",
+                        {
+                            "file_id": file_id,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, memory_id=memory_id))
 
     @property
@@ -205,16 +247,25 @@ class FileRelationCreatedEvent(DomainEvent):
         relation_type: str,
     ) -> Result["FileRelationCreatedEvent"]:
         if not source_file_id or not target_file_id or not relation_type:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_RELATION_CREATED_EVENT", {
-                "source_file_id": source_file_id,
-                "target_file_id": target_file_id,
-                "relation_type": relation_type,
-            })])
-        return Result.ok(cls(
-            source_file_id=source_file_id,
-            target_file_id=target_file_id,
-            relation_type=relation_type,
-        ))
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_RELATION_CREATED_EVENT",
+                        {
+                            "source_file_id": source_file_id,
+                            "target_file_id": target_file_id,
+                            "relation_type": relation_type,
+                        },
+                    )
+                ]
+            )
+        return Result.ok(
+            cls(
+                source_file_id=source_file_id,
+                target_file_id=target_file_id,
+                relation_type=relation_type,
+            )
+        )
 
     @property
     def event_type(self) -> str:
@@ -239,9 +290,16 @@ class FileContentComposedEvent(DomainEvent):
     @classmethod
     def of(cls, file_id: str, chunks_composed: int) -> Result["FileContentComposedEvent"]:
         if not file_id:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CONTENT_COMPOSED_EVENT", {
-                "file_id": file_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_FILE_CONTENT_COMPOSED_EVENT",
+                        {
+                            "file_id": file_id,
+                        },
+                    )
+                ]
+            )
         return Result.ok(cls(file_id=file_id, chunks_composed=chunks_composed))
 
     @property

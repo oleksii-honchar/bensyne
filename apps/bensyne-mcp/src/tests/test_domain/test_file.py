@@ -21,11 +21,13 @@ class TestFileOfValidData:
     """File.of accepts valid data and returns Result.ok."""
 
     def test_of_returns_ok_with_minimal_required_fields(self):
-        result = File.of({
-            "id": "f1",
-            "path": "/tmp/test.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-        })
+        result = File.of(
+            {
+                "id": "f1",
+                "path": "/tmp/test.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+            }
+        )
         assert result.is_ok is True
         file = result.value
         assert file.id == "f1"
@@ -43,20 +45,22 @@ class TestFileOfValidData:
 
     def test_of_returns_ok_with_all_fields(self):
         now = datetime.now()
-        result = File.of({
-            "id": "f2",
-            "path": "/home/user/script.py",
-            "source_type": SourceType.AGENT_SESSION,
-            "hash": VALID_HASH,
-            "file_type": "python",
-            "size": 1024,
-            "language": "python",
-            "aggregated_keywords": ["domain", "entity"],
-            "aggregated_tags": ["core"],
-            "status": FileStatus.INDEXED,
-            "created_at": now,
-            "updated_at": now,
-        })
+        result = File.of(
+            {
+                "id": "f2",
+                "path": "/home/user/script.py",
+                "source_type": SourceType.AGENT_SESSION,
+                "hash": VALID_HASH,
+                "file_type": "python",
+                "size": 1024,
+                "language": "python",
+                "aggregated_keywords": ["domain", "entity"],
+                "aggregated_tags": ["core"],
+                "status": FileStatus.INDEXED,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
         assert result.is_ok is True
         file = result.value
         assert file.id == "f2"
@@ -73,22 +77,26 @@ class TestFileOfValidData:
         assert file.updated_at == now
 
     def test_of_sets_timestamps_when_not_provided(self):
-        result = File.of({
-            "id": "f3",
-            "path": "/tmp/auto.txt",
-            "source_type": SourceType.UNKNOWN,
-        })
+        result = File.of(
+            {
+                "id": "f3",
+                "path": "/tmp/auto.txt",
+                "source_type": SourceType.UNKNOWN,
+            }
+        )
         assert result.is_ok is True
         file = result.value
         assert isinstance(file.created_at, datetime)
         assert isinstance(file.updated_at, datetime)
 
     def test_of_returns_frozen_instance(self):
-        result = File.of({
-            "id": "f4",
-            "path": "/tmp/frozen.txt",
-            "source_type": SourceType.UNKNOWN,
-        })
+        result = File.of(
+            {
+                "id": "f4",
+                "path": "/tmp/frozen.txt",
+                "source_type": SourceType.UNKNOWN,
+            }
+        )
         assert result.is_ok is True
         file = result.value
         with pytest.raises(Exception):
@@ -96,42 +104,50 @@ class TestFileOfValidData:
 
     def test_of_accepts_all_source_types(self):
         for st in SourceType:
-            result = File.of({
-                "id": f"f_st_{st.value}",
-                "path": "/tmp/test.txt",
-                "source_type": st,
-            })
+            result = File.of(
+                {
+                    "id": f"f_st_{st.value}",
+                    "path": "/tmp/test.txt",
+                    "source_type": st,
+                }
+            )
             assert result.is_ok is True
             assert result.value.source_type == st
 
     def test_of_accepts_all_statuses(self):
         for status in FileStatus:
-            result = File.of({
-                "id": f"f_st_{status.value}",
-                "path": "/tmp/test.txt",
-                "source_type": SourceType.UNKNOWN,
-                "status": status,
-            })
+            result = File.of(
+                {
+                    "id": f"f_st_{status.value}",
+                    "path": "/tmp/test.txt",
+                    "source_type": SourceType.UNKNOWN,
+                    "status": status,
+                }
+            )
             assert result.is_ok is True
             assert result.value.status == status
 
     def test_of_with_zero_size(self):
-        result = File.of({
-            "id": "f5",
-            "path": "/tmp/empty.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-            "size": 0,
-        })
+        result = File.of(
+            {
+                "id": "f5",
+                "path": "/tmp/empty.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "size": 0,
+            }
+        )
         assert result.is_ok is True
         assert result.value.size == 0
 
     def test_of_with_none_size(self):
-        result = File.of({
-            "id": "f6",
-            "path": "/tmp/unknown.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-            "size": None,
-        })
+        result = File.of(
+            {
+                "id": "f6",
+                "path": "/tmp/unknown.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "size": None,
+            }
+        )
         assert result.is_ok is True
         assert result.value.size is None
 
@@ -140,64 +156,78 @@ class TestFileOfRejectsInvalidData:
     """File.of rejects invalid data and returns Result.ko."""
 
     def test_of_rejects_empty_path(self):
-        result = File.of({
-            "id": "f7",
-            "path": "",
-            "source_type": SourceType.UNKNOWN,
-        })
+        result = File.of(
+            {
+                "id": "f7",
+                "path": "",
+                "source_type": SourceType.UNKNOWN,
+            }
+        )
         assert result.is_ko is True
         assert result.value is None
         assert result.errors[0].error_code == "INVALID_FILE"
 
     def test_of_rejects_missing_path(self):
-        result = File.of({
-            "id": "f8",
-            "source_type": SourceType.UNKNOWN,
-        })
+        result = File.of(
+            {
+                "id": "f8",
+                "source_type": SourceType.UNKNOWN,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_negative_size(self):
-        result = File.of({
-            "id": "f9",
-            "path": "/tmp/test.txt",
-            "source_type": SourceType.UNKNOWN,
-            "size": -1,
-        })
+        result = File.of(
+            {
+                "id": "f9",
+                "path": "/tmp/test.txt",
+                "source_type": SourceType.UNKNOWN,
+                "size": -1,
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE"
 
     def test_of_rejects_invalid_status(self):
-        result = File.of({
-            "id": "f10",
-            "path": "/tmp/test.txt",
-            "source_type": SourceType.UNKNOWN,
-            "status": "INVALID_STATUS",
-        })
+        result = File.of(
+            {
+                "id": "f10",
+                "path": "/tmp/test.txt",
+                "source_type": SourceType.UNKNOWN,
+                "status": "INVALID_STATUS",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE"
 
     def test_of_rejects_invalid_hash(self):
-        result = File.of({
-            "id": "f11",
-            "path": "/tmp/test.txt",
-            "source_type": SourceType.UNKNOWN,
-            "hash": "not-a-valid-hash",
-        })
+        result = File.of(
+            {
+                "id": "f11",
+                "path": "/tmp/test.txt",
+                "source_type": SourceType.UNKNOWN,
+                "hash": "not-a-valid-hash",
+            }
+        )
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_FILE"
 
     def test_of_rejects_missing_id(self):
-        result = File.of({
-            "path": "/tmp/test.txt",
-            "source_type": SourceType.UNKNOWN,
-        })
+        result = File.of(
+            {
+                "path": "/tmp/test.txt",
+                "source_type": SourceType.UNKNOWN,
+            }
+        )
         assert result.is_ko is True
 
     def test_of_rejects_missing_source_type(self):
-        result = File.of({
-            "id": "f12",
-            "path": "/tmp/test.txt",
-        })
+        result = File.of(
+            {
+                "id": "f12",
+                "path": "/tmp/test.txt",
+            }
+        )
         assert result.is_ko is True
 
 
@@ -205,12 +235,14 @@ class TestFileStatusTransitions:
     """File status transition methods with event emission."""
 
     def _create_file(self, status: FileStatus = FileStatus.PENDING) -> File:
-        return File.of({
-            "id": "f_trans",
-            "path": "/tmp/transition.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-            "status": status,
-        }).value
+        return File.of(
+            {
+                "id": "f_trans",
+                "path": "/tmp/transition.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "status": status,
+            }
+        ).value
 
     # --- mark_indexed ---
 
@@ -328,13 +360,15 @@ class TestFileStatusTransitions:
         assert result.errors[0].error_code == "FILE_DELETED"
 
     def test_update_metadata_preserves_existing_fields(self):
-        file = File.of({
-            "id": "f_preserve",
-            "path": "/tmp/preserve.py",
-            "source_type": SourceType.FILE_SYSTEM,
-            "hash": VALID_HASH,
-            "file_type": "python",
-        }).value
+        file = File.of(
+            {
+                "id": "f_preserve",
+                "path": "/tmp/preserve.py",
+                "source_type": SourceType.FILE_SYSTEM,
+                "hash": VALID_HASH,
+                "file_type": "python",
+            }
+        ).value
         result = file.update_metadata(size=512)
         assert result.is_ok is True
         assert result.value.hash == VALID_HASH
@@ -344,12 +378,14 @@ class TestFileStatusTransitions:
     # --- add_keywords ---
 
     def test_add_keywords_appends_to_aggregated(self):
-        file = File.of({
-            "id": "f_kw",
-            "path": "/tmp/keywords.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-            "aggregated_keywords": ["existing"],
-        }).value
+        file = File.of(
+            {
+                "id": "f_kw",
+                "path": "/tmp/keywords.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "aggregated_keywords": ["existing"],
+            }
+        ).value
         result = file.add_keywords(["new1", "new2"])
         assert result.is_ok is True
         assert result.value.aggregated_keywords == ["existing", "new1", "new2"]
@@ -369,12 +405,14 @@ class TestFileStatusTransitions:
     # --- add_tags ---
 
     def test_add_tags_appends_to_aggregated(self):
-        file = File.of({
-            "id": "f_tg",
-            "path": "/tmp/tags.txt",
-            "source_type": SourceType.FILE_SYSTEM,
-            "aggregated_tags": ["existing"],
-        }).value
+        file = File.of(
+            {
+                "id": "f_tg",
+                "path": "/tmp/tags.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "aggregated_tags": ["existing"],
+            }
+        ).value
         result = file.add_tags(["new1"])
         assert result.is_ok is True
         assert result.value.aggregated_tags == ["existing", "new1"]

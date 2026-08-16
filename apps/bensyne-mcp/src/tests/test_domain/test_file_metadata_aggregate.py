@@ -28,6 +28,7 @@ VALID_HASH = "a" * 64
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
@@ -38,16 +39,18 @@ def _make_file(
     summary: Optional[str] = None,
 ) -> File:
     """Create a File entity for tests."""
-    return File.of({
-        "id": id,
-        "path": path,
-        "source_type": source_type,
-        "hash": VALID_HASH,
-        "status": status,
-        "aggregated_keywords": aggregated_keywords or [],
-        "aggregated_tags": aggregated_tags or [],
-        "summary": summary,
-    }).value
+    return File.of(
+        {
+            "id": id,
+            "path": path,
+            "source_type": source_type,
+            "hash": VALID_HASH,
+            "status": status,
+            "aggregated_keywords": aggregated_keywords or [],
+            "aggregated_tags": aggregated_tags or [],
+            "summary": summary,
+        }
+    ).value
 
 
 def _make_chunk(
@@ -57,12 +60,14 @@ def _make_chunk(
     chunk_index: int = 0,
 ) -> FileChunk:
     """Create a FileChunk entity for tests."""
-    return FileChunk.of({
-        "id": id,
-        "file_id": file_id,
-        "memory_id": memory_id,
-        "chunk_index": chunk_index,
-    }).value
+    return FileChunk.of(
+        {
+            "id": id,
+            "file_id": file_id,
+            "memory_id": memory_id,
+            "chunk_index": chunk_index,
+        }
+    ).value
 
 
 def _make_relation(
@@ -74,19 +79,22 @@ def _make_relation(
     direction: Direction = Direction.UNIDIRECTIONAL,
 ) -> FileRelation:
     """Create a FileRelation entity for tests."""
-    return FileRelation.of({
-        "id": id,
-        "source_file_id": source_file_id,
-        "target_file_id": target_file_id,
-        "relation_type": relation_type,
-        "strength": strength,
-        "direction": direction,
-    }).value
+    return FileRelation.of(
+        {
+            "id": id,
+            "source_file_id": source_file_id,
+            "target_file_id": target_file_id,
+            "relation_type": relation_type,
+            "strength": strength,
+            "direction": direction,
+        }
+    ).value
 
 
 # ---------------------------------------------------------------------------
 # TestFileMetadataAggregateOf
 # ---------------------------------------------------------------------------
+
 
 class TestFileMetadataAggregateOf:
     """FileMetadataAggregate.of returns Result[FileMetadataAggregate]."""
@@ -153,6 +161,7 @@ class TestFileMetadataAggregateOf:
 # ---------------------------------------------------------------------------
 # TestAddChunk
 # ---------------------------------------------------------------------------
+
 
 class TestAddChunk:
     """add_chunk() adds chunk, produces event, updates file metadata."""
@@ -257,6 +266,7 @@ class TestAddChunk:
 # TestRemoveChunk
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveChunk:
     """remove_chunk() removes chunk, produces event, updates file metadata."""
 
@@ -354,6 +364,7 @@ class TestRemoveChunk:
 # TestAddRelation
 # ---------------------------------------------------------------------------
 
+
 class TestAddRelation:
     """add_relation() adds relation, produces FileRelationCreatedEvent."""
 
@@ -435,6 +446,7 @@ class TestAddRelation:
 # TestChunkUniqueness
 # ---------------------------------------------------------------------------
 
+
 class TestChunkUniqueness:
     """Chunk uniqueness enforced by memory_id across aggregate operations."""
 
@@ -478,6 +490,7 @@ class TestChunkUniqueness:
 # ---------------------------------------------------------------------------
 # TestAggregateImmutability
 # ---------------------------------------------------------------------------
+
 
 class TestAggregateImmutability:
     """Aggregate operations return new instances, never mutate the original."""
@@ -539,6 +552,7 @@ class TestAggregateImmutability:
 # ---------------------------------------------------------------------------
 # TestComposeContent
 # ---------------------------------------------------------------------------
+
 
 class TestComposeContent:
     """compose_content() produces file representation from chunks and mnemosyne."""
@@ -741,6 +755,7 @@ class TestComposeContent:
 # ---------------------------------------------------------------------------
 # TestToDict
 # ---------------------------------------------------------------------------
+
 
 class TestToDict:
     """to_dict() produces the full output structure used by expand_file_relations."""

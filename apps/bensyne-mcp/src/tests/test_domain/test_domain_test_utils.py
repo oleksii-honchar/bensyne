@@ -73,17 +73,19 @@ class TestAMemory:
         """Factory output passes Memory.of validation."""
         memory = a_memory()
         # Re-validate through the entity factory
-        result = Memory.of({
-            "id": memory.id,
-            "content": memory.content,
-            "importance": memory.importance,
-            "source": memory.source,
-            "scope": memory.scope,
-            "created_at": memory.created_at,
-            "updated_at": memory.updated_at,
-            "veracity": memory.veracity,
-            "metadata": memory.metadata,
-        })
+        result = Memory.of(
+            {
+                "id": memory.id,
+                "content": memory.content,
+                "importance": memory.importance,
+                "source": memory.source,
+                "scope": memory.scope,
+                "created_at": memory.created_at,
+                "updated_at": memory.updated_at,
+                "veracity": memory.veracity,
+                "metadata": memory.metadata,
+            }
+        )
         assert result.is_ok is True
 
 

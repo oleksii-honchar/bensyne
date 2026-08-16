@@ -30,14 +30,17 @@ from sqlalchemy.orm import (
 # Base
 # ---------------------------------------------------------------------------
 
+
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base for file metadata models."""
 
     pass
 
+
 # ---------------------------------------------------------------------------
 # File
 # ---------------------------------------------------------------------------
+
 
 class FileORM(Base):
     """ORM model for the `files` table.
@@ -99,9 +102,11 @@ class FileORM(Base):
         {"sqlite_autoincrement": False},
     )
 
+
 # ---------------------------------------------------------------------------
 # FileChunk
 # ---------------------------------------------------------------------------
+
 
 class FileChunkORM(Base):
     """ORM model for the `file_chunks` table.
@@ -133,13 +138,13 @@ class FileChunkORM(Base):
     # Relationships
     file: Mapped["FileORM"] = relationship("FileORM", back_populates="chunks")
 
-    __table_args__ = (
-        PrimaryKeyConstraint("file_id", "memory_id"),
-    )
+    __table_args__ = (PrimaryKeyConstraint("file_id", "memory_id"),)
+
 
 # ---------------------------------------------------------------------------
 # FileRelation
 # ---------------------------------------------------------------------------
+
 
 class FileRelationORM(Base):
     """ORM model for the `file_relations` table.
@@ -177,6 +182,4 @@ class FileRelationORM(Base):
         "FileORM", foreign_keys=[target_file_id], back_populates="relations_as_target"
     )
 
-    __table_args__ = (
-        PrimaryKeyConstraint("source_file_id", "target_file_id", "relation_type"),
-    )
+    __table_args__ = (PrimaryKeyConstraint("source_file_id", "target_file_id", "relation_type"),)

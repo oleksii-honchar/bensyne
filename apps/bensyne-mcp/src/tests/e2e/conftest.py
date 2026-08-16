@@ -71,8 +71,7 @@ def server_process(test_data_dir: Path, server_url: str) -> subprocess.Popen:
         process.kill()
         stdout, stderr = process.communicate()
         raise RuntimeError(
-            f"Server failed to start within 30s.\n"
-            f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
+            f"Server failed to start within 30s.\n" f"stdout: {stdout.decode()}\nstderr: {stderr.decode()}"
         )
 
     yield process

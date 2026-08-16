@@ -24,6 +24,7 @@ from src.infrastructure.storage.sqlite.file_repository import FileRepository
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_bank_dir(tmp_path: Path) -> Path:
     """Return a temporary directory simulating a memory bank's data dir."""
@@ -66,19 +67,21 @@ def _a_file(
     created_at: Optional[datetime] = None,
 ) -> File:
     """Create a valid File instance with sensible defaults."""
-    result = File.of({
-        "id": id,
-        "path": path,
-        "source_type": source_type,
-        "hash": hash,
-        "file_type": file_type,
-        "size": size,
-        "language": language,
-        "aggregated_keywords": aggregated_keywords or [],
-        "aggregated_tags": aggregated_tags or [],
-        "status": status,
-        "created_at": created_at or datetime.now(),
-    })
+    result = File.of(
+        {
+            "id": id,
+            "path": path,
+            "source_type": source_type,
+            "hash": hash,
+            "file_type": file_type,
+            "size": size,
+            "language": language,
+            "aggregated_keywords": aggregated_keywords or [],
+            "aggregated_tags": aggregated_tags or [],
+            "status": status,
+            "created_at": created_at or datetime.now(),
+        }
+    )
     assert result.is_ok, f"Failed to create test file: {result.errors}"
     return result.value
 
@@ -86,6 +89,7 @@ def _a_file(
 # ---------------------------------------------------------------------------
 # save_file
 # ---------------------------------------------------------------------------
+
 
 class TestSaveFile:
     """save_file persists a File entity to SQLite."""
@@ -178,9 +182,11 @@ class TestSaveFile:
         assert f.aggregated_keywords == []
         assert f.aggregated_tags == []
 
+
 # ---------------------------------------------------------------------------
 # get_file_by_id
 # ---------------------------------------------------------------------------
+
 
 class TestGetFileById:
     """get_file_by_id retrieves a File by its id."""
@@ -212,9 +218,11 @@ class TestGetFileById:
         assert result.value is not None
         assert result.value.path == "/tmp/b.txt"
 
+
 # ---------------------------------------------------------------------------
 # get_file_by_path
 # ---------------------------------------------------------------------------
+
 
 class TestGetFileByPath:
     """get_file_by_path retrieves a File by its path."""
@@ -242,9 +250,11 @@ class TestGetFileByPath:
         assert result.value is not None
         assert result.value.id == "p2"
 
+
 # ---------------------------------------------------------------------------
 # list_files
 # ---------------------------------------------------------------------------
+
 
 class TestListFiles:
     """list_files returns all saved files."""
@@ -293,9 +303,11 @@ class TestListFiles:
         assert found.aggregated_tags == ["core"]
         assert found.status == FileStatus.INDEXED
 
+
 # ---------------------------------------------------------------------------
 # search_files_by_query
 # ---------------------------------------------------------------------------
+
 
 class TestSearchFilesByQuery:
     """search_files_by_query searches across path, keywords, and tags."""
@@ -385,9 +397,11 @@ class TestSearchFilesByQuery:
         assert len(result.value) == 1
         assert result.value[0].id == "q13"
 
+
 # ---------------------------------------------------------------------------
 # delete_file
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteFile:
     """delete_file removes a File by id."""
@@ -442,9 +456,11 @@ class TestDeleteFile:
         result2 = repo.delete_file("d5")
         assert result2.value is False
 
+
 # ---------------------------------------------------------------------------
 # Round-trip and integration
 # ---------------------------------------------------------------------------
+
 
 class TestRoundTrip:
     """Round-trip tests for save and retrieve operations."""
@@ -544,9 +560,11 @@ class TestRoundTrip:
         assert listed.is_ok
         assert any(f.id == "rt4" for f in listed.value)
 
+
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 class TestErrorHandling:
     """Repository returns Result.ko on database errors."""
@@ -559,6 +577,7 @@ class TestErrorHandling:
 
         # Corrupt the DB
         import sqlite3
+
         raw_conn = sqlite3.connect(str(mgr.db_path))
         raw_conn.execute("DROP TABLE files")
         raw_conn.commit()
@@ -577,6 +596,7 @@ class TestErrorHandling:
 
         # Corrupt the DB
         import sqlite3
+
         raw_conn = sqlite3.connect(str(mgr.db_path))
         raw_conn.execute("DROP TABLE files")
         raw_conn.commit()
@@ -594,6 +614,7 @@ class TestErrorHandling:
 
         # Corrupt the DB
         import sqlite3
+
         raw_conn = sqlite3.connect(str(mgr.db_path))
         raw_conn.execute("DROP TABLE files")
         raw_conn.commit()
@@ -604,9 +625,11 @@ class TestErrorHandling:
 
         mgr.close()
 
+
 # ---------------------------------------------------------------------------
 # FTS5 search
 # ---------------------------------------------------------------------------
+
 
 class TestFTS5Search:
     """Full-text search using FTS5 works correctly."""
@@ -614,11 +637,10 @@ class TestFTS5Search:
     def test_fts5_table_exists(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
         """FTS5 virtual table is created."""
         import sqlite3
+
         conn = sqlite3.connect(str(manager.db_path))
         try:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='files_fts'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='files_fts'")
             row = cursor.fetchone()
             assert row is not None
         finally:
@@ -711,9 +733,11 @@ class TestFTS5Search:
         assert result3.is_ok
         assert len(result3.value) == 1
 
+
 # ---------------------------------------------------------------------------
 # Upsert preserves child rows (INSERT OR REPLACE bug fix)
 # ---------------------------------------------------------------------------
+
 
 class TestSaveFilePreservesChunks:
     """save_file upsert must NOT trigger ON DELETE CASCADE on file_chunks.
@@ -741,24 +765,28 @@ class TestSaveFilePreservesChunks:
         # Add chunks directly via chunk repo
         chunk_repo = FileChunkRepository(manager)
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_uc1_c1",
-                "file_id": "uc1",
-                "memory_id": "mem_c1",
-                "chunk_index": 0,
-                "start_line": 1,
-                "end_line": 50,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_uc1_c1",
+                    "file_id": "uc1",
+                    "memory_id": "mem_c1",
+                    "chunk_index": 0,
+                    "start_line": 1,
+                    "end_line": 50,
+                }
+            ).value
         )
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_uc1_c2",
-                "file_id": "uc1",
-                "memory_id": "mem_c2",
-                "chunk_index": 1,
-                "start_line": 51,
-                "end_line": 100,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_uc1_c2",
+                    "file_id": "uc1",
+                    "memory_id": "mem_c2",
+                    "chunk_index": 1,
+                    "start_line": 51,
+                    "end_line": 100,
+                }
+            ).value
         )
 
         # Verify chunks exist
@@ -800,14 +828,16 @@ class TestSaveFilePreservesChunks:
 
         chunk_repo = FileChunkRepository(manager)
         chunk_repo.save_chunk(
-            FileChunk.of({
-                "id": "fc_uc2_c1",
-                "file_id": "uc2",
-                "memory_id": "mem_data",
-                "chunk_index": 0,
-                "start_line": 10,
-                "end_line": 99,
-            }).value
+            FileChunk.of(
+                {
+                    "id": "fc_uc2_c1",
+                    "file_id": "uc2",
+                    "memory_id": "mem_data",
+                    "chunk_index": 0,
+                    "start_line": 10,
+                    "end_line": 99,
+                }
+            ).value
         )
 
         # Update file
@@ -840,13 +870,15 @@ class TestSaveFilePreservesChunks:
 
         rel_repo = FileRelationRepository(manager)
         rel_repo.save_relation(
-            FileRelation.of({
-                "id": "fr_uc3_uc3b",
-                "source_file_id": "uc3",
-                "target_file_id": "uc3b",
-                "relation_type": RelationType.SIBLING,
-                "strength": 0.9,
-            }).value
+            FileRelation.of(
+                {
+                    "id": "fr_uc3_uc3b",
+                    "source_file_id": "uc3",
+                    "target_file_id": "uc3b",
+                    "relation_type": RelationType.SIBLING,
+                    "strength": 0.9,
+                }
+            ).value
         )
 
         # Update file1

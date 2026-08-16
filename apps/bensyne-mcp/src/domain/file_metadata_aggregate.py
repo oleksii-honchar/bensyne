@@ -35,11 +35,13 @@ class FileMetadataAggregate:
         relations: list[FileRelation] | None = None,
     ) -> Result["FileMetadataAggregate"]:
         """Factory method returning Result[FileMetadataAggregate]."""
-        return Result.ok(cls(
-            file=file,
-            chunks=chunks or [],
-            relations=relations or [],
-        ))
+        return Result.ok(
+            cls(
+                file=file,
+                chunks=chunks or [],
+                relations=relations or [],
+            )
+        )
 
     def add_chunk(self, chunk: FileChunk) -> Result["FileMetadataAggregate"]:
         """Add a chunk to this file.
@@ -49,10 +51,17 @@ class FileMetadataAggregate:
         metadata via file.with_chunk().
         """
         if any(c.memory_id == chunk.memory_id for c in self.chunks):
-            return Result.ko([ErrorWithDetails("CHUNK_ALREADY_EXISTS", {
-                "file_id": self.file.id,
-                "memory_id": chunk.memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "CHUNK_ALREADY_EXISTS",
+                        {
+                            "file_id": self.file.id,
+                            "memory_id": chunk.memory_id,
+                        },
+                    )
+                ]
+            )
 
         updated_file_result = self.file.with_chunk(
             importance=0.5,
@@ -88,10 +97,17 @@ class FileMetadataAggregate:
         """
         chunk = next((c for c in self.chunks if c.memory_id == memory_id), None)
         if not chunk:
-            return Result.ko([ErrorWithDetails("CHUNK_NOT_FOUND", {
-                "file_id": self.file.id,
-                "memory_id": memory_id,
-            })])
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "CHUNK_NOT_FOUND",
+                        {
+                            "file_id": self.file.id,
+                            "memory_id": memory_id,
+                        },
+                    )
+                ]
+            )
 
         updated_file_result = self.file.without_chunk(importance=0.5)
         if updated_file_result.is_ko:
@@ -162,18 +178,20 @@ class FileMetadataAggregate:
         summary = self.file.summary
 
         if summary_only:
-            return Result.ok({
-                "summary": summary,
-                "content": summary or "",
-                "chunks_count": 0,
-                "metadata": {
-                    "keywords": self.file.aggregated_keywords,
-                    "tags": self.file.aggregated_tags,
-                    "file_type": self.file.file_type or "",
-                    "size": self.file.size,
-                    "language": self.file.language,
-                },
-            })
+            return Result.ok(
+                {
+                    "summary": summary,
+                    "content": summary or "",
+                    "chunks_count": 0,
+                    "metadata": {
+                        "keywords": self.file.aggregated_keywords,
+                        "tags": self.file.aggregated_tags,
+                        "file_type": self.file.file_type or "",
+                        "size": self.file.size,
+                        "language": self.file.language,
+                    },
+                }
+            )
 
         # Sort chunks by chunk_index (primary ordering)
         sorted_chunks = sorted(self.chunks, key=lambda c: c.chunk_index)
@@ -204,18 +222,21 @@ class FileMetadataAggregate:
         if event_result.is_ko:
             return event_result
 
-        return Result.ok({
-            "summary": summary,
-            "content": composed,
-            "chunks_count": chunks_count,
-            "metadata": {
-                "keywords": self.file.aggregated_keywords,
-                "tags": self.file.aggregated_tags,
-                "file_type": self.file.file_type or "",
-                "size": self.file.size,
-                "language": self.file.language,
+        return Result.ok(
+            {
+                "summary": summary,
+                "content": composed,
+                "chunks_count": chunks_count,
+                "metadata": {
+                    "keywords": self.file.aggregated_keywords,
+                    "tags": self.file.aggregated_tags,
+                    "file_type": self.file.file_type or "",
+                    "size": self.file.size,
+                    "language": self.file.language,
+                },
             },
-        }, events=[event_result.value])
+            events=[event_result.value],
+        )
 
     def to_dict(
         self,
@@ -273,9 +294,16 @@ class FileMetadataAggregate:
         if include_content:
             # Delegate to compose_content for the content portion
             if mnemosyne_client is None:
-                return Result.ko([ErrorWithDetails("MNEMOSYNE_CLIENT_REQUIRED", {
-                    "file_id": self.file.id,
-                })])
+                return Result.ko(
+                    [
+                        ErrorWithDetails(
+                            "MNEMOSYNE_CLIENT_REQUIRED",
+                            {
+                                "file_id": self.file.id,
+                            },
+                        )
+                    ]
+                )
             compose_result = self.compose_content(
                 mnemosyne_client=mnemosyne_client,
                 summary_only=summary_only,
@@ -284,16 +312,21 @@ class FileMetadataAggregate:
                 return compose_result
 
             composed = compose_result.value
-            return Result.ok({
-                "file": file_dict,
-                "summary": composed["summary"],
-                "content": composed["content"],
-                "metadata": metadata,
-                "chunks_count": composed["chunks_count"],
-            }, events=compose_result.events)
+            return Result.ok(
+                {
+                    "file": file_dict,
+                    "summary": composed["summary"],
+                    "content": composed["content"],
+                    "metadata": metadata,
+                    "chunks_count": composed["chunks_count"],
+                },
+                events=compose_result.events,
+            )
 
-        return Result.ok({
-            "file": file_dict,
-            "summary": self.file.summary,
-            "metadata": metadata,
-        })
+        return Result.ok(
+            {
+                "file": file_dict,
+                "summary": self.file.summary,
+                "metadata": metadata,
+            }
+        )

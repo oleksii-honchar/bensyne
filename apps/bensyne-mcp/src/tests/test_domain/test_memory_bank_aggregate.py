@@ -34,14 +34,16 @@ def _make_memory(
     created_at: Optional[datetime] = None,
 ) -> Memory:
     """Create a Memory for tests."""
-    return Memory.of({
-        "id": id,
-        "content": content,
-        "importance": importance,
-        "source": source,
-        "scope": scope,
-        "created_at": created_at or datetime.now(),
-    }).value
+    return Memory.of(
+        {
+            "id": id,
+            "content": content,
+            "importance": importance,
+            "source": source,
+            "scope": scope,
+            "created_at": created_at or datetime.now(),
+        }
+    ).value
 
 
 class TestMemoryBankOf:

@@ -15,8 +15,15 @@ REMEMBER_SCHEMA = {
         "properties": {
             "content": {"type": "string", "description": "The memory content to store."},
             "importance": {"type": "number", "description": "Importance 0.0-1.0. Default 0.5.", "default": 0.5},
-            "source": {"type": "string", "description": "Source tag (e.g., user, tool, system). Default 'mcp'.", "default": "mcp"},
-            "scope": {"type": "string", "description": "Scope tag to categorize the memory (e.g., project, personal, system)."},
+            "source": {
+                "type": "string",
+                "description": "Source tag (e.g., user, tool, system). Default 'mcp'.",
+                "default": "mcp",
+            },
+            "scope": {
+                "type": "string",
+                "description": "Scope tag to categorize the memory (e.g., project, personal, system).",
+            },
             **MEMORY_BANK_PARAM,
         },
         "required": ["content", "memory_bank"],

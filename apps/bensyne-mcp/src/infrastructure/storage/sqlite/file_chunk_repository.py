@@ -18,6 +18,7 @@ from src.infrastructure.storage.sqlite.models import FileChunkORM
 # ORM ↔ FileChunk mapping helpers
 # ---------------------------------------------------------------------------
 
+
 def _orm_to_chunk(orm: FileChunkORM) -> FileChunk:
     """Map a FileChunkORM instance to a FileChunk entity."""
     created_at = orm.created_at if orm.created_at else datetime.now()
@@ -54,9 +55,11 @@ def _chunk_to_orm(chunk: FileChunk) -> FileChunkORM:
         updated_at=chunk.updated_at,
     )
 
+
 # ---------------------------------------------------------------------------
 # Repository
 # ---------------------------------------------------------------------------
+
 
 class FileChunkRepository:
     """SQLite-backed FileChunk repository using SQLAlchemy ORM.
@@ -97,9 +100,7 @@ class FileChunkRepository:
         """Find a chunk by its id."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileChunkORM).filter(
-                FileChunkORM.id == chunk_id
-            ).first()
+            orm = session.query(FileChunkORM).filter(FileChunkORM.id == chunk_id).first()
             if orm is None:
                 return Result.ok(None)
             return Result.ok(_orm_to_chunk(orm))
@@ -116,11 +117,12 @@ class FileChunkRepository:
         """Find all chunks belonging to a file, ordered by chunk_index."""
         session = self._conn_manager.get_session()
         try:
-            orms = session.query(FileChunkORM).filter(
-                FileChunkORM.file_id == file_id
-            ).order_by(
-                FileChunkORM.chunk_index.asc()
-            ).all()
+            orms = (
+                session.query(FileChunkORM)
+                .filter(FileChunkORM.file_id == file_id)
+                .order_by(FileChunkORM.chunk_index.asc())
+                .all()
+            )
             chunks = [_orm_to_chunk(orm) for orm in orms]
             return Result.ok(chunks)
         except Exception as e:
@@ -136,9 +138,7 @@ class FileChunkRepository:
         """Find a chunk by its associated memory id."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileChunkORM).filter(
-                FileChunkORM.memory_id == memory_id
-            ).first()
+            orm = session.query(FileChunkORM).filter(FileChunkORM.memory_id == memory_id).first()
             if orm is None:
                 return Result.ok(None)
             return Result.ok(_orm_to_chunk(orm))
@@ -155,9 +155,7 @@ class FileChunkRepository:
         """Find all chunks by their associated memory id."""
         session = self._conn_manager.get_session()
         try:
-            orms = session.query(FileChunkORM).filter(
-                FileChunkORM.memory_id == memory_id
-            ).all()
+            orms = session.query(FileChunkORM).filter(FileChunkORM.memory_id == memory_id).all()
             chunks = [_orm_to_chunk(orm) for orm in orms]
             return Result.ok(chunks)
         except Exception as e:
@@ -173,9 +171,7 @@ class FileChunkRepository:
         """Delete a chunk by id, returning True if it existed."""
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileChunkORM).filter(
-                FileChunkORM.id == chunk_id
-            ).first()
+            orm = session.query(FileChunkORM).filter(FileChunkORM.id == chunk_id).first()
             if orm is None:
                 return Result.ok(False)
             session.delete(orm)

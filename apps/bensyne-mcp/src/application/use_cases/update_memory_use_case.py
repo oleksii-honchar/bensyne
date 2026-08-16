@@ -30,17 +30,17 @@ class UpdateMemoryUseCase(BaseUseCase[dict, dict]):
         importance = parameters.get("importance")
         memory_bank = parameters.get("memory_bank", "default")
 
-        update_result = self.mnemosyne_client.update(
-            memory_id, content=content, importance=importance
-        )
+        update_result = self.mnemosyne_client.update(memory_id, content=content, importance=importance)
         if not update_result.is_ok:
             return update_result
 
         # Mnemosyne.update returns bool — True means updated, False means not found
         updated = update_result.value
         status = "updated" if updated else "not_found"
-        return Result.ok({
-            "status": status,
-            "memory_id": memory_id,
-            "memory_bank": memory_bank,
-        })
+        return Result.ok(
+            {
+                "status": status,
+                "memory_id": memory_id,
+                "memory_bank": memory_bank,
+            }
+        )
