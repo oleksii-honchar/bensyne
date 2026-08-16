@@ -4,9 +4,9 @@ id: ADR-0011
 title: "Namespace Registration on Startup"
 status: accepted
 createdAt: "2026-08-01T12:00:00Z"
-updatedAt: "2026-08-01T12:00:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [namespace, mnemosyne]
-see_also: ["concepts/0008-namespace-management.concept.md", "concepts/0004-namespace-routing.concept.md"]
+see_also: ["concepts/0008-namespace-management.concept.md", "concepts/0004-namespace-routing.concept.md", "../../adrs/0001-namespace-registration-protocol.adr.md"]
 ---
 
 # ADR-0011: Namespace Registration on Startup
@@ -32,3 +32,7 @@ RAG Content Chunker registers namespaces with descriptions on application bootst
 - **Positive**: Better namespace discoverability, automatic registration
 - **Negative**: Startup time impact (minimal)
 - **Mitigation**: Async registration, don't block startup
+
+## Status Note
+
+> **2026-08-16:** Merged into shared ADR-SYS-0001 (`../../adrs/0001-namespace-registration-protocol.adr.md`) — the protocol-level decision; this node remains the racochu system-specific record.

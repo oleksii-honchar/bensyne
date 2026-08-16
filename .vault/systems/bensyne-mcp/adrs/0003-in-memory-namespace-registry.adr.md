@@ -4,9 +4,9 @@ id: ADR-0003
 title: "In-Memory Namespace Registry"
 status: accepted
 createdAt: "2026-08-01T12:00:00Z"
-updatedAt: "2026-08-01T12:00:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [namespace, infrastructure]
-see_also: ["adrs/0001-namespace-registration-tool.adr.md"]
+see_also: ["adrs/0001-namespace-registration-tool.adr.md", "../../adrs/0003-in-memory-namespace-registry.adr.md"]
 ---
 
 # ADR-0003: In-Memory Namespace Registry
@@ -36,3 +36,5 @@ Use in-memory `NamespaceRegistry` class with `Dict[str, str]` for namespace → 
 ## Status Note
 
 > **2026-08-12:** `NamespaceRegistry` was renamed to `MemoryBankRegistry` (`src/infrastructure/bank/registry.py`) during the memory-bank terminology migration. Still an in-memory dict, still re-registered on startup.
+>
+> **2026-08-16:** Merged into shared ADR-SYS-0003 (`../../adrs/0003-in-memory-namespace-registry.adr.md`) — the protocol-level decision; this node remains the bensyne-mcp system-specific record.

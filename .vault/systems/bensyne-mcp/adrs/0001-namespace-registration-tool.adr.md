@@ -4,9 +4,9 @@ id: ADR-0001
 title: "Namespace Registration Tool"
 status: accepted
 createdAt: "2026-08-01T12:00:00Z"
-updatedAt: "2026-08-01T12:00:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [namespace, tool]
-see_also: ["adrs/0003-in-memory-namespace-registry.adr.md"]
+see_also: ["adrs/0003-in-memory-namespace-registry.adr.md", "../../adrs/0001-namespace-registration-protocol.adr.md"]
 ---
 
 # ADR-0001: Namespace Registration Tool
@@ -36,3 +36,5 @@ Add `register_namespace(name, description)` MCP tool that allows external system
 ## Status Note
 
 > **2026-08-12:** Namespace terminology was superseded by memory-bank terminology. The tool described here is now `registerMemoryBank` (see `src/app.py`). The decision principle — external systems self-describe their storage — remains in force.
+>
+> **2026-08-16:** Merged into shared ADR-SYS-0001 (`../../adrs/0001-namespace-registration-protocol.adr.md`) — the protocol-level decision; this node remains the bensyne-mcp system-specific record.

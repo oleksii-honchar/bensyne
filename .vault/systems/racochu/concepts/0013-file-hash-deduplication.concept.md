@@ -2,12 +2,12 @@
 type: concept
 title: "File Hash Deduplication"
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-07T18:01:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [deduplication, file-hash, cross-device]
 see_also:
   - "adrs/0021-file-hash-deduplication-metadata.adr.md"
   - "specifications/0003-file-hash-deduplication.spec.md"
-  - "concepts/0001-hash-index.concept.md"
+  - "../bensyne-mcp/concepts/0001-hash-index.concept.md"
 deprecated:
   date: null
   reason: null

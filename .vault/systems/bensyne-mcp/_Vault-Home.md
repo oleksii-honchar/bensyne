@@ -1,12 +1,12 @@
 ---
 type: vault-home
-title: "Bensyne Vault"
+title: "Bensyne MCP System Vault"
 createdAt: "2026-08-01T21:31:00Z"
-updatedAt: "2026-08-12T16:58:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: []
 ---
 
-# Bensyne Vault
+# Bensyne MCP System Vault
 
 Durable knowledge vault for Bensyne MCP server — memory lifecycle, file metadata, and operational decisions.
 

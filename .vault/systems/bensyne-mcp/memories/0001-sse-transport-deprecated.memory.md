@@ -2,9 +2,9 @@
 type: memory
 title: "SSE Transport Deprecated"
 createdAt: "2026-07-30T16:00:00Z"
-updatedAt: "2026-07-30T16:00:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [transport, mcp]
-see_also: ["memories/0002-streamable-http-recommended.memory.md"]
+see_also: ["memories/0002-streamable-http-recommended.memory.md", "../../memories/0001-mcp-transport-sse-deprecated.memory.md"]
 ---
 
 # Memory: SSE Transport Deprecated
@@ -24,3 +24,7 @@ Investigation revealed:
 ## Impact
 
 Migrate to Streamable HTTP transport (modern MCP standard) or stdio for reliable communication.
+
+## Status Note
+
+> **2026-08-16:** Merged into shared MEM-SYS-0001 (`../../memories/0001-mcp-transport-sse-deprecated.memory.md`) — the cross-system protocol-level memory; this node remains the bensyne-mcp system-specific record.

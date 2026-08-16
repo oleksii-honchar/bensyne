@@ -2,9 +2,9 @@
 type: concept
 title: "File Role"
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-07-31T07:30:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [domain, chunking]
-see_also: ["concepts/0001-chunk-concept.concept.md", "concepts/0006-mastra-chunking-strategies.concept.md"]
+see_also: ["concepts/0001-chunk-concept.concept.md", "concepts/0006-mastra-chunking-strategies.concept.md", "../bensyne-mcp/concepts/0005-source-type-file-role.concept.md"]
 ---
 
 # Concept: File Role

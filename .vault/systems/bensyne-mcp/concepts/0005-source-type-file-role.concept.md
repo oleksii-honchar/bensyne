@@ -2,11 +2,12 @@
 type: concept
 title: "Source Type Taxonomy and File Type Classification"
 createdAt: "2026-08-12T00:00:00Z"
-updatedAt: "2026-08-12T16:58:00Z"
+updatedAt: "2026-08-16T00:00:00Z"
 tags: [domain, taxonomy, source-type, file-role, racochu]
 see_also:
   - "adrs/0013-racochu-source-enrichment.adr.md"
   - "concepts/0007-file-metadata-layer.concept.md"
+  - "../racochu/concepts/0002-file-role.concept.md"
 ---
 
 # Concept: Source Type Taxonomy and File Type Classification
