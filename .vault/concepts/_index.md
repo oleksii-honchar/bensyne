@@ -10,6 +10,10 @@ tags: []
 
 Domain concepts and models. Grouped by `system` frontmatter.
 
+### shared
+
+- [[0022-bensyne-bundle-cornerstone]] — Bensyne Bundle Cornerstone
+
 ### bensyne-mcp
 
 - [[0001-hash-index]] — HashIndex
