@@ -4,8 +4,9 @@
  * Exercises the REAL MCP boundary between racochu and bensyne-mcp:
  * - Starts the real bensyne-mcp server as a subprocess via its venv Python
  *   (`apps/bensyne-mcp/.venv/bin/python main.py --port <PORT> --data-dir <tmp>`).
- *   No Docker, no mocked transport — this is the spec (the pinned
- *   `tuiteraz/bensyne:1.1.0` e2e image is stale and NOT used here).
+ *   No Docker, no mocked transport — this is the spec. (The Docker-based e2e
+ *   suites use the locally-built `tuiteraz/bensyne:1.1.0` image via
+ *   src/e2e/env-setup/docker-compose.bensyne.yml.)
  * - Connects a real MCP client over streamable-HTTP using the same protocol
  *   mechanics as racochu's production `BensyneClient` (src/infrastructure/services/bensyne-client.service.ts):
  *   POST JSON-RPC 2.0 to `/mcp`, `initialize` handshake + `notifications/initialized`,
@@ -36,7 +37,7 @@ const MCP_URL = `http://${MCP_HOST}:${MCP_PORT}`;
 const MCP_ENDPOINT = `${MCP_URL}/mcp`;
 
 /** Workspace root (monorepo) — racochu lives at apps/racochu, bensyne-mcp at apps/bensyne-mcp. */
-// __dirname = <monorepo>/apps/racochu/src/integration → 4 levels up = monorepo root
+// __dirname = <monorepo>/apps/racochu/src/e2e → 4 levels up = monorepo root
 const MONOREPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const BENSYNE_MCP_DIR = path.join(MONOREPO_ROOT, 'apps', 'bensyne-mcp');
 const VENV_PYTHON = path.join(BENSYNE_MCP_DIR, '.venv', 'bin', 'python');

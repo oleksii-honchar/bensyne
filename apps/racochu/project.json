@@ -13,9 +13,48 @@
     },
     "test": {
       "executor": "nx:run-commands",
+      "description": "Unit tests only — jest.config.cjs testRegex excludes src/e2e/**.",
       "options": {
         "cwd": "apps/racochu",
         "command": "npm test"
+      }
+    },
+    "tests:e2e": {
+      "executor": "nx:run-commands",
+      "description": "Docker-based e2e (jest.e2e.config.cjs, global-setup starts bensyne compose with the locally-built tuiteraz/bensyne image). Includes the moved mcp-protocol suite (venv-python server, no Docker dependency).",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run test:e2e"
+      }
+    },
+    "build:docker": {
+      "executor": "nx:run-commands",
+      "description": "Build the tuiteraz/racochu Docker image. The tag is extracted at run time from apps/racochu/package.json (\"version\": \"x.y.z\") via an inline node -e read — same mechanism as bensyne-mcp's build:docker.",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "node -e \"const fs=require('fs');const m=JSON.parse(fs.readFileSync('package.json','utf8')).version;if(!/^\\d+\\.\\d+\\.\\d+$/.test(m||'')){console.error('no semver version in package.json');process.exit(1)};console.log(m)\" > /tmp/racochu-version.txt && VERSION=$(cat /tmp/racochu-version.txt) && docker build -t tuiteraz/racochu:${VERSION} ."
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run start"
+      }
+    },
+    "start:docker": {
+      "executor": "nx:run-commands",
+      "description": "Run the tuiteraz/racochu image (tag from package.json). Racochu is a file-watcher CLI with no HTTP server — there is no request to answer; the most useful smoke is verifying the built entrypoint loads and the process stays alive. Exact invocation: docker run -d --name racochu-smoke -v <tmpdir>:/data/racochu tuiteraz/racochu:<version>; verify via docker inspect (Running) + logs, then docker rm -f racochu-smoke.",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "VERSION=$(node -e \"const fs=require('fs');const m=JSON.parse(fs.readFileSync('package.json','utf8')).version;if(!/^\\d+\\.\\d+\\.\\d+$/.test(m||'')){console.error('no semver version in package.json');process.exit(1)};console.log(m)\") && TMPDIR_DATA=$(mktemp -d /tmp/racochu-data-XXXXXX) && docker rm -f racochu-smoke 2>/dev/null; docker run -d --name racochu-smoke -v ${TMPDIR_DATA}:/data/racochu tuiteraz/racochu:${VERSION}"
+      }
+    },
+    "bump-version": {
+      "executor": "nx:run-commands",
+      "description": "Bump the app version per Conventional Commits by scanning commit subjects since the last commit touching apps/racochu/package.json (BREAKING CHANGE or type! -> major, feat -> minor, else patch). Shared script: scripts/bump-version.mjs (package.json + package-lock.json sync). CLI: node scripts/bump-version.mjs --app <appRoot> [--version-file <file>] [--dry-run].",
+      "options": {
+        "command": "node scripts/bump-version.mjs --app apps/racochu"
       }
     },
     "lint": {
@@ -23,20 +62,6 @@
       "options": {
         "cwd": "apps/racochu",
         "command": "npm run lint"
-      }
-    },
-    "e2e": {
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": "apps/racochu",
-        "command": "npm run test:e2e"
-      }
-    },
-    "integration": {
-      "executor": "nx:run-commands",
-      "options": {
-        "cwd": "apps/racochu",
-        "command": "npm run test:integration"
       }
     }
   }

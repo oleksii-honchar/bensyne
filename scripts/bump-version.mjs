@@ -10,9 +10,11 @@
  *   - anything else                                -> patch
  *   - no commits since last version touch          -> no-op (exit 0)
  *
- * The version is written in place into the first
- *   version = "x.y.z"
- * line of the version file (pyproject.toml for Python apps).
+ * The version is written in place into the version file:
+ *   - pyproject.toml  -> first `version = "x.y.z"` line (Python apps)
+ *   - package.json    -> top-level `"version": "x.y.z"` field, preserving
+ *     formatting; if a sibling package-lock.json exists its root "version"
+ *     and packages[""].version fields are synced too.
  *
  * CLI:
  *   node scripts/bump-version.mjs --app <appRoot> [--version-file <file>] [--dry-run]
@@ -20,14 +22,15 @@
  *   --app          App root, relative to repo root (e.g. apps/bensyne-mcp)
  *                  Required. The version file must live under this app.
  *   --version-file Version file path, relative to repo root.
- *                  Default: <app>/pyproject.toml
+ *                  Default: <app>/pyproject.toml if it exists, else
+ *                  <app>/package.json
  *   --dry-run      Report old->new + scanned commit list; write nothing.
  *
  * Exit codes: 0 = ok (incl. no-op), 1 = usage / git / parse error.
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -62,13 +65,14 @@ for (let i = 0; i < argv.length; i++) {
 if (!appRoot) {
   fail('missing required --app <appRoot>\nUsage: node scripts/bump-version.mjs --app <appRoot> [--version-file <file>] [--dry-run]');
 }
-if (!versionFile) {
-  versionFile = path.posix.join(appRoot, 'pyproject.toml');
-}
-
 // repo root = two levels up from this script (scripts/bump-version.mjs)
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 process.chdir(repoRoot);
+
+if (!versionFile) {
+  const pyproject = path.posix.join(appRoot, 'pyproject.toml');
+  versionFile = existsSync(pyproject) ? pyproject : path.posix.join(appRoot, 'package.json');
+}
 
 // --- read current version --------------------------------------------------
 let content;
@@ -77,11 +81,23 @@ try {
 } catch {
   fail(`version file not found: ${versionFile}`);
 }
-const match = content.match(/^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"/m);
-if (!match) {
-  fail(`no version = "x.y.z" line in ${versionFile}`);
+const isJson = versionFile.endsWith('.json');
+let current;
+if (isJson) {
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    fail(`invalid JSON in ${versionFile}: ${err.message}`);
+  }
+  const m = String(parsed.version ?? '').match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) fail(`no top-level "version": "x.y.z" in ${versionFile}`);
+  current = [Number(m[1]), Number(m[2]), Number(m[3])];
+} else {
+  const match = content.match(/^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"/m);
+  if (!match) fail(`no version = "x.y.z" line in ${versionFile}`);
+  current = [Number(match[1]), Number(match[2]), Number(match[3])];
 }
-const current = [Number(match[1]), Number(match[2]), Number(match[3])];
 
 // --- find commits since last version touch ----------------------------------
 let lastVersionCommit;
@@ -146,5 +162,32 @@ if (dryRun) {
   process.exit(0);
 }
 
-writeFileSync(versionFile, content.replace(match[0], `version = "${newVersion}"`));
-console.log(`wrote version = "${newVersion}" to ${versionFile}`);
+if (isJson) {
+  // Rewrite only the top-level "version" field; preserve file formatting.
+  const versionLineRe = /^(\s*)"version"\s*:\s*"[^"]*"(,?)$/m;
+  if (!versionLineRe.test(content)) fail(`no top-level "version" line in ${versionFile}`);
+  writeFileSync(versionFile, content.replace(versionLineRe, `$1"version": "${newVersion}"$2`));
+  console.log(`wrote "version": "${newVersion}" to ${versionFile}`);
+
+  // Sync package-lock.json (root version + packages[""].version) if present.
+  const lockFile = path.posix.join(path.posix.dirname(versionFile), 'package-lock.json');
+  if (existsSync(lockFile)) {
+    const lockContent = readFileSync(lockFile, 'utf8');
+    let lockParsed;
+    try {
+      lockParsed = JSON.parse(lockContent);
+    } catch (err) {
+      fail(`invalid JSON in ${lockFile}: ${err.message}`);
+    }
+    if (typeof lockParsed.version === 'string') lockParsed.version = newVersion;
+    if (lockParsed.packages && typeof lockParsed.packages[''].version === 'string') {
+      lockParsed.packages[''].version = newVersion;
+    }
+    writeFileSync(lockFile, JSON.stringify(lockParsed, null, 2) + '\n');
+    console.log(`synced version "${newVersion}" in ${lockFile}`);
+  }
+} else {
+  const match = content.match(/^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"/m);
+  writeFileSync(versionFile, content.replace(match[0], `version = "${newVersion}"`));
+  console.log(`wrote version = "${newVersion}" to ${versionFile}`);
+}

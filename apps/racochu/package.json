@@ -29,7 +29,10 @@
     "bensyne:logs": "docker compose -p rag-e2e-bensyne -f src/e2e/env-setup/docker-compose.bensyne.yml logs -f",
     "golden-query": "jest --config jest.e2e.config.cjs src/e2e/golden-query/golden-query.test.ts",
     "golden-query:unit": "jest --config jest.golden-query-unit.config.cjs",
-    "test:integration": "jest --config jest.integration.config.cjs"
+    "tests:e2e": "nx run racochu:tests:e2e",
+    "build:docker": "nx run racochu:build:docker",
+    "start:docker": "nx run racochu:start:docker",
+    "bump-version": "node scripts/bump-version.mjs --app apps/racochu"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.36",

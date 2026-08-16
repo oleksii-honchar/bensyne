@@ -5,7 +5,10 @@
 
 services:
   bensyne-mcp:
-    image: tuiteraz/bensyne:latest
+    # Locally-built fresh image from `npx nx run bensyne-mcp:build:docker` (Task C1).
+    # The previous pin (`tuiteraz/bensyne:latest`, pulled 2026-08-10) is stale and
+    # missing the file-metadata MCP tools — e2e suites failed against it.
+    image: tuiteraz/bensyne:1.1.0
     ports:
       # Host port 3001 avoids clashing with a dev Bensyne running on 3000.
       - '3001:3000'
