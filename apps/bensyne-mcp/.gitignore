@@ -11,3 +11,5 @@ __pycache__/
 .DS_store
 MagicMock
 htmlcov/
+
+.mypy_cache
