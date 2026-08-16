@@ -1,8 +1,8 @@
 import { ContentChunk } from '../domain/content-chunk.entity';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
-import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
 import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
+import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
 import { Result } from '../utils/result';
 import { IngestChunkUseCase } from './ingest-chunk.use-case';
 

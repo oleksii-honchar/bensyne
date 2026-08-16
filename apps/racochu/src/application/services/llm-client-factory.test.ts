@@ -83,7 +83,10 @@ describe('LlmClientFactory', () => {
 
     // Simulates @ai-sdk/openai-v6 (3.x) which uses chatModel instead of chat
     it('should fall back to chatModel when chat is not available (v6 provider)', () => {
-      const mockChatModel = jest.fn((modelName: string) => ({ model: modelName, provider: 'mock-openai-v6' }));
+      const mockChatModel = jest.fn((modelName: string) => ({
+        model: modelName,
+        provider: 'mock-openai-v6',
+      }));
       const mockOpenAIV6 = { chatModel: mockChatModel };
 
       mockCreateOpenAI.mockReturnValueOnce(mockOpenAIV6);
@@ -96,7 +99,10 @@ describe('LlmClientFactory', () => {
 
     // Simulates a minimal provider that is just callable
     it('should fall back to calling provider directly when neither chat nor chatModel exists', () => {
-      const mockCallableProvider = jest.fn((modelName: string) => ({ model: modelName, provider: 'mock-callable' }));
+      const mockCallableProvider = jest.fn((modelName: string) => ({
+        model: modelName,
+        provider: 'mock-callable',
+      }));
 
       mockCreateOpenAI.mockReturnValueOnce(mockCallableProvider);
 

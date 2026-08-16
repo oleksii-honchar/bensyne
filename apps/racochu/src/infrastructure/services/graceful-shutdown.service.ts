@@ -1,8 +1,8 @@
 import { Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { BasePinoLogger } from '../logging/base-pino-logger';
+import { BensyneClient } from './bensyne-client.service';
 import { FileProcessingQueue } from './file-processing-queue.service';
 import { FileWatcherService } from './file-watcher.service';
-import { BensyneClient } from './bensyne-client.service';
 
 @Injectable()
 export class GracefulShutdownService implements OnApplicationShutdown {

@@ -1,6 +1,6 @@
-import { execSync } from 'child_process';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { PrismaClient } from '../../generated/prisma/client';

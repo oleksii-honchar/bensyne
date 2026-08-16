@@ -31,7 +31,11 @@ export const GOLDEN_QUERY_EXPECTED_CONTENT: Record<string, string[]> = {
 
   // configuration
   'mem-config-maxchars': ['maxCharacters', 'prose', '4000', 'code', '5000'],
-  'mem-config-env-vars': ['MNEMOSYNE_EMBEDDING_MODEL', 'MNEMOSYNE_EMBEDDING_DIM', 'MNEMOSYNE_EMBEDDING_API_URL'],
+  'mem-config-env-vars': [
+    'MNEMOSYNE_EMBEDDING_MODEL',
+    'MNEMOSYNE_EMBEDDING_DIM',
+    'MNEMOSYNE_EMBEDDING_API_URL',
+  ],
   'mem-config-infisical': ['Infisical', 'MNEMOSYNE_EMBEDDING_API_KEY', 'docker-compose'],
   'mem-config-watch-source': ['agent-sessions', 'watchSources', 'strategy'],
   'mem-config-enrichment': ['enrichment', 'enabled', 'llmUrl', 'lite-llm'],

@@ -499,7 +499,9 @@ describe('MastraChunkingService', () => {
 
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
-          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: { enrichment: { title: 'T', keywords: 'k' } } }]),
+          getDocs: jest
+            .fn()
+            .mockReturnValue([{ text: 'content', metadata: { enrichment: { title: 'T', keywords: 'k' } } }]),
         }),
         chunkMarkdown: jest.fn(),
       };
@@ -741,7 +743,9 @@ describe('MastraChunkingService', () => {
 
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
-          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: { enrichment: { title: 'T', keywords: 'k' } } }]),
+          getDocs: jest
+            .fn()
+            .mockReturnValue([{ text: 'content', metadata: { enrichment: { title: 'T', keywords: 'k' } } }]),
         }),
         chunkMarkdown: jest.fn(),
       };
@@ -751,7 +755,9 @@ describe('MastraChunkingService', () => {
 
       const callArg = mockDoc.extractMetadata.mock.calls[0][0];
       expect(callArg.schema.llm).toBe(mockCustomLlm);
-      expect(callArg.schema.instructions).toBe('Extract a concise title and comma-separated keywords from this document.');
+      expect(callArg.schema.instructions).toBe(
+        'Extract a concise title and comma-separated keywords from this document.',
+      );
       expect(callArg.schema.metadataKey).toBe('enrichment');
     });
 
@@ -898,7 +904,10 @@ describe('MastraChunkingService', () => {
       const enrichedDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
-            { text: 'content', metadata: { enrichment: { title: 'Enriched Title', keywords: 'enriched,keywords' } } },
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'Enriched Title', keywords: 'enriched,keywords' } },
+            },
           ]),
         }),
         chunkMarkdown: jest.fn(),
@@ -1062,7 +1071,10 @@ describe('MastraChunkingService', () => {
       const enrichedDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
-            { text: 'content', metadata: { enrichment: { title: 'Enriched Title', keywords: 'enriched,keywords' } } },
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'Enriched Title', keywords: 'enriched,keywords' } },
+            },
           ]),
         }),
         chunkMarkdown: jest.fn(),

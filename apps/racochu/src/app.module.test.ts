@@ -12,12 +12,12 @@ import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { aLogger } from './infrastructure/logging/logger.test-utils';
 import { FileMemoryTrackerRepository } from './infrastructure/repositories/file-memory-tracker.repository';
 import { aFileMemoryTrackerRepositoryService } from './infrastructure/repositories/file-memory-tracker.repository.test-utils';
+import { BensyneClient } from './infrastructure/services/bensyne-client.service';
+import { aBensyneClientService } from './infrastructure/services/bensyne-client.test-utils';
 import { FileMemoryTrackerService } from './infrastructure/services/file-memory-tracker.service';
 import { aFileMemoryTrackerService } from './infrastructure/services/file-memory-tracker.service.test-utils';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
 import { aFileProcessingQueueService } from './infrastructure/services/file-processing-queue.test-utils';
-import { BensyneClient } from './infrastructure/services/bensyne-client.service';
-import { aBensyneClientService } from './infrastructure/services/bensyne-client.test-utils';
 
 const buildMockConfig = (watchSources: Configuration['watchSources']): Configuration =>
   ({

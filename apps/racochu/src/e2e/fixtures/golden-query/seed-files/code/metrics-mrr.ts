@@ -39,7 +39,7 @@ export function computePrecisionAt5(hitsInTop5: number): number {
  * Aggregates per-query scores into aggregate metrics.
  */
 export function aggregateMetrics(
-  perQuery: Array<{ recallAt5: number; precisionAt5: number; mrr: number }>,
+  perQuery: { recallAt5: number; precisionAt5: number; mrr: number }[],
 ): GoldenQueryMetrics {
   if (perQuery.length === 0) return { recallAt5: 0, precisionAt5: 0, mrr: 0 };
 

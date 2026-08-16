@@ -12,11 +12,11 @@ import {
 import { WatchSourceConfig, watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { FileHasherService } from '../infrastructure/services/file-hasher.service';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { HardwareIdDetectorService } from '../infrastructure/services/hardware-id-detector.service';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { BaseUseCase } from '../utils/base-use-case';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';

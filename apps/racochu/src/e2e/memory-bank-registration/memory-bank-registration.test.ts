@@ -1,8 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import * as fs from 'fs/promises';
+import * as yaml from 'js-yaml';
 import * as os from 'os';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 import { SOURCE_STRATEGIES } from '../../infrastructure/config/source-strategies';
 import { initializeMcpSession, listBanks } from '../../utils/mcp-e2e-client';
 import { createTestApplication } from '../main.test-application';

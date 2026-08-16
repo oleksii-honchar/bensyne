@@ -2,10 +2,10 @@ import '@/utils/mastra-rag.test-utils';
 
 import { Result } from '../../utils/result';
 import { BasePinoLogger } from '../logging/base-pino-logger';
+import { BensyneClient } from './bensyne-client.service';
 import { FileProcessingQueue } from './file-processing-queue.service';
 import { FileWatcherService } from './file-watcher.service';
 import { GracefulShutdownService } from './graceful-shutdown.service';
-import { BensyneClient } from './bensyne-client.service';
 
 class MockBasePinoLogger extends BasePinoLogger {
   logCalls: { message: string | Record<string, unknown>; meta?: Record<string, unknown> }[] = [];

@@ -1,6 +1,6 @@
+import { Test, TestingModule } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
-import { Test, TestingModule } from '@nestjs/testing';
 import { FileHasherService } from './file-hasher.service';
 
 jest.mock('fs/promises');

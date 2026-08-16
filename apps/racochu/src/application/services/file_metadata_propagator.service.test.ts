@@ -5,7 +5,11 @@ import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../../infrastructure/logging/logger.test-utils';
 import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
-import { BENSYNE_FILE_CLIENT, BensyneFileClient, FileMetadataPropagator } from './file_metadata_propagator.service';
+import {
+  BENSYNE_FILE_CLIENT,
+  BensyneFileClient,
+  FileMetadataPropagator,
+} from './file_metadata_propagator.service';
 
 describe('FileMetadataPropagator', () => {
   let service: FileMetadataPropagator;
@@ -125,7 +129,9 @@ describe('FileMetadataPropagator', () => {
           metadata: { filePath: '/test/path/tsconfig.json', sourceId: 'file_system' },
         });
 
-        bensyneClient.upsertFile.mockResolvedValue(Result.ok({ id: 'file_3', path: '/test/path/tsconfig.json' }));
+        bensyneClient.upsertFile.mockResolvedValue(
+          Result.ok({ id: 'file_3', path: '/test/path/tsconfig.json' }),
+        );
         bensyneClient.createChunk.mockResolvedValue(Result.ok({ id: 'fc_3' }));
 
         const result = await service.propagateFileMetadata(chunk, 'mem_def');
@@ -158,7 +164,9 @@ describe('FileMetadataPropagator', () => {
           metadata: { filePath: '/test/path/session.md', sourceId: 'agent_session' },
         });
 
-        bensyneClient.upsertFile.mockResolvedValue(Result.ok({ id: 'file_1', path: '/test/path/session.md' }));
+        bensyneClient.upsertFile.mockResolvedValue(
+          Result.ok({ id: 'file_1', path: '/test/path/session.md' }),
+        );
         bensyneClient.createChunk.mockResolvedValue(Result.ok({ id: 'fc_1' }));
 
         await service.propagateFileMetadata(chunk, 'mem_1');
@@ -301,7 +309,10 @@ describe('FileMetadataPropagator', () => {
 
         await service.propagateFileMetadata(chunk, 'mem_1');
 
-        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<string, unknown>;
+        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<
+          string,
+          unknown
+        >;
         expect(createChunkCall.chunk_index).toBe(5);
       });
 
@@ -318,7 +329,10 @@ describe('FileMetadataPropagator', () => {
 
         await service.propagateFileMetadata(chunk, 'mem_1');
 
-        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<string, unknown>;
+        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<
+          string,
+          unknown
+        >;
         expect(createChunkCall.start_line).toBe(100);
         expect(createChunkCall.end_line).toBe(200);
       });
@@ -336,7 +350,10 @@ describe('FileMetadataPropagator', () => {
 
         await service.propagateFileMetadata(chunk, 'mem_1');
 
-        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<string, unknown>;
+        const createChunkCall = bensyneClient.createChunk.mock.calls[0][0] as unknown as Record<
+          string,
+          unknown
+        >;
         expect(createChunkCall.start_line).toBeUndefined();
         expect(createChunkCall.end_line).toBeUndefined();
       });
@@ -398,7 +415,9 @@ describe('FileMetadataPropagator', () => {
           metadata: { filePath: '/test/path/large-file.ts', sourceId: 'file_system' },
         });
 
-        bensyneClient.upsertFile.mockResolvedValue(Result.ok({ id: 'file_1', path: '/test/path/large-file.ts' }));
+        bensyneClient.upsertFile.mockResolvedValue(
+          Result.ok({ id: 'file_1', path: '/test/path/large-file.ts' }),
+        );
         bensyneClient.createChunk.mockResolvedValue(Result.ok({ id: 'fc_1' }));
 
         const result = await service.propagateFileMetadata(chunk, 'mem_1');

@@ -15,9 +15,9 @@ import { ConfigurationService } from '../config/configuration.service';
 import { aConfigService } from '../config/configuration.service.test-utils';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { aLogger } from '../logging/logger.test-utils';
-import { FileWatcherService } from './file-watcher.service';
 import { BensyneClient } from './bensyne-client.service';
 import { aBensyneClientService } from './bensyne-client.test-utils';
+import { FileWatcherService } from './file-watcher.service';
 
 jest.mock('chokidar', () => ({
   watch: jest.fn(),

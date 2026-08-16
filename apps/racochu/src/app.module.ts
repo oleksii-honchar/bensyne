@@ -17,13 +17,13 @@ import { ConfigurationModule } from './infrastructure/config/configuration.modul
 import { LoggerModule } from './infrastructure/logging/logger.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FileMemoryTrackerRepository } from './infrastructure/repositories/file-memory-tracker.repository';
+import { BensyneClient } from './infrastructure/services/bensyne-client.service';
 import { FileHasherService } from './infrastructure/services/file-hasher.service';
 import { FileMemoryTrackerService } from './infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
-import { HardwareIdDetectorService } from './infrastructure/services/hardware-id-detector.service';
 import { FileWatcherService } from './infrastructure/services/file-watcher.service';
 import { GracefulShutdownService } from './infrastructure/services/graceful-shutdown.service';
-import { BensyneClient } from './infrastructure/services/bensyne-client.service';
+import { HardwareIdDetectorService } from './infrastructure/services/hardware-id-detector.service';
 import { SessionMetadataService } from './infrastructure/services/session-metadata.service';
 import { ChunkContentUseCase } from './use-cases/chunk-content.use-case';
 import { IngestChunkUseCase } from './use-cases/ingest-chunk.use-case';

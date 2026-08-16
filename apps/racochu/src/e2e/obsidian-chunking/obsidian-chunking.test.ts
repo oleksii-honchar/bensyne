@@ -1,7 +1,7 @@
+import { FileProcessingQueue } from '@/infrastructure/services/file-processing-queue.service';
 import { INestApplication } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { FileProcessingQueue } from '@/infrastructure/services/file-processing-queue.service';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import { createTestApplication } from '../main.test-application';
 

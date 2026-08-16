@@ -7,6 +7,17 @@ import * as path from 'path';
 import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
 import { BasePinoLogger } from '../logging/base-pino-logger';
+import {
+  ChunkingConfig,
+  Configuration,
+  configurationSchema,
+  EnhancementConfig,
+  EnrichmentConfig,
+  McpConfig,
+  TelemetryConfig,
+  WatchSourceConfig,
+} from './config-schemas';
+import { SOURCE_STRATEGIES } from './source-strategies';
 
 // Matches $VAR_NAME or $VAR_NAME patterns (alphanumeric + underscore, must start with letter/underscore)
 const ENV_VAR_PATTERN = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -35,17 +46,6 @@ export function resolveEnvVars(obj: unknown): unknown {
   }
   return obj;
 }
-import {
-  ChunkingConfig,
-  Configuration,
-  configurationSchema,
-  EnhancementConfig,
-  EnrichmentConfig,
-  McpConfig,
-  TelemetryConfig,
-  WatchSourceConfig,
-} from './config-schemas';
-import { SOURCE_STRATEGIES } from './source-strategies';
 
 export const DEFAULT_CONFIG: Configuration = {
   watchSources: [

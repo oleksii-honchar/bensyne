@@ -31,6 +31,13 @@
         "cwd": "apps/racochu",
         "command": "npm run test:e2e"
       }
+    },
+    "integration": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run test:integration"
+      }
     }
   }
 }

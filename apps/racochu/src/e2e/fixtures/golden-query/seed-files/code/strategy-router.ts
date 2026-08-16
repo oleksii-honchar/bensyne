@@ -4,8 +4,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { MastraChunkingService } from './mastra-chunking.service';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
 
 export interface ChunkingStrategy {

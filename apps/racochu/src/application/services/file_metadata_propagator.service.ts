@@ -1,8 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
 import { ContentChunk } from '@/domain/content-chunk.entity';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { ErrorWithDetails } from '@/utils/error-with-details';
 import { Result } from '@/utils/result';
+import { Inject, Injectable } from '@nestjs/common';
 
 /** Injection token for BensyneFileClient. */
 export const BENSYNE_FILE_CLIENT = 'BensyneFileClient';
@@ -111,19 +111,13 @@ export class FileMetadataPropagator {
    * @param memoryId - The memory ID returned by bensyne after storing the chunk
    * @returns Result.ok with { file_id, chunk_id } on success; Result.ko on error
    */
-  async propagateFileMetadata(
-    chunk: ContentChunk,
-    memoryId: string,
-  ): Promise<Result<PropagationResult>> {
+  async propagateFileMetadata(chunk: ContentChunk, memoryId: string): Promise<Result<PropagationResult>> {
     try {
       // Extract file path: prefer metadata.filePath, fall back to breadcrumb
       const filePath = this.extractFilePath(chunk);
       if (!filePath) {
         return Result.ko([
-          new ErrorWithDetails(
-            'No file path found in chunk metadata or breadcrumb',
-            'MissingFilePath',
-          ),
+          new ErrorWithDetails('No file path found in chunk metadata or breadcrumb', 'MissingFilePath'),
         ]);
       }
 
@@ -141,10 +135,10 @@ export class FileMetadataPropagator {
       // Upsert file in bensyne
       const upsertResult = await this.bensyneClient.upsertFile(fileData);
       if (upsertResult.isKo()) {
-        this.logger.error(
-          `Failed to upsert file in bensyne: ${upsertResult.getFormattedErrors()}`,
-          { filePath, sourceType },
-        );
+        this.logger.error(`Failed to upsert file in bensyne: ${upsertResult.getFormattedErrors()}`, {
+          filePath,
+          sourceType,
+        });
         return Result.ko(upsertResult.getErrors());
       }
 
@@ -171,10 +165,11 @@ export class FileMetadataPropagator {
 
       const chunkResult = createChunkResult.getValue();
 
-      this.logger.debug(
-        `File metadata propagated: file_id=${fileResult.id}, chunk_id=${chunkResult.id}`,
-        { file_id: fileResult.id, chunk_id: chunkResult.id, filePath },
-      );
+      this.logger.debug(`File metadata propagated: file_id=${fileResult.id}, chunk_id=${chunkResult.id}`, {
+        file_id: fileResult.id,
+        chunk_id: chunkResult.id,
+        filePath,
+      });
 
       return Result.ok({
         file_id: fileResult.id,
@@ -182,13 +177,10 @@ export class FileMetadataPropagator {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `Exception during file metadata propagation: ${errorMessage}`,
-        { error: errorMessage },
-      );
-      return Result.ko([
-        new ErrorWithDetails(errorMessage, 'PropagationException'),
-      ]);
+      this.logger.error(`Exception during file metadata propagation: ${errorMessage}`, {
+        error: errorMessage,
+      });
+      return Result.ko([new ErrorWithDetails(errorMessage, 'PropagationException')]);
     }
   }
 

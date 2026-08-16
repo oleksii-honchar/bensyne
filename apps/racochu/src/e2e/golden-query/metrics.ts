@@ -82,8 +82,7 @@ export function aggregateMetrics(results: GoldenQueryResult[]): GoldenQueryMetri
     return { recallAt5: 0, precisionAt5: 0, mrr: 0 };
   }
   const perQuery = results.map(computeMetrics);
-  const sum = (key: keyof GoldenQueryMetrics): number =>
-    perQuery.reduce((acc, m) => acc + m[key], 0);
+  const sum = (key: keyof GoldenQueryMetrics): number => perQuery.reduce((acc, m) => acc + m[key], 0);
   return {
     recallAt5: sum('recallAt5') / results.length,
     precisionAt5: sum('precisionAt5') / results.length,

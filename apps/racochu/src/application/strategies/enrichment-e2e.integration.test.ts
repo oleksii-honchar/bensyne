@@ -84,7 +84,8 @@ describe('Enrichment E2E Integration', () => {
               metadata: {
                 enrichment: {
                   title: 'Machine Learning Fundamentals',
-                  keywords: 'machine learning, artificial intelligence, supervised, unsupervised, reinforcement',
+                  keywords:
+                    'machine learning, artificial intelligence, supervised, unsupervised, reinforcement',
                 },
               },
             },
@@ -119,7 +120,10 @@ describe('Enrichment E2E Integration', () => {
       const enrichedDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
-            { text: 'content', metadata: { enrichment: { title: 'Test Title', keywords: 'test,keywords' } } },
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'Test Title', keywords: 'test,keywords' } },
+            },
           ]),
         }),
         chunkMarkdown: jest.fn(),
@@ -130,7 +134,9 @@ describe('Enrichment E2E Integration', () => {
 
       const callArg = enrichedDoc.extractMetadata.mock.calls[0][0];
       expect(callArg.schema.llm).toBe(mockCustomLlm);
-      expect(callArg.schema.instructions).toBe('Extract a concise title and comma-separated keywords from this document.');
+      expect(callArg.schema.instructions).toBe(
+        'Extract a concise title and comma-separated keywords from this document.',
+      );
       expect(callArg.schema.metadataKey).toBe('enrichment');
     });
   });
@@ -264,9 +270,24 @@ describe('Enrichment E2E Integration', () => {
       const enrichedDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
-            { text: 'First chunk', metadata: { enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' } } },
-            { text: 'Second chunk', metadata: { enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' } } },
-            { text: 'Third chunk', metadata: { enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' } } },
+            {
+              text: 'First chunk',
+              metadata: {
+                enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+              },
+            },
+            {
+              text: 'Second chunk',
+              metadata: {
+                enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+              },
+            },
+            {
+              text: 'Third chunk',
+              metadata: {
+                enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+              },
+            },
           ]),
         }),
         chunkMarkdown: jest.fn(),
@@ -314,7 +335,10 @@ describe('Enrichment E2E Integration', () => {
       const enrichedDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
-            { text: 'enriched content', metadata: { enrichment: { title: 'Enriched', keywords: 'enriched' } } },
+            {
+              text: 'enriched content',
+              metadata: { enrichment: { title: 'Enriched', keywords: 'enriched' } },
+            },
           ]),
         }),
         chunkMarkdown: jest.fn(),

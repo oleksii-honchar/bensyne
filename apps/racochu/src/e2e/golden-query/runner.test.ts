@@ -9,7 +9,9 @@ describe('golden-query runner helpers', () => {
 
   describe('isContentHit', () => {
     it('matches expected content as normalized substring', () => {
-      expect(isContentHit(['embedding dimension'], 'The EMBEDDING  dimension is resolved via env var')).toBe(true);
+      expect(isContentHit(['embedding dimension'], 'The EMBEDDING  dimension is resolved via env var')).toBe(
+        true,
+      );
     });
 
     it('returns false when expected content absent', () => {
@@ -69,7 +71,8 @@ describe('golden-query runner helpers', () => {
       const report = await runGoldenQueries({
         mode: 'baseline',
         corpus,
-        recall: async query => (query.includes('embedding') ? ['the embedding decision was made'] : ['unrelated']),
+        recall: async query =>
+          query.includes('embedding') ? ['the embedding decision was made'] : ['unrelated'],
         resolveExpectedContent: key => (key === 'k1' ? ['embedding decision'] : ['dim resolution']),
       });
       expect(report.queryCount).toBe(2);

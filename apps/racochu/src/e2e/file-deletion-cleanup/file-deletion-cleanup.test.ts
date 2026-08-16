@@ -1,9 +1,9 @@
+import { FileProcessingQueue } from '@/infrastructure/services/file-processing-queue.service';
 import { INestApplication } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FileMemoryTrackerRepository } from '../../infrastructure/repositories/file-memory-tracker.repository';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
-import { FileProcessingQueue } from '@/infrastructure/services/file-processing-queue.service';
 // readFixture available if needed for reference
 import { createTestApplication } from '../main.test-application';
 

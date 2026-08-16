@@ -1,11 +1,11 @@
-import '@/utils/mastra-rag.test-utils';
 import { FILE_ROLES } from '@/domain/content-chunk.entity';
 import { aBodyChunk } from '@/domain/content-chunk.entity.test-utils';
 import { NoteMetadata } from '@/domain/note-metadata.type';
 import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { aLogger } from '@/infrastructure/logging/logger.test-utils';
-import { extractWikilinks, splitFrontmatter } from '@/utils/strategy-utils';
+import '@/utils/mastra-rag.test-utils';
+import { splitFrontmatter } from '@/utils/strategy-utils';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import { MastraChunkingService } from './mastra-chunking.service';
