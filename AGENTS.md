@@ -1,0 +1,1 @@
+- load vault-knowledge-specialist skill for you to vault setup

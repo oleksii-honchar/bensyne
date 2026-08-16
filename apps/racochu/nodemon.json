@@ -1,0 +1,14 @@
+{
+  "ignore": [
+    ".git",
+    "node_modules",
+    "test"
+  ],
+  "verbose": true,
+  "ext": "js json ts",
+  "watch": [
+    "src",
+    "dev.yaml"
+  ],
+  "exec": "npm run ts-node"
+}

@@ -1,0 +1,46 @@
+# Bensyne — multi-tenant memory-bank-aware MCP server for e2e tests.
+# Usage:
+#   docker compose -f docker-compose.bensyne.yml -p rag-e2e-bensyne up -d --wait
+  #   docker compose -f docker-compose.bensyne.yml -p rag-e2e-bensyne down -v
+
+services:
+  bensyne-mcp:
+    image: tuiteraz/bensyne:1.1.0
+    ports:
+      # Host port 3001 avoids clashing with a dev Bensyne running on 3000.
+      - '3001:3000'
+    environment:
+      - LOG_LEVEL=DEBUG
+      # Embedding model config — mirrors bensyne .env for vector recall in e2e.
+      # Without these, _embeddings.available() returns False (no fastembed, no API
+      # endpoint) and memories are stored with FTS5 keyword search only.
+      - MNEMOSYNE_EMBEDDING_MODEL=puma-embed-qwen3-4b
+      - MNEMOSYNE_EMBEDDING_API_URL=https://lite-llm.lan/v1
+      - MNEMOSYNE_EMBEDDING_API_KEY=${MNEMOSYNE_EMBEDDING_API_KEY:-sk-GbrdFlA8SUmhCHkKQdQWDg}
+      - MNEMOSYNE_EMBEDDING_DIM=2560
+      # LiteLLM uses a Caddy local CA (self-signed). The cert chain is mounted
+      # and installed via update-ca-certificates at container startup (see command).
+    volumes:
+      # Caddy cert chain (leaf + CA intermediate) for LiteLLM SSL verification.
+      # Installed into the system CA store at startup so both httpx (Bensyne) and
+      # urllib (bensyne embeddings) can verify the Caddy self-signed cert.
+      # Without this, _embed_api fails with CERTIFICATE_VERIFY_FAILED and memories
+      # are stored without vectors.
+      # Rebuild when the LiteLLM cert changes:
+      #   openssl s_client -connect lite-llm.lan:443 -servername lite-llm.lan -showcerts </dev/null | \
+      #     awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' > src/e2e/env-setup/litellm-ca.pem
+      - /Users/oleksii.honchar/www/olho/racochu/src/e2e/env-setup/litellm-ca.pem:/usr/local/share/ca-certificates/litellm-ca.crt:ro
+      # E2E data dir is injected per-run by global-setup.ts (fresh temp dir) so
+      # each e2e run starts with a clean Bensyne state (no cross-run pollution).
+      # Falls back to the repo data/e2e dir for manual `npm run bensyne:start`.
+      - ${E2E_DATA_DIR:-../../../data/e2e}:/data/mnemosyne/data
+    # Install numpy (required by bensyne embeddings.py for _embed_api) and
+    # the Caddy CA cert before starting the server. The tuiteraz/bensyne image
+    # uses mnemosyne-memory[mcp] which doesn't include numpy.
+    command: ['sh', '-c', 'pip install -q "numpy>=1.26.0,<2.0.0" && update-ca-certificates && exec python main.py']
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 30s

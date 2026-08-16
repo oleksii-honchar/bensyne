@@ -1,0 +1,11 @@
+dist/
+node_modules/
+coverage/
+data/
+.env
+.env.*
+**/.env.*
+src/generated/
+tmp/
+**/reports/
+**/*.pem

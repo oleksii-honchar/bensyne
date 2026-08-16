@@ -1,0 +1,61 @@
+# Dev configuration — used by `npm run start:dev`
+# Watches ./watch-folder-dev and ingests chunks to local Mnemosyne MCP instance.
+#
+# Start Mnemosyne first: `npm run bensyne:start`
+# Then start chunker: `npm run start:dev`
+# Drop files into ./watch-folder-dev to trigger chunking.
+
+watchSources:
+  - id: tmp-general
+    path: ./tmp/general
+    strategy: content-aware
+    exclude:
+      - '**/Thumbs.db'
+      - '**/.env*'
+    debounceMs: 1000
+  - id: tmp-obsidian
+    path: ./tmp/obsidian
+    strategy: obsidian
+    exclude:
+      - '**/Thumbs.db'
+      - '**/.env*'
+    debounceMs: 1000
+  - id: tmp-agent-sessions
+    path: ./tmp/agent-sessions
+    strategy: agent-sessions
+    exclude:
+      - '**/Thumbs.db'
+      - '**/.env*'
+    debounceMs: 1000
+chunking:
+  strategy: content-aware
+  maxSizes:
+    agentSessions: 400
+    obsidianNotes: 500
+    codeFiles: 400
+    configuration: per-key
+    plainText: 450
+  overlap: 50
+  hardCap: 600
+enrichment:
+  enabled: true
+  llmUrl: https://lite-llm.lan/v1
+  llmModel: qwopus3.6-27b-instruct
+  apiKey: $LLM_API_KEY
+  maxConcurrency: 1
+  timeoutMs: 15000
+  docMaxTokens: 16000
+enhancement:
+  maxCharacters:
+    prose: 4000
+    code: 5000
+    configuration: 1500
+    documentation: 4000
+mcp:
+  url: http://localhost:3000
+  apiKey: e2e-test-token
+  timeoutMs: 30000
+  maxRetries: 3
+  retryDelayMs: 1000
+telemetry:
+  enabled: false

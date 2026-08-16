@@ -1,0 +1,40 @@
+app:
+  name: racochu
+  version: 1.0.0
+  environment: development
+
+mnemosyne:
+  baseUrl: http://localhost:8080/mcp
+  timeout: 30000
+  retries: 3
+  retryDelay: 1000
+
+chunking:
+  maxTokens: 512
+  overlapTokens: 50
+  hardCapTokens: 600
+  minChunkSize: 50
+
+watchSources:
+  - path: ~/projects/docs
+    recursive: true
+    ignorePatterns:
+      - node_modules
+      - .git
+      - dist
+
+  - path: ~/projects/configs
+    recursive: false
+    ignorePatterns:
+      - "*.log"
+
+logging:
+  level: info
+  format: json
+  destinations:
+    - stdout
+    - file
+  file:
+    path: /var/log/racochu/app.log
+    maxSize: 100MB
+    maxFiles: 5
