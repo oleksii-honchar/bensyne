@@ -7,6 +7,15 @@ FROM node:26-slim
 
 WORKDIR /app
 
+# native-machine-id is a native module (node-gyp) — needs python3 + build
+# toolchain during `npm ci`. Installed before copying manifests so the layer
+# stays cached across dependency changes.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy dependency manifests first for better caching
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
@@ -24,7 +33,9 @@ ENV NODE_ENV=production
 ENV DATA_DIR=/data/racochu
 ENV LOG_LEVEL=INFO
 
+# tsc emits with the src/ prefix (outDir ./dist + include src/**/*), so the
+# entrypoint is dist/src/main.js — not dist/main.js.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD node -e "require('./dist/main.js')" || exit 1
+    CMD node -e "require('./dist/src/main.js')" || exit 1
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
