@@ -1,11 +1,11 @@
 # Bensyne — multi-tenant memory-bank-aware MCP server for e2e tests.
 # Usage:
 #   docker compose -f docker-compose.bensyne.yml -p rag-e2e-bensyne up -d --wait
-  #   docker compose -f docker-compose.bensyne.yml -p rag-e2e-bensyne down -v
+#   docker compose -f docker-compose.bensyne.yml -p rag-e2e-bensyne down -v
 
 services:
   bensyne-mcp:
-    image: tuiteraz/bensyne:1.1.0
+    image: tuiteraz/bensyne:latest
     ports:
       # Host port 3001 avoids clashing with a dev Bensyne running on 3000.
       - '3001:3000'
@@ -37,7 +37,8 @@ services:
     # Install numpy (required by bensyne embeddings.py for _embed_api) and
     # the Caddy CA cert before starting the server. The tuiteraz/bensyne image
     # uses mnemosyne-memory[mcp] which doesn't include numpy.
-    command: ['sh', '-c', 'pip install -q "numpy>=1.26.0,<2.0.0" && update-ca-certificates && exec python main.py']
+    command:
+      ['sh', '-c', 'pip install -q "numpy>=1.26.0,<2.0.0" && update-ca-certificates && exec python main.py']
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 5s

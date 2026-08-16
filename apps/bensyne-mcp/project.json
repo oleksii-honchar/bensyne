@@ -8,7 +8,44 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/bensyne-mcp",
-        "command": ".venv/bin/python -m pytest"
+        "command": ".venv/bin/python -m pytest --ignore=src/tests/e2e"
+      }
+    },
+    "tests:e2e": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/bensyne-mcp",
+        "command": ".venv/bin/python -m pytest src/tests/e2e"
+      }
+    },
+    "build:docker": {
+      "executor": "nx:run-commands",
+      "description": "Build the tuiteraz/bensyne Docker image. The tag is extracted at run time from apps/bensyne-mcp/pyproject.toml (version = \"x.y.z\") via an inline node -e read.",
+      "options": {
+        "cwd": "apps/bensyne-mcp",
+        "command": "node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\" > /tmp/bensyne-version.txt && VERSION=$(cat /tmp/bensyne-version.txt) && docker build -t tuiteraz/bensyne:${VERSION} ."
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/bensyne-mcp",
+        "command": ".venv/bin/python main.py"
+      }
+    },
+    "start:docker": {
+      "executor": "nx:run-commands",
+      "description": "Run the tuiteraz/bensyne image (tag from pyproject.toml) with port 18300 mapped to container 3000 and a temp data dir mounted at /data/mnemosyne/data. Exact invocation: docker run -d --name bensyne-smoke -p 18300:3000 -v <tmpdir>:/data/mnemosyne/data tuiteraz/bensyne:<version>. Cleanup: docker rm -f bensyne-smoke.",
+      "options": {
+        "cwd": "apps/bensyne-mcp",
+        "command": "VERSION=$(node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\") && TMPDIR_DATA=$(mktemp -d /tmp/bensyne-data-XXXXXX) && docker rm -f bensyne-smoke 2>/dev/null; docker run -d --name bensyne-smoke -p 18300:3000 -v ${TMPDIR_DATA}:/data/mnemosyne/data tuiteraz/bensyne:${VERSION}"
+      }
+    },
+    "bump-version": {
+      "executor": "nx:run-commands",
+      "description": "Bump the app version per Conventional Commits by scanning commit subjects since the last commit touching apps/bensyne-mcp/pyproject.toml (BREAKING CHANGE or type! -> major, feat -> minor, else patch). Shared script: scripts/bump-version.mjs. CLI: node scripts/bump-version.mjs --app <appRoot> [--version-file <file>] [--dry-run]. Pass --dry-run via nx to report old->new without writing.",
+      "options": {
+        "command": "node scripts/bump-version.mjs --app apps/bensyne-mcp"
       }
     },
     "lint": {

@@ -5,6 +5,11 @@
   "description": "Multi-tenant namespace-aware MCP server for mnemosyne-oss (Python; NX targets via nx:run-commands in project.json)",
   "scripts": {
     "test": "nx run bensyne-mcp:test",
+    "tests:e2e": "nx run bensyne-mcp:tests:e2e",
+    "build:docker": "nx run bensyne-mcp:build:docker",
+    "start": "nx run bensyne-mcp:start",
+    "start:docker": "nx run bensyne-mcp:start:docker",
+    "bump-version": "node scripts/bump-version.mjs --app apps/bensyne-mcp",
     "lint": "nx run bensyne-mcp:lint",
     "type-check": "nx run bensyne-mcp:type-check",
     "format": "nx run bensyne-mcp:format"

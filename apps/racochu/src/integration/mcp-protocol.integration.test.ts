@@ -280,10 +280,10 @@ async function waitForServerReady(): Promise<void> {
       return; // any HTTP response means the server is listening
     } catch (error) {
       lastError = error;
-      if (
-        serverProcess?.killed ||
-        (serverProcess as unknown as { exitCode?: number | null })?.exitCode !== null
-      ) {
+      // Fail fast only if a spawned server actually died (e.g. crash at boot).
+      // If no server was ever started (red-demo mode), keep polling until the
+      // deadline so the failure surfaces as "not ready" — connection refused.
+      if (serverProcess && (serverProcess.killed || serverProcess.exitCode !== null)) {
         throw new Error(`bensyne-mcp server exited during startup: ${String(lastError)}`);
       }
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -338,17 +338,24 @@ describe('MCP protocol integration (bensyne-mcp over streamable-HTTP)', () => {
       throw new Error(`Port ${MCP_PORT} is already in use — cannot start bensyne-mcp test server`);
     }
 
-    tempStateDir =
-      process.env.BENSYNE_MCP_TEST_DATA_DIR ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'bensyne-mcp-int-')));
+    tempStateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bensyne-mcp-int-'));
     const dataDir = path.join(tempStateDir, 'mnemosyne-data');
     await fs.mkdir(dataDir, { recursive: true });
 
-    serverProcess = spawnServer(dataDir);
-    // Surface server stderr in test output for debuggability.
-    serverProcess.stderr.on(
-      'data',
-      chunk => process.env.CI !== 'true' && process.stderr.write(`[bensyne-mcp] ${chunk}`),
-    );
+    // RED-demo mode: with SKIP_BENSYNE_MCP_SERVER=1 the harness deliberately does
+    // NOT start the server — proves the suite fails when the server is not
+    // running (TDD red). Normal runs omit this env var.
+    if (process.env.SKIP_BENSYNE_MCP_SERVER === '1') {
+      // Deliberately skip spawnServer() so no server is listening on MCP_PORT.
+      process.stderr.write('[red-demo] skipping server spawn — expecting connection failures\n');
+    } else {
+      serverProcess = spawnServer(dataDir);
+      // Surface server stderr in test output for debuggability.
+      serverProcess.stderr.on(
+        'data',
+        chunk => process.env.CI !== 'true' && process.stderr.write('[bensyne-mcp] ' + chunk),
+      );
+    }
 
     await waitForServerReady();
 
@@ -358,10 +365,10 @@ describe('MCP protocol integration (bensyne-mcp over streamable-HTTP)', () => {
 
   afterAll(async () => {
     await killServer();
-    if (tempStateDir && !process.env.BENSYNE_MCP_TEST_DATA_DIR) {
+    if (tempStateDir) {
       await fs.rm(tempStateDir, { recursive: true, force: true });
+      tempStateDir = undefined;
     }
-    tempStateDir = undefined;
   }, SHUTDOWN_TIMEOUT_MS + 10_000);
 
   it('round-trips a real listMemoryBanks tool call and asserts the actual payload', async () => {
