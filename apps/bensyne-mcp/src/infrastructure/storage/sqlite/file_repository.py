@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from src.domain.file_entity import File, FileStatus, SourceType
+from src.domain.models.file_model import FileRole
 from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
@@ -34,10 +35,17 @@ def _orm_to_file(orm: FileORM) -> File:
     created_at = orm.created_at if orm.created_at else datetime.now()
     updated_at = orm.updated_at if orm.updated_at else created_at
 
+    metadata_raw = orm.metadata_json
+    try:
+        metadata: dict[str, str] = json.loads(metadata_raw) if metadata_raw else {}
+    except (TypeError, ValueError):
+        metadata = {}
+
     return File(
         id=orm.id,
         path=orm.path,
         source_type=SourceType(orm.source_type),
+        file_role=FileRole(orm.file_role) if orm.file_role else None,
         hash=orm.file_hash,
         file_type=orm.file_type,
         size=orm.size,
@@ -46,6 +54,9 @@ def _orm_to_file(orm: FileORM) -> File:
         aggregated_tags=aggregated_tags,
         status=FileStatus(orm.status) if orm.status else FileStatus.PENDING,
         summary=orm.summary,
+        total_chunks=orm.total_chunks if orm.total_chunks is not None else 0,
+        average_importance=orm.average_importance if orm.average_importance is not None else 0.5,
+        metadata=metadata,
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -57,11 +68,15 @@ def _file_to_orm(file: File) -> FileORM:
         id=file.id,
         path=file.path,
         source_type=file.source_type.value,
+        file_role=file.file_role.value if file.file_role else None,
         file_hash=file.hash,
         file_type=file.file_type,
         size=file.size,
         language=file.language,
         summary=file.summary,
+        total_chunks=file.total_chunks,
+        average_importance=file.average_importance,
+        metadata_json=json.dumps(file.metadata) if file.metadata else None,
         keywords=json.dumps(file.aggregated_keywords),
         tags=json.dumps(file.aggregated_tags),
         status=file.status.value,

@@ -14,7 +14,18 @@ describe('CliArgsService', () => {
 
   describe('parse', () => {
     it('should return default values when no args provided', () => {
+      // Isolate from APP_CONFIG_PATH (e.g. apps/racochu/.env under NX) so the
+      // ~/.config/racochu.yaml fallback is exercised deterministically.
+      const saved = process.env.APP_CONFIG_PATH;
+      delete process.env.APP_CONFIG_PATH;
+
       const result = service.parse([]);
+
+      if (saved === undefined) {
+        delete process.env.APP_CONFIG_PATH;
+      } else {
+        process.env.APP_CONFIG_PATH = saved;
+      }
 
       expect(result).toEqual<ParsedCliArgs>({
         config: expect.stringContaining('racochu.yaml'),

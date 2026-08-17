@@ -71,7 +71,7 @@ describe('[E2E] File Update Flow — create → ingest → track → update → 
     const recallBeforeResults = recallBefore.getValue();
     console.log(`[E2E-FileUpdate] Recall before update returned ${recallBeforeResults.length} results`);
     expect(recallBeforeResults.length).toBeGreaterThan(0);
-    expect(recallBeforeResults.some(r => r.includes(markerA))).toBe(true);
+    expect(recallBeforeResults.some(r => r.content.includes(markerA))).toBe(true);
 
     // Step 4: Verify tracker has mapping for the file
     const trackerBefore = await trackerRepo!.findByFilePath(filePath);
@@ -107,7 +107,7 @@ describe('[E2E] File Update Flow — create → ingest → track → update → 
       `[E2E-FileUpdate] Recall after update for marker B returned ${recallAfterBResults.length} results`,
     );
     expect(recallAfterBResults.length).toBeGreaterThan(0);
-    expect(recallAfterBResults.some(r => r.includes(markerB))).toBe(true);
+    expect(recallAfterBResults.some(r => r.content.includes(markerB))).toBe(true);
 
     // Step 9: Verify recall does NOT find marker A (old content forgotten)
     // Wait for processing queue to drain before recall
@@ -119,7 +119,7 @@ describe('[E2E] File Update Flow — create → ingest → track → update → 
     console.log(
       `[E2E-FileUpdate] Recall after update for marker A returned ${recallAfterAResults.length} results`,
     );
-    const remainingWithMarkerA = recallAfterAResults.filter(r => r.includes(markerA));
+    const remainingWithMarkerA = recallAfterAResults.filter(r => r.content.includes(markerA));
     expect(remainingWithMarkerA.length).toBe(0);
 
     // Step 10: Verify tracker has mapping with new memory IDs (not old ones)

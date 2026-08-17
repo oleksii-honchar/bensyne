@@ -38,6 +38,13 @@ RECALL_SCHEMA = {
         "properties": {
             "query": {"type": "string", "description": "Natural language query."},
             "limit": {"type": "integer", "description": "Max results. Default 5.", "default": 5},
+            "enrich_limit": {
+                "type": "integer",
+                "description": "Max file relations per enriched result (strongest first). Min 0, max 20. Default 5.",
+                "default": 5,
+                "minimum": 0,
+                "maximum": 20,
+            },
             **MEMORY_BANK_PARAM,
         },
         "required": ["query", "memory_bank"],

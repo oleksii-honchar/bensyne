@@ -77,7 +77,7 @@ describe('[E2E] File Hash Dedup — First Device Ingestion', () => {
     const recallResults = recallResult.getValue();
     console.log(`[E2E-FileHashDedup] Recall returned ${recallResults.length} results`);
     expect(recallResults.length).toBeGreaterThan(0);
-    expect(recallResults.some(r => r.includes(marker))).toBe(true);
+    expect(recallResults.some(r => r.content.includes(marker))).toBe(true);
 
     // Step 4: Verify FileTracker has a mapping for the file
     const trackerResult = await trackerRepo!.findByFilePath(filePath);

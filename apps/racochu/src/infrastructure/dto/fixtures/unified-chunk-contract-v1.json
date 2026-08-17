@@ -1,0 +1,92 @@
+{
+  "description": "Canonical unified chunk contract v1 fixture — byte-identical across bensyne-mcp and racochu (parity gate, spec §7.4). The rememberMemory transport envelope: {content, memory_bank, importance, source, metadata, hash}. The \"metadata\" object is the exact expected output of BensyneRememberDto.fromChunk(fixtureChunk) (racochu asserts deep equality) AND the input that parse_file_context round-trips in bensyne.",
+  "content": "Unified Chunk Contract v1 canonical fixture chunk content.",
+  "memory_bank": "agent-sessions",
+  "importance": 0.75,
+  "source": "agent-sessions",
+  "metadata": {
+    "contract_version": 1,
+    "file_path": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md",
+    "chunk_index": 2,
+    "total_chunks": 5,
+    "section_header": "## Implementation Details",
+    "start_line": 42,
+    "end_line": 97,
+    "source_type": "agent_session",
+    "file_role": "docs",
+    "language": "markdown",
+    "file_hash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
+    "chunk_hash": "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c",
+    "summary": null,
+    "parent_unit": {
+      "ref": "session-260811-0000",
+      "summary": "Session investigating bensyne file metadata materialization"
+    },
+    "edges": [
+      {
+        "target_path": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/session.md",
+        "relation_type": "parent_child",
+        "strength": 1,
+        "description": "findings.md belongs to session root"
+      },
+      {
+        "target_path": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/materials/unified-chunk-contract.md",
+        "relation_type": "sibling",
+        "strength": 1,
+        "description": "companion artifact in same session root"
+      }
+    ],
+    "tags": [
+      "contract",
+      "v1"
+    ],
+    "extra": {
+      "session.id": "260811-0000",
+      "session.status": "Session investigating bensyne file metadata materialization",
+      "note.tags": "[\"architecture\",\"contract\"]"
+    }
+  },
+  "hash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
+  "fixtureChunk": {
+    "id": "1700000000000000001",
+    "text": "Unified Chunk Contract v1 canonical fixture chunk content.",
+    "chunkIndex": 2,
+    "totalChunks": 5,
+    "sectionHeader": "## Implementation Details",
+    "breadcrumb": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md",
+    "language": "markdown",
+    "fileRole": "docs",
+    "oversized": false,
+    "startLine": 42,
+    "endLine": 97,
+    "metadata": {
+      "filePath": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md",
+      "sourceId": "agent_session",
+      "fileHash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
+      "chunkHash": "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c",
+      "session.id": "260811-0000",
+      "session.status": "Session investigating bensyne file metadata materialization",
+      "note.tags": "[\"architecture\",\"contract\"]"
+    },
+    "edges": [
+      {
+        "target_path": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/session.md",
+        "relation_type": "parent_child",
+        "strength": 1,
+        "description": "findings.md belongs to session root"
+      },
+      {
+        "target_path": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/materials/unified-chunk-contract.md",
+        "relation_type": "sibling",
+        "strength": 1,
+        "description": "companion artifact in same session root"
+      }
+    ],
+    "importance": 0.75,
+    "tags": [
+      "contract",
+      "v1"
+    ],
+    "memoryBank": "agent-sessions"
+  }
+}

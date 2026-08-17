@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as yaml from 'js-yaml';
-import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
+import * as path from 'path';
+import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
 import { NoteMetadata } from '../../domain/note-metadata.type';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
@@ -95,6 +96,27 @@ function formatNoteMetadata(metadata: NoteMetadata): Record<string, string> {
 }
 
 /**
+ * Resolves deduplicated wikilink targets to backlink edges against the watch-source root.
+ * - `[[Note]]` → `<root>/Note.md`
+ * - `[[Note|alias]]` / `[[Note#heading]]` → target before `|`, `#heading` stripped
+ *   (already normalized by extractWikilinks)
+ * - `[[sub/Note]]` → `<root>/sub/Note.md`
+ * Unresolvable targets still yield a best-effort edge (bensyne stub policy D4).
+ */
+export function buildWikilinkEdges(
+  wikilinks: string[],
+  vaultRoot: string,
+  sourceNoteName: string,
+): FileEdge[] {
+  return wikilinks.map(target => ({
+    target_path: path.join(vaultRoot, `${target}.md`),
+    relation_type: 'backlink',
+    strength: 1,
+    description: `wikilink from ${sourceNoteName} to ${target}`,
+  }));
+}
+
+/**
  * Obsidian-aware chunking strategy that:
  * 1. Splits frontmatter from body using shared splitFrontmatter
  * 2. Extracts note metadata (aliases, tags, etc.) from frontmatter via js-yaml
@@ -113,7 +135,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     content: string,
     filePath: string,
     sourceId: string,
-    _sourceConfig: WatchSourceConfig,
+    sourceConfig: WatchSourceConfig,
   ): Promise<Result<ContentChunk[]>> {
     // 1. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
@@ -121,29 +143,35 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     // 2. Extract wikilinks from body (body-derived, independent of frontmatter)
     const wikilinks = extractWikilinks(body);
 
-    // 3. Extract note metadata if frontmatter exists
+    // 3. Resolve wikilinks to backlink edges against the watch-source root
+    const sourceNoteName = path.basename(filePath).replace(/\.md$/i, '');
+    const edges = buildWikilinkEdges(wikilinks, sourceConfig.path, sourceNoteName);
+
+    // 4. Extract note metadata if frontmatter exists
     const noteMetadata = frontmatter ? extractNoteMetadata(frontmatter) : null;
 
-    // 4. Create frontmatter chunk if present
+    // 5. Create frontmatter chunk if present
     const chunks: ContentChunk[] = [];
     if (frontmatter !== null) {
       // noteMetadata is non-null here because frontmatter exists
       chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, noteMetadata!));
     }
 
-    // 5. Chunk body with Mastra
+    // 6. Chunk body with Mastra
     const bodyChunksResult = await this.mastraChunkingService.chunkFile(body, filePath, sourceId);
     const bodyChunks = bodyChunksResult.isOk() ? bodyChunksResult.getValue() : [];
 
-    // 6. Enrich all chunks with note metadata and merge tags
+    // 7. Enrich all chunks with note metadata and merge tags
     const allChunks = [...chunks, ...bodyChunks];
     const enriched = noteMetadata
       ? allChunks.map(chunk => this.enrichWithNoteMetadata(chunk, noteMetadata))
       : allChunks;
 
-    // 7. Attach wikilinks to all chunks (only when non-empty)
+    // 8. Attach wikilinks (legacy key) + resolved edges to all chunks (only when non-empty)
     const withWikilinks =
-      wikilinks.length > 0 ? enriched.map(chunk => this.attachWikilinks(chunk, wikilinks)) : enriched;
+      wikilinks.length > 0
+        ? enriched.map(chunk => this.attachWikilinksAndEdges(chunk, wikilinks, edges))
+        : enriched;
 
     return Result.ok(withWikilinks);
   }
@@ -192,7 +220,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     }).getValue();
   }
 
-  private attachWikilinks(chunk: ContentChunk, wikilinks: string[]): ContentChunk {
+  private attachWikilinksAndEdges(chunk: ContentChunk, wikilinks: string[], edges: FileEdge[]): ContentChunk {
     const existingMeta = chunk.metadata ?? {};
     const withWikilinks = {
       ...existingMeta,
@@ -202,6 +230,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     return ContentChunk.of({
       ...chunk.toJson(),
       metadata: withWikilinks,
+      edges,
     }).getValue();
   }
 }

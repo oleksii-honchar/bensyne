@@ -145,6 +145,39 @@ class FileRelationRepository:
     # delete_relation
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # delete_relations_by_file_id
+    # ------------------------------------------------------------------
+
+    def delete_relations_by_file_id(self, file_id: str) -> Result[bool]:
+        """Delete all relations where the given file is source OR target.
+
+        Used by the re-ingest rebuild path so stale edges are dropped before
+        relations are recreated from incoming contract edges.
+        Returns Result.ok(True) when at least one row was deleted, else False.
+        """
+        session = self._conn_manager.get_session()
+        try:
+            deleted = (
+                session.query(FileRelationORM)
+                .filter(
+                    (FileRelationORM.source_file_id == file_id)
+                    | (FileRelationORM.target_file_id == file_id)
+                )
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return Result.ok(deleted > 0)
+        except Exception as e:
+            session.rollback()
+            return Result.ko([ErrorWithDetails("RELATION_DELETE_BY_FILE_ID_ERROR", {"error": str(e)})])
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
+    # delete_relation
+    # ------------------------------------------------------------------
+
     def delete_relation(self, relation_id: str) -> Result[bool]:
         """Delete a relation by id, returning True if it existed."""
         session = self._conn_manager.get_session()

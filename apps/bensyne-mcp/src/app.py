@@ -89,8 +89,10 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         return await handlers.handle_remember(router, args)
 
     @mcp.tool(name="recallMemory")
-    async def recall(query: str, memory_bank: str, limit: int = 5):
-        return await handlers.handle_recall(router, {"query": query, "memory_bank": memory_bank, "limit": limit})
+    async def recall(query: str, memory_bank: str, limit: int = 5, enrich_limit: int = 5):
+        return await handlers.handle_recall(
+            router, {"query": query, "memory_bank": memory_bank, "limit": limit, "enrich_limit": enrich_limit}
+        )
 
     @mcp.tool(name="forgetMemory")
     async def forget(memory_id: str, memory_bank: str):
@@ -147,8 +149,33 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         return await handlers.handle_expand_file_relations(router, args)
 
     @mcp.tool(name="fetchFile")
-    async def fetch_file(file_id: str, memory_bank: str, include_metadata: bool = False):
+    async def fetch_file(
+        file_id: str,
+        memory_bank: str,
+        include_metadata: bool = False,
+        center_chunk_index: int | None = None,
+        adjacent_chunks: int = 1,
+    ):
+        """Fetch and reconstruct file content from its memory chunks.
+
+        By default (no center_chunk_index) the whole file is reconstructed from all chunks.
+        With center_chunk_index set, only the neighbor window [center - adjacent_chunks ..
+        center + adjacent_chunks] is returned (clamped to 0..total_chunks-1), each chunk with
+        content, position (chunk_index, start_line/end_line) and section_header.
+
+        Args:
+            file_id: ID of the file to fetch.
+            memory_bank: Memory bank for isolation.
+            include_metadata: Include file metadata in the response. Default False.
+            center_chunk_index: 0-based index of the center chunk for neighbor mode.
+                Must be within 0..total_chunks-1 (error otherwise). Default None (whole file).
+            adjacent_chunks: Number of chunks on each side of the center in neighbor mode.
+                Valid range 0-5. Default 1.
+        """
         args = {"file_id": file_id, "memory_bank": memory_bank, "include_metadata": include_metadata}
+        if center_chunk_index is not None:
+            args["center_chunk_index"] = center_chunk_index
+            args["adjacent_chunks"] = adjacent_chunks
         return await handlers.handle_fetch_file(router, args)
 
 

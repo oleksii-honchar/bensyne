@@ -25,6 +25,37 @@ export const FILE_ROLES = {
 /** File type classification used for chunking strategy, importance scoring, and memory metadata. */
 export type FileRole = ValuesType<typeof FILE_ROLES>;
 
+/**
+ * Relation types between files — mirrors bensyne `RelationType` (string union, not an imported enum).
+ * Exported so DTOs and chunking strategies can reference the canonical set.
+ */
+export const FILE_RELATION_TYPES = [
+  'parent_child',
+  'sibling',
+  'backlink',
+  'folder_hierarchy',
+  'cross_reference',
+  'version',
+  'override',
+  'dependency',
+  'recommendation',
+] as const;
+
+/** File relation type (mirrors bensyne RelationType values). */
+export type FileRelationType = ValuesType<typeof FILE_RELATION_TYPES>;
+
+/** A typed edge from this chunk's source file to another file. */
+export const fileEdgeSchema = z.object({
+  /** Vault-relative path of the target file */
+  target_path: z.string().min(1),
+  relation_type: z.enum(FILE_RELATION_TYPES),
+  /** Edge strength (0–1); omitted ⇒ 1 */
+  strength: z.number().min(0).max(1).default(1),
+  description: z.string().optional(),
+});
+
+export type FileEdge = z.infer<typeof fileEdgeSchema>;
+
 export const contentChunkSchema = z.object({
   id: z.bigint().positive(),
   text: z.string(),
@@ -47,6 +78,8 @@ export const contentChunkSchema = z.object({
   endLine: z.number().optional(),
   /** User-provided key-value pairs merged into this chunk */
   metadata: z.record(z.string(), z.string()).optional(),
+  /** Typed edges from this chunk's source file to other files */
+  edges: z.array(fileEdgeSchema).optional(),
   /** Relevance score (0.0–1.0) assigned by the importance scoring service */
   importance: z.number().min(0).max(1).default(0.5),
   /** Keywords extracted by the tag extraction service */
@@ -81,6 +114,7 @@ export class ContentChunk {
       startLine: this.props.startLine,
       endLine: this.props.endLine,
       metadata: this.props.metadata,
+      ...(this.props.edges !== undefined && { edges: this.props.edges }),
       importance: this.props.importance,
       tags: [...this.props.tags],
       memoryBank: this.props.memoryBank,
@@ -131,6 +165,10 @@ export class ContentChunk {
   /** User-provided key-value pairs merged into this chunk */
   get metadata(): Record<string, string> | undefined {
     return this.props.metadata;
+  }
+  /** Typed edges from this chunk's source file to other files */
+  get edges(): FileEdge[] | undefined {
+    return this.props.edges;
   }
   /** Relevance score (0.0–1.0) assigned by the importance scoring service */
   get importance(): number {

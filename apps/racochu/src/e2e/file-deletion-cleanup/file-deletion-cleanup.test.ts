@@ -62,13 +62,13 @@ describe('[E2E] File Deletion Cleanup — create → ingest → track → delete
     // Wait for processing queue to drain before recall
     await processingQueue!.waitForEmpty();
 
-    // Step 3: Verify memory exists via memory_recall
+    // Step 3: Verify memory exists via recallMemory
     const recallResult = await bensyneClient!.recall(`FILEDELETION-${uniqueId}`, 5, 1000, 'e2e-test-ns');
     expect(recallResult.isOk()).toBe(true);
     const recallResults = recallResult.getValue();
     console.log(`[E2E-FileDeletion] Recall returned ${recallResults.length} results`);
     expect(recallResults.length).toBeGreaterThan(0);
-    expect(recallResults.some(r => r.includes(`FILEDELETION-${uniqueId}`))).toBe(true);
+    expect(recallResults.some(r => r.content.includes(`FILEDELETION-${uniqueId}`))).toBe(true);
 
     // Step 4: Verify tracker.db has file→memory mapping
     const trackerBefore = await trackerRepo!.findByFilePath(filePath);
@@ -96,7 +96,7 @@ describe('[E2E] File Deletion Cleanup — create → ingest → track → delete
     const recallResultsAfter = recallAfter.getValue();
     console.log(`[E2E-FileDeletion] Recall after delete returned ${recallResultsAfter.length} results`);
     // All results containing our unique marker should be gone
-    const remainingWithMarker = recallResultsAfter.filter(r => r.includes(`FILEDELETION-${uniqueId}`));
+    const remainingWithMarker = recallResultsAfter.filter(r => r.content.includes(`FILEDELETION-${uniqueId}`));
     expect(remainingWithMarker.length).toBe(0);
 
     // Step 8: Verify tracker.db mapping removed

@@ -31,6 +31,9 @@ class FileChunkSchema(BaseModel):
     content_hash: str | None = None
     content_type: ContentType = Field(default=ContentType.UNKNOWN)
     is_partial: bool = Field(default=False)
+    section_header: str | None = None
+    parent_unit_ref: str | None = None
+    parent_unit_summary: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

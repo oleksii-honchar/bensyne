@@ -19,6 +19,7 @@ from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
+from src.infrastructure.storage.sqlite.models import FileORM
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -64,6 +65,9 @@ def _a_file(
     aggregated_keywords: Optional[List[str]] = None,
     aggregated_tags: Optional[List[str]] = None,
     status: FileStatus = FileStatus.PENDING,
+    total_chunks: int = 0,
+    average_importance: float = 0.5,
+    metadata: Optional[dict] = None,
     created_at: Optional[datetime] = None,
 ) -> File:
     """Create a valid File instance with sensible defaults."""
@@ -79,6 +83,9 @@ def _a_file(
             "aggregated_keywords": aggregated_keywords or [],
             "aggregated_tags": aggregated_tags or [],
             "status": status,
+            "total_chunks": total_chunks,
+            "average_importance": average_importance,
+            "metadata": metadata or {},
             "created_at": created_at or datetime.now(),
         }
     )
@@ -181,6 +188,50 @@ class TestSaveFile:
         assert f is not None
         assert f.aggregated_keywords == []
         assert f.aggregated_tags == []
+
+    def test_save_file_stores_new_fields(self, repo: FileRepository) -> None:
+        file = _a_file(
+            id="s7",
+            total_chunks=12,
+            average_importance=0.75,
+            metadata={"session_id": "s-42", "note": "hello world"},
+        )
+        save_result = repo.save_file(file)
+        assert save_result.is_ok
+
+        find_result = repo.get_file_by_id("s7")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.total_chunks == 12
+        assert f.average_importance == 0.75
+        assert f.metadata == {"session_id": "s-42", "note": "hello world"}
+
+    def test_save_file_new_fields_defaults_when_db_null(
+        self, repo: FileRepository, manager: FileMetadataConnectionManager
+    ) -> None:
+        """A row written without the new fields (e.g. pre-existing DB data)
+        maps back to entity defaults."""
+        file = _a_file(id="s8")
+        save_result = repo.save_file(file)
+        assert save_result.is_ok
+
+        # Simulate legacy row state: NULL metadata column, default columns as-is
+        session = manager.get_session()
+        try:
+            orm = session.query(FileORM).filter(FileORM.id == "s8").first()
+            orm.metadata_json = None
+            session.commit()
+        finally:
+            manager.close_session(session)
+
+        find_result = repo.get_file_by_id("s8")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.total_chunks == 0
+        assert f.average_importance == 0.5
+        assert f.metadata == {}
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +552,37 @@ class TestRoundTrip:
         search_result2 = repo.search_files_by_query("search")
         assert search_result2.is_ok
         assert len(search_result2.value) == 0
+
+    def test_save_and_get_new_fields_round_trip(self, repo: FileRepository) -> None:
+        file = _a_file(
+            id="rt4",
+            total_chunks=33,
+            average_importance=0.125,
+            metadata={"a": "1", "b": "two"},
+        )
+        save_result = repo.save_file(file)
+        assert save_result.is_ok
+
+        find_result = repo.get_file_by_id("rt4")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.total_chunks == 33
+        assert f.average_importance == 0.125
+        assert f.metadata == {"a": "1", "b": "two"}
+
+    def test_save_and_get_new_fields_defaults_round_trip(self, repo: FileRepository) -> None:
+        file = _a_file(id="rt5")
+        save_result = repo.save_file(file)
+        assert save_result.is_ok
+
+        find_result = repo.get_file_by_id("rt5")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.total_chunks == 0
+        assert f.average_importance == 0.5
+        assert f.metadata == {}
 
     def test_full_round_trip_with_all_fields(self, repo: FileRepository) -> None:
         file = _a_file(

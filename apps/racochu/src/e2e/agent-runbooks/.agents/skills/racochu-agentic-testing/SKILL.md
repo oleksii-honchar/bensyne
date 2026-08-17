@@ -73,7 +73,7 @@ Execute Racochu Agentic Testing runbooks end-to-end in the chat session. This sk
 
 **Tools:**
 
-- `meta_search("memory_list_banks")` — verify bensyne MCP connectivity
+- `meta_search("listMemoryBanks")` — verify bensyne MCP connectivity
 - `read_file` — read `dev.yaml` and runbook
 - `bash` — `ps aux | rg "racochu" | wc -l` to check racochu process count
 

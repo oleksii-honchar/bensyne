@@ -226,6 +226,7 @@ class TestMemoryLifecycle:
         process_uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash_service,
+            file_service=MagicMock(),
             logger=logger,
         )
 
@@ -298,6 +299,7 @@ class TestMemoryDeduplication:
         uc = RememberMemoryUseCase(
             memory_repository=repo,
             hash_index_service=mock_hash_service,
+            file_service=MagicMock(),
             logger=logger,
         )
 
@@ -369,6 +371,7 @@ class TestMemoryDeduplication:
         uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash_service,
+            file_service=MagicMock(),
             logger=logger,
         )
 
@@ -557,6 +560,7 @@ class TestErrorHandling:
         uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash,
+            file_service=MagicMock(),
             logger=logger,
         )
 
@@ -576,6 +580,7 @@ class TestErrorHandling:
 
         uc = RecallMemoryUseCase(
             mnemosyne_client=mock_client,
+            file_enrichment_service=MagicMock(),
             logger=logger,
         )
 

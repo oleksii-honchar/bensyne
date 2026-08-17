@@ -82,7 +82,7 @@ describe('[E2E] File Hash Dedup — Pure Memory (No Hash) Continues Normally', (
     console.log(`[E2E-PureMemory] Recall returned ${recallResults.length} results`);
 
     expect(recallResults.length).toBeGreaterThan(0);
-    expect(recallResults.some(r => r.includes(marker))).toBe(true);
+    expect(recallResults.some(r => r.content.includes(marker))).toBe(true);
     console.log(`[E2E-PureMemory] Pure memory stored and recalled successfully`);
   }, 60000);
 });

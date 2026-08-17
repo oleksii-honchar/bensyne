@@ -6,8 +6,8 @@ description: |
   or running the MCP server locally.
   Also trigger on: "run bensyne tests", "start bensyne server", "bensyne gotcha", "bensyne python",
   "bensyne pytest", "bensyne fastmcp", "bensyne env setup", "bensyne e2e failing".
-version: "1.2"
-updatedAt: "2026-08-16T14:00:00+02:00"
+version: "1.3"
+updatedAt: "2026-08-17T00:00:00+02:00"
 author: "oleksii"
 status: "draft"
 tags: ["bensyne", "python", "operational", "mcp-server"]
@@ -33,13 +33,21 @@ knowledge that lives outside the vault (vault contains architecture, ADRs, and r
 
 **CRITICAL:** The system Python is 3.9.6. Bensyne requires >= 3.12.
 
+**The venv lives in `apps/bensyne-mcp/.venv`, NOT the repo root.** All commands must be run
+from the app directory (`apps/bensyne-mcp/`) using the absolute path to its venv:
+
 | Wrong | Right |
 |---|---|
-| `python3 -m pytest` | `.venv/bin/python -m pytest` |
-| `python3 main.py` | `.venv/bin/python main.py` |
-| `python3 -c "import foo"` | `.venv/bin/python -c "import foo"` |
+| `python3 -m pytest` | `apps/bensyne-mcp/.venv/bin/python -m pytest` |
+| `python3 main.py` | `apps/bensyne-mcp/.venv/bin/python main.py` |
+| `python3 -c "import foo"` | `apps/bensyne-mcp/.venv/bin/python -c "import foo"` |
+| `.venv/bin/python -m pytest` (from repo root) | `apps/bensyne-mcp/.venv/bin/python -m pytest` |
 
-Every command: prefix with `.venv/bin/python`, not `python3`. The shebang in `main.py` (`#!/usr/bin/env python3.12`) is only relevant for direct `./main.py` execution — scripts and CLI tools still need the venv path.
+There is no `.venv` at the monorepo root — a bare `.venv/bin/python` resolves to nothing
+unless the shell is already inside `apps/bensyne-mcp/`. Run all commands from
+`apps/bensyne-mcp/` (with `apps/bensyne-mcp/.venv/bin/python`) or `cd apps/bensyne-mcp && .venv/bin/python`.
+The shebang in `main.py` (`#!/usr/bin/env python3.12`) is only relevant for direct `./main.py`
+execution — scripts and CLI tools still need the venv path.
 
 ### Domain Layer Discipline
 
@@ -69,7 +77,7 @@ typed parameters, then delegate to `handlers.handle_*()`.
 
 **When working in Bensyne, first check:**
 
-1. **Which Python?** — Confirm you're using `.venv/bin/python` (not `python3`)
+1. **Which Python?** — Confirm you're using `apps/bensyne-mcp/.venv/bin/python` (not `python3`) and that your shell is in `apps/bensyne-mcp/`
 2. **Vault lookup** — The monorepo has a single flat vault at `.vault/` with area folders (`decisions/`, `concepts/`, `memories/`, `specifications/`, `runbooks/`, `architectures/<system>/`; `.vault/_Vault-Home.md` documents the layout). Check the vault before asking:
    - Scope nodes by the `system` frontmatter field: `shared | bensyne-mcp | racochu`
    - ID series: `DEC-NNNN` (decisions), `MEM-NNNN` (shared memories only)
@@ -83,9 +91,10 @@ typed parameters, then delegate to `handlers.handle_*()`.
 
 **Goal:** Verify you can run the project.
 
-1. Confirm `.venv` exists: `ls .venv/bin/python`
-2. Run a quick smoke test: `.venv/bin/python -m pytest src/tests/test_domain/test_file.py -v --tb=short`
-3. If tests fail with `SyntaxError: invalid syntax` — you're using the system Python 3.9. Switch to `.venv/bin/python`.
+1. `cd apps/bensyne-mcp` — the venv, `main.py`, and `src/` all live here, not at the repo root
+2. Confirm `.venv` exists: `ls .venv/bin/python`
+3. Run a quick smoke test: `.venv/bin/python -m pytest src/tests/test_domain/test_file.py -v --tb=short`
+4. If tests fail with `SyntaxError: invalid syntax` — you're using the system Python 3.9. Switch to `.venv/bin/python`.
 
 **Output:** Confirmed Python version and test runner works.
 
@@ -93,7 +102,7 @@ typed parameters, then delegate to `handlers.handle_*()`.
 
 **Goal:** Verify your changes don't break existing functionality.
 
-Run the full suite scoped to the affected layer:
+Run the full suite scoped to the affected layer (from `apps/bensyne-mcp/`):
 
 ```bash
 # Domain changes — run domain tests
@@ -112,6 +121,8 @@ Run the full suite scoped to the affected layer:
 .venv/bin/python -m pytest --ignore=src/tests/e2e/ -v --tb=short
 ```
 
+From the repo root, the equivalent is `apps/bensyne-mcp/.venv/bin/python -m pytest apps/bensyne-mcp/src/tests/...`.
+
 **Output:** Test results. If e2e errors appear, verify they're the pre-existing `bank_manager` issue.
 
 ### Phase 3: Start the Server
@@ -119,6 +130,9 @@ Run the full suite scoped to the affected layer:
 **Goal:** Verify the server runs with your changes.
 
 ```bash
+# From apps/bensyne-mcp/
+cd apps/bensyne-mcp
+
 # Copy .env from template if needed
 cp .env.tpl .env
 
@@ -157,7 +171,8 @@ Stop and ask when you encounter:
 
 ## Quality Checklist
 
-- [ ] Used `.venv/bin/python` (not `python3`) for all commands
+- [ ] Used `apps/bensyne-mcp/.venv/bin/python` (not `python3`, not bare `.venv/bin/python` from the repo root) for all commands
+- [ ] Ran commands from `apps/bensyne-mcp/` (venv, `main.py`, and `src/` live there, not at the repo root)
 - [ ] Ran tests scoped to the affected layer (not just full suite)
 - [ ] Domain changes: entities are frozen, Result pattern used, no domain exceptions
 - [ ] Infrastructure changes: `ON CONFLICT DO UPDATE` used for upserts (not `INSERT OR REPLACE`)

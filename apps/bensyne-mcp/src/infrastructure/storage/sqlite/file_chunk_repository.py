@@ -34,6 +34,9 @@ def _orm_to_chunk(orm: FileChunkORM) -> FileChunk:
         content_hash=orm.content_hash,
         content_type=ContentType(orm.content_type) if orm.content_type else ContentType.UNKNOWN,
         is_partial=bool(orm.is_partial) if orm.is_partial is not None else False,
+        section_header=orm.section_header,
+        parent_unit_ref=orm.parent_unit_ref,
+        parent_unit_summary=orm.parent_unit_summary,
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -51,6 +54,9 @@ def _chunk_to_orm(chunk: FileChunk) -> FileChunkORM:
         content_hash=chunk.content_hash,
         content_type=chunk.content_type.value,
         is_partial=chunk.is_partial,
+        section_header=chunk.section_header,
+        parent_unit_ref=chunk.parent_unit_ref,
+        parent_unit_summary=chunk.parent_unit_summary,
         created_at=chunk.created_at,
         updated_at=chunk.updated_at,
     )
@@ -160,6 +166,36 @@ class FileChunkRepository:
             return Result.ok(chunks)
         except Exception as e:
             return Result.ko([ErrorWithDetails("CHUNK_GET_BY_MEMORY_ID_ERROR", {"error": str(e)})])
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
+    # delete_chunk
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # delete_chunks_by_file_id
+    # ------------------------------------------------------------------
+
+    def delete_chunks_by_file_id(self, file_id: str, exclude_memory_ids: set[str]) -> Result[bool]:
+        """Delete all chunks of a file whose memory_id is NOT in the exclude set.
+
+        Used by the re-ingest rebuild path to drop stale chunk rows while
+        keeping live memories (whose ids are in `exclude_memory_ids`).
+        An empty exclude set deletes every chunk of the file.
+        Returns Result.ok(True) on success (no-op when nothing matches).
+        """
+        session = self._conn_manager.get_session()
+        try:
+            query = session.query(FileChunkORM).filter(FileChunkORM.file_id == file_id)
+            if exclude_memory_ids:
+                query = query.filter(~FileChunkORM.memory_id.in_(exclude_memory_ids))
+            deleted = query.delete(synchronize_session=False)
+            session.commit()
+            return Result.ok(deleted > 0)
+        except Exception as e:
+            session.rollback()
+            return Result.ko([ErrorWithDetails("CHUNK_DELETE_BY_FILE_ID_ERROR", {"error": str(e)})])
         finally:
             self._conn_manager.close_session(session)
 

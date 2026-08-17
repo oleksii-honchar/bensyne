@@ -40,8 +40,62 @@ class TestFileOfValidData:
         assert file.aggregated_keywords == []
         assert file.aggregated_tags == []
         assert file.status == FileStatus.PENDING
+        assert file.total_chunks == 0
+        assert file.average_importance == 0.5
+        assert file.metadata == {}
         assert file.created_at is not None
         assert file.updated_at is not None
+
+    def test_of_returns_ok_with_new_fields(self):
+        result = File.of(
+            {
+                "id": "f_new",
+                "path": "/tmp/new.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "total_chunks": 12,
+                "average_importance": 0.75,
+                "metadata": {"session_id": "s1", "note": "hello"},
+            }
+        )
+        assert result.is_ok is True
+        file = result.value
+        assert file.total_chunks == 12
+        assert file.average_importance == 0.75
+        assert file.metadata == {"session_id": "s1", "note": "hello"}
+
+    def test_of_rejects_negative_total_chunks(self):
+        result = File.of(
+            {
+                "id": "f_neg",
+                "path": "/tmp/neg.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "total_chunks": -1,
+            }
+        )
+        assert result.is_ko is True
+
+    def test_of_rejects_out_of_range_average_importance(self):
+        for bad in (0.0, 1.5):
+            result = File.of(
+                {
+                    "id": "f_oi",
+                    "path": "/tmp/oi.txt",
+                    "source_type": SourceType.FILE_SYSTEM,
+                    "average_importance": bad,
+                }
+            )
+            assert result.is_ko is True
+
+    def test_of_rejects_non_string_metadata_values(self):
+        result = File.of(
+            {
+                "id": "f_md",
+                "path": "/tmp/md.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "metadata": {"count": 3},
+            }
+        )
+        assert result.is_ko is True
 
     def test_of_returns_ok_with_all_fields(self):
         now = datetime.now()
@@ -374,6 +428,58 @@ class TestFileStatusTransitions:
         assert result.value.hash == VALID_HASH
         assert result.value.file_type == "python"
         assert result.value.size == 512
+
+    def test_update_metadata_new_fields(self):
+        file = self._create_file()
+        result = file.update_metadata(
+            total_chunks=7,
+            average_importance=0.9,
+            metadata={"k": "v"},
+        )
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.total_chunks == 7
+        assert updated.average_importance == 0.9
+        assert updated.metadata == {"k": "v"}
+        assert result.has_events() is True
+        changed = result.get_events()[0].changed_fields
+        assert "total_chunks" in changed
+        assert "average_importance" in changed
+        assert "metadata" in changed
+
+    def test_update_metadata_new_fields_partial_preserves_others(self):
+        file = File.of(
+            {
+                "id": "f_part",
+                "path": "/tmp/part.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "total_chunks": 3,
+                "average_importance": 0.2,
+                "metadata": {"a": "1"},
+            }
+        ).value
+        result = file.update_metadata(total_chunks=5)
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.total_chunks == 5
+        assert updated.average_importance == 0.2
+        assert updated.metadata == {"a": "1"}
+
+    def test_update_metadata_no_change_returns_self_without_events(self):
+        file = File.of(
+            {
+                "id": "f_same",
+                "path": "/tmp/same.txt",
+                "source_type": SourceType.FILE_SYSTEM,
+                "total_chunks": 4,
+                "average_importance": 0.5,
+                "metadata": {"x": "y"},
+            }
+        ).value
+        result = file.update_metadata(total_chunks=4, average_importance=0.5, metadata={"x": "y"})
+        assert result.is_ok is True
+        assert result.value is file
+        assert result.has_events() is False
 
     # --- add_keywords ---
 

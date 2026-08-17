@@ -21,7 +21,7 @@
     },
     "tests:e2e": {
       "executor": "nx:run-commands",
-      "description": "Docker-based e2e (jest.e2e.config.cjs, global-setup starts bensyne compose with the locally-built tuiteraz/bensyne image). Includes the moved mcp-protocol suite (venv-python server, no Docker dependency).",
+      "description": "Docker-based e2e (jest.e2e.config.cjs, global-setup starts bensyne compose with the locally-built bensyne-mcp image from `npx nx run bensyne-mcp:build:docker`). Includes the moved mcp-protocol suite (venv-python server, no Docker dependency).",
       "options": {
         "cwd": "apps/racochu",
         "command": "npm run test:e2e"

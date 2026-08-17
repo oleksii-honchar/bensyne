@@ -10,6 +10,17 @@ import { splitFrontmatter } from '@/utils/strategy-utils';
 import * as fsSync from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+
+// Mock fs/promises with real implementations by default; individual tests can
+// override specific methods (e.g. readdir) while keeping stat/readFile/etc. real.
+jest.mock('fs/promises', () => {
+  const actual = jest.requireActual<typeof import('fs/promises')>('fs/promises');
+  return {
+    ...actual,
+    readdir: jest.fn((...args: Parameters<typeof actual.readdir>) => actual.readdir(...args)),
+    stat: jest.fn((...args: Parameters<typeof actual.stat>) => actual.stat(...args)),
+  };
+});
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
@@ -523,6 +534,288 @@ describe('AgentSessionChunkingStrategy', () => {
       const chunks = result.getValue();
       // 1 frontmatter + 2 body chunks
       expect(chunks.length).toBe(3);
+    });
+  });
+
+  describe('companion edges', () => {
+    let testRoot: string;
+
+    const COMPANION_FILES = [
+      'session.md',
+      'specifications/spec.md',
+      'findings/findings.md',
+      'decisions/decisions.md',
+      'plans/implementation-plan.md',
+      'materials/unified-chunk-contract.md',
+    ];
+
+    async function createSessionRoot(companions: string[] = COMPANION_FILES): Promise<string> {
+      const root = path.join('/tmp', 'companion-edges-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      for (const rel of companions) {
+        const fullPath = path.join(root, rel);
+        await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
+        await fsPromises.writeFile(fullPath, 'content');
+      }
+      return root;
+    }
+
+    function createStrategyWithMastra(mastraChunks?: ReturnType<typeof aBodyChunk>[]) {
+      const mastra = aMastraChunkingService(mastraChunks ?? [aBodyChunk()]);
+      return new AgentSessionChunkingStrategy(
+        mockSessionMetadataService as unknown as SessionMetadataService,
+        mastra as unknown as MastraChunkingService,
+        mockLogger,
+      );
+    }
+
+    const sourceConfig = aWatchSourceConfig({
+      id: 'test-source',
+      path: '/test/path',
+      memoryBank: 'test-source',
+      exclude: ['**/node_modules/**'],
+      strategy: 'agent-sessions',
+    });
+
+    afterEach(async () => {
+      if (testRoot) {
+        await fsPromises.rm(testRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('emits parent_child edge to session.md and sibling edges for findings/findings.md chunk', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBeGreaterThan(0);
+
+      const chunk = chunks[0];
+      const edges = chunk.edges;
+      expect(edges).toBeDefined();
+
+      // parent_child edge to session.md
+      const parentEdge = edges!.find(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdge).toBeDefined();
+      expect(parentEdge!.strength).toBe(1);
+
+      // sibling edges to each other present companion (excluding F itself and session.md)
+      const siblingTargets = edges!
+        .filter(e => e.relation_type === 'sibling')
+        .map(e => e.target_path)
+        .sort();
+
+      const expectedSiblings = [
+        path.join(testRoot, 'specifications', 'spec.md'),
+        path.join(testRoot, 'decisions', 'decisions.md'),
+        path.join(testRoot, 'plans', 'implementation-plan.md'),
+        path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+      ].sort();
+
+      expect(siblingTargets).toEqual(expectedSiblings);
+    });
+
+    it('does NOT emit parent_child edge when chunking session.md itself, but emits sibling edges', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'session.md');
+
+      const result = await strategy.chunkFile(
+        'Session content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      const chunk = chunks[0];
+      const edges = chunk.edges;
+      expect(edges).toBeDefined();
+
+      // No parent_child edge to itself
+      const parentEdges = edges!.filter(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdges.length).toBe(0);
+
+      // Sibling edges to other present companions (excluding session.md itself)
+      const siblingTargets = edges!
+        .filter(e => e.relation_type === 'sibling')
+        .map(e => e.target_path)
+        .sort();
+
+      const expectedSiblings = [
+        path.join(testRoot, 'specifications', 'spec.md'),
+        path.join(testRoot, 'findings', 'findings.md'),
+        path.join(testRoot, 'decisions', 'decisions.md'),
+        path.join(testRoot, 'plans', 'implementation-plan.md'),
+        path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+      ].sort();
+
+      expect(siblingTargets).toEqual(expectedSiblings);
+    });
+
+    it('emits no edges for absent companions', async () => {
+      testRoot = await createSessionRoot(['session.md', 'findings/findings.md']);
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      const chunk = chunks[0];
+      const edges = chunk.edges;
+      expect(edges).toBeDefined();
+
+      // Only parent_child to session.md, no sibling edges (no other companions)
+      const parentEdge = edges!.find(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdge).toBeDefined();
+
+      const siblingEdges = edges!.filter(e => e.relation_type === 'sibling');
+      expect(siblingEdges.length).toBe(0);
+    });
+
+    it('produces chunk with empty edges when session root is unreadable (fs error)', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      // Simulate fs failure on readdir
+      (fsPromises.readdir as jest.Mock).mockRejectedValueOnce(new Error('EACCES'));
+
+      const result = await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Edges should be empty or undefined (no exception thrown)
+      for (const chunk of chunks) {
+        if (chunk.edges !== undefined) {
+          expect(chunk.edges).toEqual([]);
+        }
+      }
+    });
+
+    it('makes exactly ONE readdir call per process-file run', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      (fsPromises.readdir as jest.Mock).mockClear();
+
+      await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      // locateSessionRoot uses stat (not readdir), so only the companion listing calls readdir
+      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
+        call => call[0] === testRoot,
+      );
+      expect(rootCalls.length).toBe(1);
+    });
+
+    it('makes exactly ONE readdir call per process-file run (two runs = two calls)', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      (fsPromises.readdir as jest.Mock).mockClear();
+
+      await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+      await strategy.chunkFile(
+        'More findings',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
+        call => call[0] === testRoot,
+      );
+      expect(rootCalls.length).toBe(2);
+    });
+
+    it('edge target_path values are absolute paths starting with the session root', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await strategy.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      for (const chunk of chunks) {
+        if (chunk.edges && chunk.edges.length > 0) {
+          for (const edge of chunk.edges) {
+            expect(edge.target_path.startsWith(testRoot)).toBe(true);
+            expect(path.isAbsolute(edge.target_path)).toBe(true);
+          }
+        }
+      }
+    });
+
+    it('preserves existing session-frontmatter metadata behavior alongside edges', async () => {
+      testRoot = await createSessionRoot();
+      const strategy = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await strategy.chunkFile(
+        WITH_FRONTMATTER,
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBe(2); // frontmatter + body
+
+      // Frontmatter chunk still has session metadata
+      const fmMeta = chunks[0].metadata;
+      expect(fmMeta?.['session.id']).toBe('ses_test123');
+      expect(fmMeta?.['session.status']).toBe('in-progress');
+
+      // Body chunk still has session metadata
+      const bodyMeta = chunks[1].metadata;
+      expect(bodyMeta?.['session.id']).toBe('ses_test123');
     });
   });
 });

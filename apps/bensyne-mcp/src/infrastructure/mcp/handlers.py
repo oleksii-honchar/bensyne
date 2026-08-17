@@ -24,6 +24,7 @@ from src.application.use_cases.expand_file_relations_use_case import (
 from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
 from src.application.use_cases.search_files_use_case import SearchFilesUseCase
 from src.application.use_cases.sleep_use_case import SleepUseCase
+from src.application.services.file_enrichment_service import FileEnrichmentService
 from src.application.services.file_service import FileService
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
 from src.domain.exceptions import ValidationError
@@ -67,17 +68,42 @@ async def handle_remember(router: MemoryBankRouter, arguments: dict) -> dict:
     # Create hash index service for this memory bank
     hash_index_service = HashIndexService(memory_bank)
 
-    # Build parameters for the use case — enrich with memory_bank and hash
+    # Create per-bank file metadata repositories (materialization target)
+    from pathlib import Path
+
+    from src.infrastructure.storage.sqlite.file_chunk_repository import (
+        FileChunkRepository,
+    )
+    from src.infrastructure.storage.sqlite.file_metadata_connection import (
+        FileMetadataConnectionManager,
+    )
+    from src.infrastructure.storage.sqlite.file_relation_repository import (
+        FileRelationRepository,
+    )
+    from src.infrastructure.storage.sqlite.file_repository import FileRepository
+
+    bank_dir = Path(router.config.data_dir) / memory_bank
+    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
+    file_repo = FileRepository(conn_manager)
+    chunk_repo = FileChunkRepository(conn_manager)
+    relation_repo = FileRelationRepository(conn_manager)
+
+    file_service = FileService(
+        file_repository=file_repo,
+        chunk_repository=chunk_repo,
+        relation_repository=relation_repo,
+        logger=logger,
+    )
+
+    # Build parameters for the use case — enrich with memory_bank.
+    # The chunk hash lives in metadata.chunk_hash; the use case reads it directly.
     params = dict(arguments)
     params["memory_bank"] = memory_bank
-    # Extract file hash from arguments and pass as "hash" key
-    file_hash = HashIndexService.extract_file_hash(arguments)
-    if file_hash:
-        params["hash"] = file_hash
 
     use_case = RememberMemoryUseCase(
         memory_repository=instance,
         hash_index_service=hash_index_service,
+        file_service=file_service,
         logger=logger,
     )
     result = use_case.execute(params)
@@ -95,11 +121,40 @@ async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
 
     instance = await router.get_instance(memory_bank)
 
+    # Create per-bank file metadata repositories (enrichment source)
+    from pathlib import Path
+
+    from src.infrastructure.storage.sqlite.file_chunk_repository import (
+        FileChunkRepository,
+    )
+    from src.infrastructure.storage.sqlite.file_metadata_connection import (
+        FileMetadataConnectionManager,
+    )
+    from src.infrastructure.storage.sqlite.file_relation_repository import (
+        FileRelationRepository,
+    )
+    from src.infrastructure.storage.sqlite.file_repository import FileRepository
+
+    bank_dir = Path(router.config.data_dir) / memory_bank
+    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
+    file_repo = FileRepository(conn_manager)
+    chunk_repo = FileChunkRepository(conn_manager)
+    relation_repo = FileRelationRepository(conn_manager)
+
+    file_service = FileService(
+        file_repository=file_repo,
+        chunk_repository=chunk_repo,
+        relation_repository=relation_repo,
+        logger=logger,
+    )
+    file_enrichment_service = FileEnrichmentService(file_service=file_service, logger=logger)
+
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
     use_case = RecallMemoryUseCase(
         mnemosyne_client=instance,
+        file_enrichment_service=file_enrichment_service,
         logger=logger,
     )
     result = use_case.execute(params)
@@ -309,14 +364,19 @@ async def handle_search_files(router: MemoryBankRouter, arguments: dict) -> dict
     chunk_repo = FileChunkRepository(conn_manager)
     relation_repo = FileRelationRepository(conn_manager)
 
+    file_service = FileService(
+        file_repository=file_repo,
+        chunk_repository=chunk_repo,
+        relation_repository=relation_repo,
+        logger=logger,
+    )
+
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
     use_case = SearchFilesUseCase(
         mnemosyne_client=instance,
-        chunk_repository=chunk_repo,
-        file_repository=file_repo,
-        relation_repository=relation_repo,
+        file_service=file_service,
         logger=logger,
     )
     result = use_case.execute(params)
@@ -383,8 +443,12 @@ async def handle_expand_file_relations(router: MemoryBankRouter, arguments: dict
 async def handle_fetch_file(router: MemoryBankRouter, arguments: dict) -> dict:
     """Fetch and reconstruct file content from its memory chunks.
 
-    Looks up file by ID, retrieves all chunks ordered by chunk_index,
+    Default mode: looks up file by ID, retrieves all chunks ordered by chunk_index,
     reconstructs content with line continuity, and returns with metadata.
+
+    Neighbor mode (center_chunk_index provided): returns only the window
+    [center - adjacent_chunks .. center + adjacent_chunks] clamped to
+    0..total_chunks-1, each chunk with content, position and section_header.
     """
     memory_bank = require_memory_bank(arguments)
     file_id = arguments.get("file_id")

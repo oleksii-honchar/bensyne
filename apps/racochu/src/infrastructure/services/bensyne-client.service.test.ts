@@ -230,7 +230,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       await client.initialize();
     });
 
-    it('sends POST to /mcp with correct JSON-RPC for memory_remember', async () => {
+    it('sends POST to /mcp with correct JSON-RPC for rememberMemory', async () => {
       let lastOptions: unknown = null;
       let lastReq: MockReq | null = null;
 
@@ -258,12 +258,13 @@ describe('BensyneClient (Streamable HTTP)', () => {
         chunkIndex: 0,
         totalChunks: 2,
         sectionHeader: 'Test Header',
-        breadcrumb: 'root > test',
+        breadcrumb: '/root/test.md',
         language: 'typescript',
         fileRole: 'docs' as const,
         oversized: false,
         startLine: 1,
         endLine: 10,
+        metadata: { filePath: '/root/test.md', sourceId: 'file_system', fileHash: 'sha256-test-hash' },
         importance: 0.5,
         tags: [],
         memoryBank: 'default',
@@ -279,24 +280,26 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
       expect(body.jsonrpc).toBe('2.0');
       expect(body.method).toBe('tools/call');
-      expect(body.params.name).toBe('memory_remember');
+      expect(body.params.name).toBe('rememberMemory');
       expect(body.params.arguments.content).toBe('test content');
       expect(body.params.arguments.memory_bank).toBe('default');
       expect(body.params.arguments.importance).toBe(0.5);
       expect(body.params.arguments.source).toBe('default');
-      // BigInt serialized to string by JSON replacer
-      expect(body.params.arguments.metadata.id).toBe('1234567890123456789');
-      expect(body.params.arguments.metadata.chunkIndex).toBe(0);
-      expect(body.params.arguments.metadata.totalChunks).toBe(2);
-      expect(body.params.arguments.metadata.sectionHeader).toBe('Test Header');
-      expect(body.params.arguments.metadata.breadcrumb).toBe('root > test');
-      expect(body.params.arguments.metadata.fileRole).toBe('docs');
+      // Unified chunk contract v1 metadata (snake_case)
+      expect(body.params.arguments.metadata.contract_version).toBe(1);
+      expect(body.params.arguments.metadata.file_path).toBe('/root/test.md');
+      expect(body.params.arguments.metadata.chunk_index).toBe(0);
+      expect(body.params.arguments.metadata.total_chunks).toBe(2);
+      expect(body.params.arguments.metadata.section_header).toBe('Test Header');
+      expect(body.params.arguments.metadata.start_line).toBe(1);
+      expect(body.params.arguments.metadata.end_line).toBe(10);
+      expect(body.params.arguments.metadata.source_type).toBe('file_system');
+      expect(body.params.arguments.metadata.file_role).toBe('docs');
       expect(body.params.arguments.metadata.language).toBe('typescript');
-      expect(body.params.arguments.metadata.startLine).toBe(1);
-      expect(body.params.arguments.metadata.endLine).toBe(10);
-      expect(body.params.arguments.metadata.importance).toBe(0.5);
+      // Hash discipline (contract rule 4b): hashes live in metadata only — no top-level hash arg
+      expect(body.params.arguments).not.toHaveProperty('hash');
+      expect(body.params.arguments.metadata.file_hash).toBe('sha256-test-hash');
       expect(body.params.arguments.metadata.tags).toEqual([]);
-      expect(body.params.arguments.metadata.memoryBank).toBe('default');
     });
 
     it('parses stored response and returns ok with memory_id and status', async () => {
@@ -385,10 +388,10 @@ describe('BensyneClient (Streamable HTTP)', () => {
 
       const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
       expect(body.params.arguments.memory_bank).toBe('vault-knowledge');
-      expect(body.params.arguments.metadata.memoryBank).toBe('vault-knowledge');
+      expect(body.params.arguments.source).toBe('vault-knowledge');
     });
 
-    it('includes importance in both top-level args and metadata', async () => {
+    it('includes importance in top-level args', async () => {
       let lastReq: MockReq | null = null;
 
       (http.request as jest.Mock).mockImplementation(
@@ -431,7 +434,6 @@ describe('BensyneClient (Streamable HTTP)', () => {
 
       const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
       expect(body.params.arguments.importance).toBe(0.9);
-      expect(body.params.arguments.metadata.importance).toBe(0.9);
     });
 
     it('includes tags in both top-level args and metadata', async () => {
@@ -568,8 +570,6 @@ describe('BensyneClient (Streamable HTTP)', () => {
       expect(body.params.arguments.memory_bank).toBe('default');
       expect(body.params.arguments.importance).toBe(0.5);
       expect(body.params.arguments.source).toBe('default');
-      expect(body.params.arguments.metadata.memoryBank).toBe('default');
-      expect(body.params.arguments.metadata.importance).toBe(0.5);
       expect(body.params.arguments.metadata.tags).toEqual([]);
     });
 
@@ -613,7 +613,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       await client.initialize();
     });
 
-    it('sends POST to /mcp with memory_recall tool call', async () => {
+    it('sends POST to /mcp with recallMemory tool call', async () => {
       let lastOptions: unknown = null;
       let lastReq: MockReq | null = null;
 
@@ -645,14 +645,16 @@ describe('BensyneClient (Streamable HTTP)', () => {
 
       const result = await client.recall('test query');
       expect(result.isOk()).toBe(true);
-      expect(result.getValue()).toEqual(['result 1', 'result 2']);
+      // Results without file_enrichment map byte-identical to today's shape:
+      // no added keys, content preserved.
+      expect(result.getValue()).toEqual([{ content: 'result 1' }, { content: 'result 2' }]);
 
       const opts = lastOptions as { path: string };
       expect(opts.path).toBe('/mcp');
 
       const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
       expect(body.method).toBe('tools/call');
-      expect(body.params.name).toBe('memory_recall');
+      expect(body.params.name).toBe('recallMemory');
       expect(body.params.arguments.query).toBe('test query');
       expect(body.params.arguments.memory_bank).toBe('default');
     });
@@ -709,6 +711,165 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const result = await client.recall('test query');
       expect(result.isKo()).toBe(true);
       expect(result.getErrors()[0].message).toContain('Vector search failed');
+    });
+
+    it('passes file_enrichment through intact for results that carry it (S6 tolerance)', async () => {
+      const enrichment = {
+        file: { id: 'f_1', path: '/notes/a.md', total_chunks: 3, average_importance: 0.7, metadata: {} },
+        relations: [
+          { id: 'fr_1', relation_type: 'references', strength: 0.9 },
+          { id: 'fr_2', relation_type: 'derived_from', strength: 0.5 },
+        ],
+        related_files: [{ id: 'f_2', path: '/notes/b.md', summary: 'Summary of b' }],
+        summary_chain: ['File summary', 'Section summary'],
+        traversal: { file_id: 'f_1', relation_ids: ['fr_1', 'fr_2'] },
+      };
+
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      status: 'success',
+                      results: [{ content: 'file-based memory', file_enrichment: enrichment }],
+                    }),
+                  },
+                ],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const result = await client.recall('enriched query');
+      expect(result.isOk()).toBe(true);
+      const values = result.getValue();
+      expect(values).toHaveLength(1);
+      // Deep-equal: the bensyne-owned block reaches the caller untouched.
+      expect(values[0].file_enrichment).toEqual(enrichment);
+      expect(values[0].content).toBe('file-based memory');
+    });
+
+    it('tolerates additive file_hash/chunk_hash keys on recall results (ignored, content preserved)', async () => {
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      status: 'success',
+                      results: [
+                        { content: 'result A', file_hash: 'ff'.repeat(32), chunk_hash: 'aa'.repeat(32) },
+                        { content: 'result B' },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const result = await client.recall('tolerance query');
+      expect(result.isOk()).toBe(true);
+      // Additive hash keys are tolerated (not mapped through) — results map to content only.
+      expect(result.getValue()).toEqual([{ content: 'result A' }, { content: 'result B' }]);
+    });
+
+    it('maps a null file_enrichment (pure memory) to null without dropping the result', async () => {
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      status: 'success',
+                      results: [{ content: 'pure memory', file_enrichment: null }],
+                    }),
+                  },
+                ],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const result = await client.recall('pure query');
+      expect(result.isOk()).toBe(true);
+      const values = result.getValue();
+      expect(values).toHaveLength(1);
+      expect(values[0].file_enrichment).toBeNull();
+      expect(values[0].content).toBe('pure memory');
+    });
+
+    it('maps results with and without file_enrichment side by side, preserving order', async () => {
+      const enrichment = { file: { id: 'f_9' }, relations: [] };
+
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      status: 'success',
+                      results: [
+                        { content: 'with enrichment', file_enrichment: enrichment },
+                        { content: 'without enrichment' },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const result = await client.recall('mixed query');
+      expect(result.isOk()).toBe(true);
+      const values = result.getValue();
+      expect(values).toHaveLength(2);
+      expect(values[0]).toEqual({ content: 'with enrichment', file_enrichment: enrichment });
+      // Without the key ⇒ no added keys (byte-identical to today's mapping).
+      expect(Object.keys(values[1])).toEqual(['content']);
     });
   });
 

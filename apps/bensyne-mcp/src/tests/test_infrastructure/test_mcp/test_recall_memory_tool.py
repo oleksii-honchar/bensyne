@@ -154,6 +154,21 @@ class TestRecallMemoryToolRegistration:
         tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "memory_recall"]
         assert len(tool_calls) == 0, "memory_recall tool should NOT be registered"
 
+    def test_recall_memory_tool_exposes_optional_enrich_limit(self) -> None:
+        """recallMemory tool signature exposes optional enrich_limit (int, default 5)."""
+        from src.app import register_tools
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+
+        register_tools(mock_mcp, mock_router)
+
+        import inspect
+        from src.app import register_tools as _register_tools
+
+        source = inspect.getsource(_register_tools)
+        assert "enrich_limit: int" in source
+
     def test_recall_memory_tool_accepts_query_and_limit(self) -> None:
         """recallMemory tool should accept query (str), memory_bank (str), and limit (int)."""
         from src.app import register_tools
@@ -181,6 +196,18 @@ class TestRecallMemoryToolRegistration:
         assert "query: str" in source
         assert "memory_bank: str" in source
         assert "limit: int" in source
+
+    def test_tool_registry_still_exactly_11_tools(self) -> None:
+        """Adding enrich_limit must NOT add a new tool — registry stays at exactly 11."""
+        from src.app import register_tools
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+
+        register_tools(mock_mcp, mock_router)
+
+        names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
+        assert len(names) == 11
 
 
 # ---------------------------------------------------------------------------
@@ -344,3 +371,133 @@ class TestRecallMemoryHandler:
             assert call_args.get("limit") is None or call_args.get("limit") == 10
 
         asyncio.run(run())
+
+
+class TestHandleRecallEnrichmentWiring:
+    """handle_recall wires FileEnrichmentService (same factory pattern as remember/forget)."""
+
+    def test_handler_constructs_file_enrichment_service(self, router: MemoryBankRouter) -> None:
+        """handle_recall must build a real FileEnrichmentService and inject it into the use case."""
+        from src.infrastructure.mcp.handlers import handle_recall
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [],
+                "memory_bank": "test-ns",
+            }
+        )
+
+        mock_uc_cls: list[MagicMock] = []
+        mock_enrichment_cls: list[MagicMock] = []
+
+        async def run() -> None:
+            with (
+                patch(
+                    "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
+                    return_value=mock_use_case,
+                ) as uc_cls,
+                patch("src.infrastructure.mcp.handlers.FileEnrichmentService") as enrichment_cls,
+            ):
+                mock_uc_cls.append(uc_cls)
+                mock_enrichment_cls.append(enrichment_cls)
+                await handle_recall(router, {"query": "test", "memory_bank": "test-ns"})
+
+        asyncio.run(run())
+
+        mock_uc_cls = mock_uc_cls[0]
+        mock_enrichment_cls = mock_enrichment_cls[0]
+        assert mock_uc_cls.call_count == 1
+        uc_kwargs = mock_uc_cls.call_args.kwargs
+        assert "file_enrichment_service" in uc_kwargs
+        # The injected service must be the instance produced by FileEnrichmentService(...)
+        assert uc_kwargs["file_enrichment_service"] is mock_enrichment_cls.return_value
+        mock_enrichment_cls.assert_called_once()
+
+    def test_handler_passes_enrich_limit_to_use_case(self, router: MemoryBankRouter) -> None:
+        """handle_recall should pass enrich_limit through to the use case params."""
+        from src.infrastructure.mcp.handlers import handle_recall
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "results": [],
+                "memory_bank": "test-ns",
+            }
+        )
+
+        async def run() -> None:
+            with (
+                patch("src.infrastructure.mcp.handlers.RecallMemoryUseCase", return_value=mock_use_case),
+                patch("src.infrastructure.mcp.handlers.FileEnrichmentService"),
+            ):
+                await handle_recall(
+                    router,
+                    {"query": "test", "memory_bank": "test-ns", "enrich_limit": 2},
+                )
+
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["enrich_limit"] == 2
+
+        asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# fetchFile neighbor-mode params (Task 17) — additive, registry stays at 11
+# ---------------------------------------------------------------------------
+
+
+class TestFetchFileNeighborParams:
+    """fetchFile tool exposes optional center_chunk_index + adjacent_chunks."""
+
+    def test_fetch_file_tool_exposes_neighbor_params(self) -> None:
+        from src.app import register_tools
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+
+        register_tools(mock_mcp, mock_router)
+
+        fetch_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "fetchFile"]
+        assert len(fetch_calls) == 1
+
+        import inspect
+        from src.app import register_tools as _register_tools
+
+        source = inspect.getsource(_register_tools)
+        assert "center_chunk_index: int | None = None" in source
+        assert "adjacent_chunks: int = 1" in source
+
+    def test_fetch_file_tool_passes_neighbor_params_to_handler(self) -> None:
+        """center_chunk_index/adjacent_chunks are forwarded to handle_fetch_file."""
+        from src.app import register_tools
+        from src.infrastructure import mcp as mcp_module
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+        register_tools(mock_mcp, mock_router)
+
+        fetch_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "fetchFile"]
+        assert len(fetch_calls) == 1
+        # The decorator factory returns a decorator; the inner function is registered
+        # via mcp.tool(name=...). Inspect the decorated function's closure behavior
+        # by checking the source forwards both params.
+        import inspect
+        from src.app import register_tools as _register_tools
+
+        source = inspect.getsource(_register_tools)
+        assert 'args["center_chunk_index"]' in source
+        assert 'args["adjacent_chunks"]' in source
+
+    def test_registry_still_exactly_11_tools_after_neighbor_params(self) -> None:
+        """Adding neighbor params must NOT add a new tool — registry stays at exactly 11."""
+        from src.app import register_tools
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+
+        register_tools(mock_mcp, mock_router)
+
+        names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
+        assert len(names) == 11
+        assert "fetchFile" in names

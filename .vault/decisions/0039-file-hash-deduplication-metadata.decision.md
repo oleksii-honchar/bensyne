@@ -5,13 +5,14 @@ system: racochu
 title: "Use File Hash in Metadata for Deduplication"
 status: accepted
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-07T18:01:00Z"
+updatedAt: "2026-08-17T11:32:38Z"
 tags: [deduplication, file-hash, cross-device]
 supersedes: []
 superseded_by: []
 see_also:
   - concepts/0020-file-hash-deduplication.concept.md
   - decisions/0040-native-machine-id-hardware-detection.decision.md
+  - decisions/0048-dual-hash-wire-contract.decision.md
   - specifications/0005-file-hash-deduplication.spec.md
 deprecated:
   date: null

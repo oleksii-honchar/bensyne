@@ -5,9 +5,9 @@ system: bensyne-mcp
 title: "Use SQLite HashIndex for File Hash Deduplication"
 status: accepted
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-07T18:01:00Z"
+updatedAt: "2026-08-17T11:32:38Z"
 tags: [deduplication, hash-index, sqlite]
-see_also: [concepts/0001-hash-index.concept.md]
+see_also: [concepts/0001-hash-index.concept.md, decisions/0048-dual-hash-wire-contract.decision.md]
 ---
 
 # DEC-0008: Use SQLite HashIndex for File Hash Deduplication

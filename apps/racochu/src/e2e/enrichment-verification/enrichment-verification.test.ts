@@ -158,15 +158,24 @@ When enrichment is enabled and the LLM endpoint is reachable, each chunk should 
     console.log(`[E2E-Enrichment] Recall returned ${recallResults.length} results`);
 
     expect(recallResults.length).toBeGreaterThan(0);
-    const foundMarker = recallResults.some(r => r.includes(marker));
+    const foundMarker = recallResults.some(r => r.content.includes(marker));
     expect(foundMarker).toBe(true);
     console.log(`[E2E-Enrichment] Marker "${marker}" found in recall results`);
 
     // Verify that at least one recall result contains enrichment-related content
     // (the metadata is stored alongside the content, so the recall should return the chunk text)
-    const enrichedResult = recallResults.find(r => r.includes('enrichment') || r.includes('Enrichment'));
+    const enrichedResult = recallResults.find(r => r.content.includes('enrichment') || r.content.includes('Enrichment'));
     expect(enrichedResult).toBeDefined();
-    console.log(`[E2E-Enrichment] Enrichment content found in recall: "${enrichedResult?.slice(0, 120)}..."`);
+    console.log(`[E2E-Enrichment] Enrichment content found in recall: "${enrichedResult?.content.slice(0, 120)}..."`);
+
+    // File-based memories are recalled with an opaque bensyne-owned file_enrichment block
+    // (Task 13 / S6 tolerance — racochu passes it through without parsing the shape).
+    // The marker hit is a file chunk, so its result must carry the enrichment block.
+    const markerResult = recallResults.find(r => r.content.includes(marker));
+    expect(markerResult?.file_enrichment).toBeDefined();
+    console.log(
+      `[E2E-Enrichment] file_enrichment present on marker result: ${JSON.stringify(markerResult?.file_enrichment ?? null).slice(0, 160)}`,
+    );
 
     console.log(`[E2E-Enrichment] Full enrichment flow verified successfully`);
   }, 120000);

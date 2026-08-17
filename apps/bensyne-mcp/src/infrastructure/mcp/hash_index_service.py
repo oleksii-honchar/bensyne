@@ -1,7 +1,7 @@
-"""HashIndexService — file hash → memory_id deduplication.
+"""HashIndexService — chunk hash → memory_id deduplication.
 
 SQLAlchemy-backed SQLite hash index with Result-returning methods.
-Includes utility methods for extracting file hashes from memory arguments.
+Includes utility methods for extracting chunk hashes from memory arguments.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, Text, create_engine, event
+from sqlalchemy import String, Text, create_engine, event, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -37,12 +37,12 @@ class _HashIndexBase(DeclarativeBase):
 class HashIndexRow(_HashIndexBase):
     """Row in the `hash_index` table.
 
-    Maps a file SHA-256 hash to the Mnemosyne memory_id for deduplication.
+    Maps a chunk content hash to the Mnemosyne memory_id for deduplication.
     """
 
     __tablename__ = "hash_index"
 
-    file_hash: Mapped[str] = mapped_column(Text, primary_key=True)
+    chunk_hash: Mapped[str] = mapped_column(Text, primary_key=True)
     memory_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
@@ -79,9 +79,29 @@ class _HashIndexConnection:
             connect_args={"check_same_thread": False},
         )
 
+    def _migrate_legacy_schema(self) -> None:
+        """Migrate a legacy file_hash-keyed hash_index table to the chunk_hash schema.
+
+        One-time, idempotent migration: the legacy table is dropped and
+        recreated with the new chunk_hash primary key. Rows are NOT copied —
+        legacy keys are file hashes (a different value space from chunk
+        content hashes), so copying would produce incorrect dedup entries.
+        """
+        inspector = inspect(self._engine)
+        if not inspector.has_table("hash_index"):
+            return
+        columns = {column["name"] for column in inspector.get_columns("hash_index")}
+        if "file_hash" in columns:
+            logger.info(
+                "Migrating legacy file_hash hash_index table to chunk_hash schema",
+                db_path=str(self._db_path),
+            )
+            HashIndexRow.__table__.drop(self._engine)
+
     def _ensure_tables(self) -> None:
-        """Create the hash_index table if it doesn't exist."""
+        """Create the hash_index table, migrating a legacy schema if present."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy_schema()
         _HashIndexBase.metadata.create_all(self._engine)
 
     def get_session(self) -> Session:
@@ -95,7 +115,7 @@ class _HashIndexConnection:
 
 
 class HashIndexService:
-    """SQLAlchemy-backed hash index mapping file_hash → memory_id.
+    """SQLAlchemy-backed hash index mapping chunk_hash → memory_id.
 
     Thread-safe via per-operation locking. Uses WAL mode for concurrent reads.
     Database is created lazily on first use; parent directory is created if needed.
@@ -114,31 +134,31 @@ class HashIndexService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def is_file_based_memory(arguments: dict[str, Any]) -> bool:
-        """Return True if the memory arguments contain a fileHash in metadata."""
+    def has_chunk_hash(arguments: dict[str, Any]) -> bool:
+        """Return True if the memory arguments contain a chunk_hash in metadata."""
         metadata = arguments.get("metadata")
         if not isinstance(metadata, dict):
             return False
-        return "fileHash" in metadata
+        return "chunk_hash" in metadata
 
     @staticmethod
-    def extract_file_hash(arguments: dict[str, Any]) -> str | None:
-        """Extract the fileHash from memory arguments metadata, or None if absent."""
+    def extract_chunk_hash(arguments: dict[str, Any]) -> str | None:
+        """Extract the chunk_hash from memory arguments metadata, or None if absent."""
         metadata = arguments.get("metadata")
         if not isinstance(metadata, dict):
             return None
-        return metadata.get("fileHash")
+        return metadata.get("chunk_hash")
 
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
 
-    def lookup(self, file_hash: str) -> Result[str | None]:
-        """Return memory_id for the given file_hash, or None if not found."""
+    def lookup(self, chunk_hash: str) -> Result[str | None]:
+        """Return memory_id for the given chunk_hash, or None if not found."""
         with self._lock:
             session = self._conn.get_session()
             try:
-                row = session.get(HashIndexRow, file_hash)
+                row = session.get(HashIndexRow, chunk_hash)
                 return Result.ok(row.memory_id if row else None)
             except Exception as exc:
                 logger.error("HashIndex lookup failed", memory_bank=self.memory_bank, error=str(exc))
@@ -146,14 +166,14 @@ class HashIndexService:
             finally:
                 session.close()
 
-    def store(self, file_hash: str, memory_id: str) -> Result[None]:
-        """Insert or replace the mapping for file_hash → memory_id."""
+    def store(self, chunk_hash: str, memory_id: str) -> Result[None]:
+        """Insert or replace the mapping for chunk_hash → memory_id."""
         with self._lock:
             session = self._conn.get_session()
             try:
-                row = session.get(HashIndexRow, file_hash)
+                row = session.get(HashIndexRow, chunk_hash)
                 if row is None:
-                    row = HashIndexRow(file_hash=file_hash, memory_id=memory_id)
+                    row = HashIndexRow(chunk_hash=chunk_hash, memory_id=memory_id)
                     session.add(row)
                 else:
                     row.memory_id = memory_id
@@ -169,7 +189,7 @@ class HashIndexService:
     def remove(self, memory_id: str) -> Result[str | None]:
         """Remove the hash entry for a given memory_id.
 
-        Returns the file_hash that was removed, or None if no entry found.
+        Returns the chunk_hash that was removed, or None if no entry found.
         """
         with self._lock:
             session = self._conn.get_session()
@@ -177,10 +197,10 @@ class HashIndexService:
                 row = session.query(HashIndexRow).filter_by(memory_id=memory_id).first()
                 if row is None:
                     return Result.ok(None)
-                file_hash = row.file_hash
+                chunk_hash = row.chunk_hash
                 session.delete(row)
                 session.commit()
-                return Result.ok(file_hash)
+                return Result.ok(chunk_hash)
             except Exception as exc:
                 session.rollback()
                 logger.error("HashIndex remove failed", memory_bank=self.memory_bank, error=str(exc))

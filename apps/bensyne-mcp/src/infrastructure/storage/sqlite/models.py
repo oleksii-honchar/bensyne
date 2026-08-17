@@ -135,6 +135,10 @@ class FileChunkORM(Base):
     is_partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # V6 columns
+    parent_unit_ref: Mapped[str | None] = mapped_column(Text)
+    parent_unit_summary: Mapped[str | None] = mapped_column(Text)
+
     # Relationships
     file: Mapped["FileORM"] = relationship("FileORM", back_populates="chunks")
 

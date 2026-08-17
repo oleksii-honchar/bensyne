@@ -1,4 +1,4 @@
-import { ContentChunk, FILE_ROLES } from './content-chunk.entity';
+import { ContentChunk, FILE_RELATION_TYPES, FILE_ROLES } from './content-chunk.entity';
 import { aContentChunk } from './content-chunk.entity.test-utils';
 
 describe('Chunk', () => {
@@ -247,6 +247,86 @@ describe('Chunk', () => {
       expect(FILE_ROLES.CONFIG).toBe('config');
       expect(FILE_ROLES.CODE).toBe('code');
       expect(FILE_ROLES.DOCS).toBe('docs');
+    });
+  });
+
+  describe('Chunk.of — edges', () => {
+    it('with valid edges returns ok and preserves exact values', () => {
+      const edges = [
+        { target_path: '/vault/notes/a.md', relation_type: 'parent_child', strength: 0.8, description: 'child note' },
+        { target_path: '/vault/notes/b.md', relation_type: 'backlink', strength: 1 },
+      ];
+      const chunk = aContentChunk({ edges });
+
+      expect(chunk.edges).toEqual(edges);
+    });
+
+    it('with omitted edge strength defaults to 1', () => {
+      const p = aContentChunk().toJson();
+      const result = ContentChunk.of({ ...p, edges: [{ target_path: '/x.md', relation_type: 'sibling' }] } as never);
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue().edges).toEqual([{ target_path: '/x.md', relation_type: 'sibling', strength: 1 }]);
+    });
+
+    it('with edge strength > 1 returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edges: [{ target_path: '/x.md', relation_type: 'sibling', strength: 1.5 }],
+      } as never);
+
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('with edge strength < 0 returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edges: [{ target_path: '/x.md', relation_type: 'sibling', strength: -0.1 }],
+      } as never);
+
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('with empty target_path returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edges: [{ target_path: '', relation_type: 'sibling' }],
+      } as never);
+
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('with unknown relation_type returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edges: [{ target_path: '/x.md', relation_type: 'not_a_relation' }],
+      } as never);
+
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('without edges field parses unchanged', () => {
+      const chunk = aContentChunk();
+
+      expect(chunk.edges).toBeUndefined();
+      expect(Object.hasOwn(chunk.toJson(), 'edges')).toBe(false);
+    });
+  });
+
+  describe('FILE_RELATION_TYPES', () => {
+    it('covers exactly the bensyne RelationType values', () => {
+      const expected = [
+        'parent_child',
+        'sibling',
+        'backlink',
+        'folder_hierarchy',
+        'cross_reference',
+        'version',
+        'override',
+        'dependency',
+        'recommendation',
+      ];
+      expect([...FILE_RELATION_TYPES].sort()).toEqual([...expected].sort());
     });
   });
 });

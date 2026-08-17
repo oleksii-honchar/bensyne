@@ -590,6 +590,99 @@ class TestCheckMigrations:
             conn.close()
 
 
+def _build_pre_v6_db(db_path: Path) -> None:
+    """Build a database at schema version 5 (pre-V6) by applying V1–V5 raw SQL."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for migration in MIGRATIONS:
+            if migration.version > 5:
+                break
+            conn.executescript(migration.up_sql)
+            conn.execute("DELETE FROM schema_version")
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)",
+                (migration.version,),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _file_chunks_column_names(db_path: Path) -> list[str]:
+    """Return the column names of file_chunks via PRAGMA table_info."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute("PRAGMA table_info(file_chunks)")
+        return [row[1] for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+class TestMigrationV6:
+    """V6 adds parent_unit_ref/parent_unit_summary to file_chunks, idempotently."""
+
+    def test_v6_is_sequentially_last_migration(self) -> None:
+        assert MIGRATIONS[-1].version == 6
+        v6 = MIGRATIONS[-1]
+        assert "ALTER TABLE file_chunks ADD COLUMN parent_unit_ref TEXT" in v6.up_sql
+        assert "ALTER TABLE file_chunks ADD COLUMN parent_unit_summary TEXT" in v6.up_sql
+
+    def test_v6_applies_after_v5_on_pre_v6_db(self, tmp_bank_dir: Path) -> None:
+        """A pre-V6 (version 5) database migrates to V6 on manager init."""
+        db_path = tmp_bank_dir / "file_metadata.db"
+        _build_pre_v6_db(db_path)
+
+        mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        try:
+            assert mgr.check_migrations() == 6
+            columns = _file_chunks_column_names(db_path)
+            assert columns.count("parent_unit_ref") == 1
+            assert columns.count("parent_unit_summary") == 1
+        finally:
+            mgr.close()
+
+    def test_v6_idempotent_on_fresh_db(self, tmp_bank_dir: Path) -> None:
+        """Creating a fresh DB twice (second manager on same file) leaves each
+        column exactly once and no error."""
+        db_path = tmp_bank_dir / "file_metadata.db"
+        mgr1 = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        mgr1.close()
+
+        mgr2 = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        try:
+            assert mgr2.check_migrations() == 6
+            columns = _file_chunks_column_names(db_path)
+            assert columns.count("parent_unit_ref") == 1
+            assert columns.count("parent_unit_summary") == 1
+        finally:
+            mgr2.close()
+
+    def test_v6_idempotent_on_pre_v6_db(self, tmp_bank_dir: Path) -> None:
+        """Re-opening a pre-V6 DB twice migrates to V6 with each column once."""
+        db_path = tmp_bank_dir / "file_metadata.db"
+        _build_pre_v6_db(db_path)
+
+        mgr1 = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        mgr1.close()
+
+        mgr2 = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        try:
+            assert mgr2.check_migrations() == 6
+            columns = _file_chunks_column_names(db_path)
+            assert columns.count("parent_unit_ref") == 1
+            assert columns.count("parent_unit_summary") == 1
+        finally:
+            mgr2.close()
+
+    def test_v1_v5_behavior_unchanged(self, tmp_bank_dir: Path) -> None:
+        """V1–V5 migrations are byte-identical to the pre-V6 list (append-only)."""
+        for i in range(5):
+            assert MIGRATIONS[i].version == i + 1
+            assert "parent_unit_ref" not in MIGRATIONS[i].up_sql
+            assert "parent_unit_summary" not in MIGRATIONS[i].up_sql
+
+
 class TestPerBankIsolation:
     """Each bank has its own isolated database."""
 

@@ -48,6 +48,7 @@ def _a_file(
         id=id,
         path=path,
         source_type=source_type,
+        file_role=None,
         hash=None,
         file_type=None,
         size=None,
@@ -56,6 +57,9 @@ def _a_file(
         aggregated_tags=tags or [],
         status=FileStatus.INDEXED,
         summary=summary,
+        total_chunks=0,
+        average_importance=0.5,
+        metadata={},
         created_at=NOW,
         updated_at=NOW,
     )
@@ -79,6 +83,9 @@ def _a_chunk(
         content_hash="abc",
         content_type=ContentType.TEXT,
         is_partial=False,
+        section_header=None,
+        parent_unit_ref=None,
+        parent_unit_summary=None,
         created_at=NOW,
         updated_at=NOW,
     )

@@ -78,7 +78,7 @@ describe('[E2E] File Hash Dedup — Same File From Second Device Is Deduplicated
     const resultsAfterFirst = recallAfterFirst.getValue();
     console.log(`[E2E-Dedup] Recall after first file: ${resultsAfterFirst.length} results`);
     expect(resultsAfterFirst.length).toBeGreaterThan(0);
-    expect(resultsAfterFirst.some(r => r.includes(marker))).toBe(true);
+    expect(resultsAfterFirst.some(r => r.content.includes(marker))).toBe(true);
 
     // Verify FileTracker has a mapping for the first file
     const tracker1 = await trackerRepo!.findByFilePath(filePath1);
@@ -117,7 +117,7 @@ describe('[E2E] File Hash Dedup — Same File From Second Device Is Deduplicated
     const resultsAfterSecond = recallAfterSecond.getValue();
     console.log(`[E2E-Dedup] Recall after second file: ${resultsAfterSecond.length} results`);
     expect(resultsAfterSecond.length).toBeGreaterThan(0);
-    expect(resultsAfterSecond.some(r => r.includes(marker))).toBe(true);
+    expect(resultsAfterSecond.some(r => r.content.includes(marker))).toBe(true);
 
     // CRITICAL: Memory count should be the same — dedup prevented a second memory
     expect(resultsAfterSecond.length).toBe(memoryCountAfterFirst);

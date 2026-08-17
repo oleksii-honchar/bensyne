@@ -5,6 +5,7 @@ import { ContentChunk } from '../../domain/content-chunk.entity';
 import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
 import { ConfigurationService } from '../config/configuration.service';
+import { BensyneRecallResult } from './bensyne-recall-result.type';
 import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 
@@ -53,7 +54,7 @@ interface McpToolResponse {
  * Streamable HTTP transport (POST to /mcp). Handles:
  * - MCP initialization handshake (initialize + notifications/initialized)
  * - Session tracking via Mcp-Session-Id header
- * - Tool calls: memory_remember (ingest chunks), memory_recall (semantic search)
+ * - Tool calls: rememberMemory (ingest chunks), recallMemory (semantic search)
  * - Health checks via ping
  * - Retry logic with exponential backoff for remember operations
  */
@@ -200,7 +201,7 @@ export class BensyneClient implements OnApplicationBootstrap {
   }
 
   /**
-   * Ingest a content chunk via the memory_remember MCP tool.
+   * Ingest a content chunk via the rememberMemory MCP tool.
    *
    * Sends the chunk text and metadata to Mnemosyne for embedding and storage.
    * Retries up to maxRetries times on transient failures.
@@ -216,7 +217,7 @@ export class BensyneClient implements OnApplicationBootstrap {
       id: this.nextRequestId++,
       method: 'tools/call',
       params: {
-        name: 'memory_remember',
+        name: 'rememberMemory',
         arguments: payload,
       },
     };
@@ -413,7 +414,7 @@ export class BensyneClient implements OnApplicationBootstrap {
   }
 
   /**
-   * Perform semantic search via the memory_recall MCP tool.
+   * Perform semantic search via the recallMemory MCP tool.
    *
    * Queries Mnemosyne for memories matching the query. Retries if empty results
    * are returned (to allow for eventual consistency after recent ingests).
@@ -422,14 +423,17 @@ export class BensyneClient implements OnApplicationBootstrap {
    * @param maxRetries - Maximum retry attempts on empty results (default: 5)
    * @param retryDelayMs - Base delay between retries in ms (default: 1000)
    * @param memoryBank - Memory bank to search (default: 'default')
-   * @returns Result.ok with array of matching content strings; Result.ko on error
+   * @returns Result.ok with array of recall results; each result carries the
+   *          memory `content` plus, when bensyne adds it, an opaque
+   *          `file_enrichment` block passed through untouched (S6 tolerance);
+   *          Result.ko on error
    */
   async recall(
     query: string,
     maxRetries = 5,
     retryDelayMs = 1000,
     memoryBank = 'default',
-  ): Promise<Result<string[]>> {
+  ): Promise<Result<BensyneRecallResult[]>> {
     this.ensureConfigLoaded();
     this.logger.debug(`Recalling memories; query="${query}", memoryBank="${memoryBank}"`);
 
@@ -438,7 +442,7 @@ export class BensyneClient implements OnApplicationBootstrap {
       id: this.nextRequestId++,
       method: 'tools/call',
       params: {
-        name: 'memory_recall',
+        name: 'recallMemory',
         arguments: { query, limit: 20, memory_bank: memoryBank },
       },
     };
@@ -460,9 +464,22 @@ export class BensyneClient implements OnApplicationBootstrap {
           return Result.ko([new ErrorWithDetails(errMsg, 'RecallError')]);
         }
 
+        // Tolerant additive mapping (S6): each result passes through its
+        // `content` plus any bensyne-owned `file_enrichment` key untouched.
+        // Results without the key map byte-identical to today's shape.
         const rawResults = parsed.results;
-        const results = Array.isArray(rawResults)
-          ? rawResults.map(r => r?.content ?? '').filter(t => typeof t === 'string' && t.length > 0)
+        const results: BensyneRecallResult[] = Array.isArray(rawResults)
+          ? rawResults.flatMap((r): BensyneRecallResult[] => {
+              if (typeof r !== 'object' || r === null) return [];
+              const item = r as Record<string, unknown>;
+              const content = item.content;
+              if (typeof content !== 'string' || content.length === 0) return [];
+              const result: BensyneRecallResult = { content };
+              if ('file_enrichment' in item) {
+                result.file_enrichment = item.file_enrichment ?? null;
+              }
+              return [result];
+            })
           : [];
 
         if (results.length > 0) {

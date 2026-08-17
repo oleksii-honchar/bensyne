@@ -382,6 +382,53 @@ class TestDeleteRelation:
 
 
 # ---------------------------------------------------------------------------
+# delete_relations_by_file_id
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteRelationsByFileId:
+    """FileRelationRepository.delete_relations_by_file_id prune operations."""
+
+    def test_removes_relations_where_file_is_source_and_target(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        for fid in ("f1", "f2", "f3"):
+            _seed_file(file_repo, fid)
+        # f1 as source
+        repo.save_relation(_a_relation(id="pr1", source_file_id="f1", target_file_id="f2"))
+        # f1 as target
+        repo.save_relation(_a_relation(id="pr2", source_file_id="f3", target_file_id="f1"))
+        # unrelated pair
+        repo.save_relation(_a_relation(id="pr3", source_file_id="f2", target_file_id="f3"))
+
+        result = repo.delete_relations_by_file_id("f1")
+        assert result.is_ok is True
+
+        remaining = repo.get_relations_by_file_id("f1")
+        assert remaining.is_ok
+        assert remaining.value == []
+        # Relation between the two other files untouched
+        unrelated = repo.get_relation_by_id("pr3")
+        assert unrelated.is_ok
+        assert unrelated.value is not None
+
+    def test_no_relations_for_file_is_noop(self, repo: FileRelationRepository) -> None:
+        result = repo.delete_relations_by_file_id("nonexistent")
+        assert result.is_ok is True
+        assert result.value is False
+
+    def test_returns_true_when_rows_deleted(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        repo.save_relation(_a_relation(id="pv1", source_file_id="f1", target_file_id="f2"))
+        result = repo.delete_relations_by_file_id("f1")
+        assert result.is_ok is True
+        assert result.value is True
+
+
+# ---------------------------------------------------------------------------
 # Round-trip
 # ---------------------------------------------------------------------------
 

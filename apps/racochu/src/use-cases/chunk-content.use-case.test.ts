@@ -1,5 +1,6 @@
 import '@/utils/mastra-rag.test-utils';
 
+import * as crypto from 'crypto';
 import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
@@ -11,6 +12,15 @@ import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { Result } from '../utils/result';
 import { ChunkContentUseCase } from './chunk-content.use-case';
+
+// Node's crypto module is frozen (jest.spyOn cannot redefine createHash), so the
+// module is mocked with a controllable createHash that delegates to the real
+// implementation by default. This lets tests force the non-fatal failure path
+// while still asserting against genuine sha256 digests.
+jest.mock('crypto', () => ({ createHash: jest.fn() }));
+const mockedCreateHash = crypto.createHash as unknown as jest.Mock;
+const realCrypto = jest.requireActual<typeof crypto>('crypto');
+const sha256 = (text: string) => realCrypto.createHash('sha256').update(text).digest('hex');
 
 const defaultEnhancementConfig: EnhancementConfig = {
   maxCharacters: { prose: 200, code: 400, configuration: 300, documentation: 300 },
@@ -64,6 +74,9 @@ describe('ChunkContentUseCase', () => {
 
     mockLogger = aLogger();
 
+    // Default: real sha256. Individual tests override to force the failure path.
+    mockedCreateHash.mockImplementation(realCrypto.createHash);
+
     useCase = new ChunkContentUseCase(
       mockStrategyRouter as unknown as StrategyRouter,
       mockEnhancementPipelineService as unknown as EnhancementPipelineService,
@@ -90,7 +103,13 @@ describe('ChunkContentUseCase', () => {
       });
 
       expect(result.isOk()).toBe(true);
-      expect(result.getValue()).toEqual(chunks);
+      const returned = result.getValue();
+      expect(returned).toHaveLength(2);
+      expect(returned[0].text).toBe('chunk 1');
+      expect(returned[1].text).toBe('chunk 2');
+      // chunkHash is always injected (sha256 of the exact chunk text)
+      expect(returned[0].metadata?.chunkHash).toBe(sha256('chunk 1'));
+      expect(returned[1].metadata?.chunkHash).toBe(sha256('chunk 2'));
     });
 
     it('should call StrategyRouter.selectStrategy with sourceConfig', async () => {
@@ -376,7 +395,13 @@ describe('ChunkContentUseCase', () => {
       });
 
       expect(result.isOk()).toBe(true);
-      expect(result.getValue()).toEqual(enhancedChunks);
+      const returned = result.getValue();
+      expect(returned).toHaveLength(1);
+      // Enhanced values returned (not raw), proving the pipeline ran
+      expect(returned[0].text).toBe('raw chunk 1');
+      expect(returned[0].importance).toBe(0.8);
+      expect(returned[0].tags).toEqual(['tag1']);
+      expect(returned[0].memoryBank).toBe('my-memoryBank');
       expect(mockEnhancementPipelineService.enhance).toHaveBeenCalledWith(
         rawChunks,
         sourceId,
@@ -447,7 +472,9 @@ describe('ChunkContentUseCase', () => {
       });
 
       expect(result.isOk()).toBe(true);
-      expect(result.getValue()).toEqual(rawChunks);
+      const returned = result.getValue();
+      expect(returned).toHaveLength(1);
+      expect(returned[0].text).toBe('raw chunk');
     });
 
     it('should use enhancement config from ConfigurationService', async () => {
@@ -707,6 +734,107 @@ describe('ChunkContentUseCase', () => {
       const chunks = result.getValue();
       const allHashes = chunks.map(c => c.metadata?.fileHash);
       expect(allHashes).toEqual([fileHash, fileHash, fileHash]);
+    });
+  });
+
+  describe('chunkHash computation', () => {
+    it('computes chunkHash = sha256 of the exact chunk text for each chunk (normalization-drift guard)', async () => {
+      const textA = 'chunk alpha content';
+      const textB = 'chunk beta content';
+      const rawChunks = [aContentChunk({ text: textA }), aContentChunk({ text: textB })];
+
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(rawChunks));
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(rawChunks));
+
+      const result = await useCase.execute({
+        // Full content differs from each chunk's text — the hash must be of the
+        // chunk text as sent, NOT the whole content or a normalized variant.
+        content: textA + '\n\n' + textB,
+        filePath: '/path/to/file.md',
+        sourceId: 'src',
+        memoryBank: 'ns',
+        sourceConfig: defaultSourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks[0].metadata?.chunkHash).toBe(sha256(textA));
+      expect(chunks[1].metadata?.chunkHash).toBe(sha256(textB));
+      // Distinct texts ⇒ distinct hashes (guard against a constant/wrong input)
+      expect(chunks[0].metadata?.chunkHash).not.toBe(chunks[1].metadata?.chunkHash);
+    });
+
+    it('includes chunkHash alongside fileHash in chunk metadata', async () => {
+      const fileHash = 'file-hash-abc';
+      const text = 'some chunk text';
+      const rawChunks = [aContentChunk({ text, metadata: {} })];
+
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(rawChunks));
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(rawChunks));
+
+      const result = await useCase.execute({
+        content: text,
+        filePath: '/path/to/file.md',
+        sourceId: 'src',
+        memoryBank: 'ns',
+        sourceConfig: defaultSourceConfig,
+        fileHash,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.chunkHash).toBe(sha256(text));
+      expect(chunk.metadata?.fileHash).toBe(fileHash);
+    });
+
+    it('omits chunkHash (non-fatal) when hash computation throws, without failing the use case', async () => {
+      const text = 'chunk text';
+      const rawChunks = [aContentChunk({ text, metadata: {} })];
+
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(rawChunks));
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(rawChunks));
+      mockedCreateHash.mockImplementation(() => {
+        throw new Error('crypto boom');
+      });
+
+      const result = await useCase.execute({
+        content: text,
+        filePath: '/path/to/file.md',
+        sourceId: 'src',
+        memoryBank: 'ns',
+        sourceConfig: defaultSourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true); // non-fatal: no throw
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.chunkHash).toBeUndefined(); // key omitted
+      expect(chunk.text).toBe(text); // chunk still produced
+    });
+
+    it('still injects fileHash when chunkHash computation fails', async () => {
+      const fileHash = 'file-hash-abc';
+      const text = 'chunk text';
+      const rawChunks = [aContentChunk({ text, metadata: {} })];
+
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(rawChunks));
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(rawChunks));
+      mockedCreateHash.mockImplementation(() => {
+        throw new Error('crypto boom');
+      });
+
+      const result = await useCase.execute({
+        content: text,
+        filePath: '/path/to/file.md',
+        sourceId: 'src',
+        memoryBank: 'ns',
+        sourceConfig: defaultSourceConfig,
+        fileHash,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.chunkHash).toBeUndefined();
+      expect(chunk.metadata?.fileHash).toBe(fileHash);
     });
   });
 });

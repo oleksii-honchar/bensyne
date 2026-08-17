@@ -95,6 +95,18 @@ class TestToolSchemas:
         assert "default" not in params["memory_bank"]
         assert "memory_bank" in RECALL_SCHEMA["parameters"]["required"]
 
+    def test_recall_schema_has_optional_enrich_limit(self) -> None:
+        """RECALL_SCHEMA exposes optional enrich_limit (integer, default 5, min 0)."""
+        from src.infrastructure.mcp.schemas import RECALL_SCHEMA
+
+        params = RECALL_SCHEMA["parameters"]["properties"]
+        assert "enrich_limit" in params
+        assert params["enrich_limit"]["type"] == "integer"
+        assert params["enrich_limit"].get("default") == 5
+        assert params["enrich_limit"].get("minimum") == 0
+        # Optional — not in required list
+        assert "enrich_limit" not in RECALL_SCHEMA["parameters"]["required"]
+
     def test_forget_schema_memory_bank_required_no_default(self) -> None:
         from src.infrastructure.mcp.schemas import FORGET_SCHEMA
 
@@ -164,7 +176,7 @@ class TestHandleRememberDedup:
     """Deduplication integration in handle_remember via RememberMemoryUseCase."""
 
     def test_dedup_returns_deduplicated_when_hash_exists(self, router: MemoryBankRouter) -> None:
-        """When fileHash exists in index, return deduplicated status without calling remember."""
+        """When chunk_hash exists in index, return deduplicated status without calling remember."""
         from src.utils.result import Result
         from src.infrastructure.mcp.handlers import handle_remember
 
@@ -187,7 +199,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "test memory",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_abc123"},
+                        "metadata": {"chunk_hash": "sha256_abc123"},
                     },
                 )
 
@@ -198,7 +210,7 @@ class TestHandleRememberDedup:
         asyncio.run(run())
 
     def test_dedup_stores_and_indexes_new_hash(self, router: MemoryBankRouter) -> None:
-        """When fileHash is new, store memory and index the hash."""
+        """When chunk_hash is new, store memory and index the hash."""
         from src.utils.result import Result
         from src.infrastructure.mcp.handlers import handle_remember
 
@@ -221,7 +233,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "new memory",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_new_hash"},
+                        "metadata": {"chunk_hash": "sha256_new_hash"},
                     },
                 )
 
@@ -231,7 +243,7 @@ class TestHandleRememberDedup:
         asyncio.run(run())
 
     def test_dedup_pure_memory_bypasses_dedup(self, router: MemoryBankRouter) -> None:
-        """When no fileHash in metadata, normal flow unchanged — no hash index interaction."""
+        """When no chunk_hash in metadata, normal flow unchanged — no hash index interaction."""
         from src.utils.result import Result
         from src.infrastructure.mcp.handlers import handle_remember
 
@@ -263,7 +275,7 @@ class TestHandleRememberDedup:
         asyncio.run(run())
 
     def test_dedup_pure_memory_with_other_metadata(self, router: MemoryBankRouter) -> None:
-        """Memory with metadata but no fileHash bypasses dedup."""
+        """Memory with metadata but no chunk_hash bypasses dedup."""
         from src.utils.result import Result
         from src.infrastructure.mcp.handlers import handle_remember
 
@@ -319,7 +331,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "test memory",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_abc123"},
+                        "metadata": {"chunk_hash": "sha256_abc123"},
                     },
                 )
 
@@ -353,7 +365,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "test memory",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_abc123"},
+                        "metadata": {"chunk_hash": "sha256_abc123"},
                     },
                 )
 
@@ -387,7 +399,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "test",
                         "memory_bank": "my-bank",
-                        "metadata": {"fileHash": "sha256_abc"},
+                        "metadata": {"chunk_hash": "sha256_abc"},
                     },
                 )
 
@@ -422,7 +434,7 @@ class TestHandleRememberDedup:
                     {
                         "content": "test",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_abc"},
+                        "metadata": {"chunk_hash": "sha256_abc"},
                     },
                 )
 

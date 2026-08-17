@@ -29,12 +29,21 @@ class SourceType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class FileRole(str, Enum):
+    """File role classification (mirrors the contract v1 ``file_role`` values)."""
+
+    CONFIG = "config"
+    CODE = "code"
+    DOCS = "docs"
+
+
 class FileSchema(BaseModel):
     """Pydantic model for File entity validation."""
 
     id: str
     path: str = Field(min_length=1)
     source_type: SourceType
+    file_role: FileRole | None = None
     hash: str | None = None
     file_type: str | None = None
     size: int | None = Field(default=None, ge=0)
@@ -43,6 +52,9 @@ class FileSchema(BaseModel):
     aggregated_tags: list[str] = Field(default_factory=list)
     status: FileStatus = Field(default=FileStatus.PENDING)
     summary: str | None = None
+    total_chunks: int = Field(default=0, ge=0)
+    average_importance: float = Field(default=0.5, gt=0.0, le=1.0)
+    metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

@@ -50,6 +50,7 @@ def _a_file(
         id=id,
         path=path,
         source_type=source_type,
+        file_role=None,
         hash=VALID_HASH,
         file_type=None,
         size=None,
@@ -58,6 +59,9 @@ def _a_file(
         aggregated_tags=tags or [],
         status=status,
         summary=summary,
+        total_chunks=0,
+        average_importance=0.5,
+        metadata={},
         created_at=NOW,
         updated_at=NOW,
     )
@@ -81,6 +85,9 @@ def _a_chunk(
         content_hash="abc",
         content_type=ChunkContentType.TEXT,
         is_partial=False,
+        section_header=None,
+        parent_unit_ref=None,
+        parent_unit_summary=None,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -124,7 +131,10 @@ def chunk_repo() -> MagicMock:
 
 @pytest.fixture
 def relation_repo() -> MagicMock:
-    return MagicMock()
+    repo = MagicMock()
+    # Default stub for the forget-symmetry cleanup call (delete_file path).
+    repo.delete_relations_by_file_id.return_value = Result.ok(True)
+    return repo
 
 
 @pytest.fixture
@@ -334,6 +344,35 @@ class TestDeleteFile:
 
         assert result.is_ko is True
         file_repo.save_file.assert_not_called()
+
+    def test_deletes_relation_rows_on_delete(self, service: FileService, file_repo: MagicMock) -> None:
+        """delete_file removes the file's relation rows (forget symmetry)."""
+        existing = _a_file(id="f1")
+        file_repo.get_file_by_id.return_value = Result.ok(existing)
+
+        deleted_file = _a_file(id="f1", status=FileStatus.DELETED)
+        file_repo.save_file.return_value = Result.ok(deleted_file)
+
+        result = service.delete_file("f1")
+
+        assert result.is_ok is True
+        service.relation_repository.delete_relations_by_file_id.assert_called_once_with("f1")
+
+    def test_relation_delete_failure_does_not_fail_delete(self, service: FileService, file_repo: MagicMock) -> None:
+        """A relation-delete error degrades the delete to ko — no silent dangling rows."""
+        existing = _a_file(id="f1")
+        file_repo.get_file_by_id.return_value = Result.ok(existing)
+
+        deleted_file = _a_file(id="f1", status=FileStatus.DELETED)
+        file_repo.save_file.return_value = Result.ok(deleted_file)
+        service.relation_repository.delete_relations_by_file_id.return_value = Result.ko(
+            [ErrorWithDetails("RELATION_DELETE_BY_FILE_ID_ERROR", {"error": "boom"})]
+        )
+
+        result = service.delete_file("f1")
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "RELATION_DELETE_BY_FILE_ID_ERROR"
 
 
 # ===================================================================
@@ -770,6 +809,73 @@ class TestFindFilesByMemory:
 
         assert result.is_ok is True
         assert result.value == []
+
+
+# ===================================================================
+# Read passthroughs (enrichment consumers — D11)
+# ===================================================================
+
+
+class TestReadPassthroughs:
+    """Additive read passthroughs used by FileEnrichmentService."""
+
+    def test_get_file_by_id_delegates_to_file_repository(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        file = _a_file(id="f1")
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+
+        result = service.get_file_by_id("f1")
+
+        assert result.is_ok is True
+        assert result.value is file
+        file_repo.get_file_by_id.assert_called_once_with("f1")
+
+    def test_get_file_by_id_returns_none_when_missing(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        file_repo.get_file_by_id.return_value = Result.ok(None)
+
+        result = service.get_file_by_id("missing")
+
+        assert result.is_ok is True
+        assert result.value is None
+
+    def test_get_chunks_by_file_id_delegates_to_chunk_repository(
+        self, service: FileService, chunk_repo: MagicMock
+    ) -> None:
+        chunks = [_a_chunk(id="c1", memory_id="mem_1"), _a_chunk(id="c2", file_id="f1", memory_id="mem_2")]
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = service.get_chunks_by_file_id("f1")
+
+        assert result.is_ok is True
+        assert result.value == chunks
+        chunk_repo.get_chunks_by_file_id.assert_called_once_with("f1")
+
+    def test_get_chunk_by_memory_id_delegates_to_chunk_repository(
+        self, service: FileService, chunk_repo: MagicMock
+    ) -> None:
+        chunk = _a_chunk(id="c1", memory_id="mem_1")
+        chunk_repo.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+
+        result = service.get_chunk_by_memory_id("mem_1")
+
+        assert result.is_ok is True
+        assert result.value is chunk
+        chunk_repo.get_chunk_by_memory_id.assert_called_once_with("mem_1")
+
+    def test_get_related_file_by_id_resolves_via_file_repository(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        related = _a_file(id="f2", path="/vault/notes/b.md")
+        file_repo.get_file_by_id.return_value = Result.ok(related)
+
+        result = service.get_related_file_by_id("f2")
+
+        assert result.is_ok is True
+        assert result.value is related
+        file_repo.get_file_by_id.assert_called_once_with("f2")
 
 
 # ===================================================================

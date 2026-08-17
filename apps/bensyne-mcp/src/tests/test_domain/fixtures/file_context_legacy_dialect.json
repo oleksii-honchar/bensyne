@@ -1,0 +1,13 @@
+{
+  "breadcrumb": "/abs/path/to/legacy.md",
+  "chunkIndex": 0,
+  "totalChunks": 3,
+  "sectionHeader": "# Legacy Heading",
+  "startLine": 1,
+  "endLine": 20,
+  "hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "fileRole": "code",
+  "language": "python",
+  "session.id": "ses_legacy01",
+  "note.title": "Legacy Note"
+}

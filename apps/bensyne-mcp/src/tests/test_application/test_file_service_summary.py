@@ -40,6 +40,7 @@ def _a_file(
         id=id,
         path=path,
         source_type=source_type,
+        file_role=None,
         hash=VALID_HASH,
         file_type=None,
         size=None,
@@ -48,6 +49,9 @@ def _a_file(
         aggregated_keywords=keywords or [],
         aggregated_tags=tags or [],
         status=status,
+        total_chunks=0,
+        average_importance=0.5,
+        metadata={},
         created_at=NOW,
         updated_at=NOW,
     )

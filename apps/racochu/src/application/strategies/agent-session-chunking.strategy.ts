@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
+import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
@@ -10,6 +10,94 @@ import { Result } from '../../utils/result';
 import { splitFrontmatter } from '../../utils/strategy-utils';
 import { BaseChunkingStrategy } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
+
+/** Companion artifact names present in a session root (top-level entries). */
+const COMPANION_FILE = 'session.md';
+const COMPANION_DIRS = ['specifications', 'findings', 'decisions', 'plans', 'materials'] as const;
+
+/** Canonical file name within each companion directory (deterministic edge target). */
+const COMPANION_DIR_FILES: Record<string, string> = {
+  specifications: 'spec.md',
+  findings: 'findings.md',
+  decisions: 'decisions.md',
+  plans: 'implementation-plan.md',
+  materials: 'unified-chunk-contract.md',
+};
+
+/**
+ * Lists companion artifacts present in the session root R and returns their
+ * absolute paths. Performs exactly ONE readdir of R. On any fs error, returns
+ * an empty array (never throws).
+ */
+async function listCompanionArtifacts(sessionRoot: string): Promise<string[]> {
+  let entries: import('fs').Dirent[];
+  try {
+    entries = await fs.readdir(sessionRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const paths: string[] = [];
+  const entryNames = new Set(entries.map(e => e.name));
+
+  // session.md (file)
+  if (entryNames.has(COMPANION_FILE)) {
+    paths.push(path.join(sessionRoot, COMPANION_FILE));
+  }
+
+  // Companion directories — resolve to their canonical file
+  for (const dir of COMPANION_DIRS) {
+    if (entryNames.has(dir)) {
+      const fileName = COMPANION_DIR_FILES[dir];
+      if (fileName) {
+        paths.push(path.join(sessionRoot, dir, fileName));
+      }
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Builds companion edges for a chunked file F in session root R.
+ * - parent_child: F → R/session.md (when F is NOT session.md itself)
+ * - sibling: one edge per other present companion artifact (excluding F and
+ *   the session.md target already covered by parent_child)
+ */
+function buildCompanionEdges(filePath: string, sessionRoot: string, companions: string[]): FileEdge[] {
+  if (companions.length === 0) {
+    return [];
+  }
+
+  const edges: FileEdge[] = [];
+  const normalizedFile = path.resolve(filePath);
+  const sessionMdPath = path.join(sessionRoot, COMPANION_FILE);
+
+  // parent_child edge when F is not session.md itself
+  if (normalizedFile !== sessionMdPath && companions.includes(sessionMdPath)) {
+    edges.push({
+      target_path: sessionMdPath,
+      relation_type: 'parent_child',
+      strength: 1,
+      description: 'companion artifact in session root',
+    });
+  }
+
+  // sibling edges to each other present companion (excluding F and session.md)
+  for (const companion of companions) {
+    if (companion === normalizedFile || companion === sessionMdPath) {
+      continue;
+    }
+    edges.push({
+      target_path: companion,
+      relation_type: 'sibling',
+      strength: 1,
+      description: 'companion artifact in session root',
+    });
+  }
+
+  return edges;
+}
 
 /**
  * Walks up the directory tree from the given file path to find session.md.
@@ -84,22 +172,28 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       ? sessionMetadataResult.getValue()
       : { sessionId: '', createdAt: '', status: '', phase: '', nextAgent: '' };
 
-    // 3. Split frontmatter from body
+    // 3. List companion artifacts (ONE readdir; fs error ⇒ empty list, chunking still succeeds)
+    const companions = await this.listCompanionsSafe(sessionPath);
+    const edges = buildCompanionEdges(filePath, sessionPath, companions);
+
+    // 4. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
 
-    // 4. Create frontmatter chunk if present
+    // 5. Create frontmatter chunk if present
     const chunks: ContentChunk[] = [];
     if (frontmatter) {
       chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, sessionMetadata));
     }
 
-    // 5. Chunk body with Mastra
+    // 6. Chunk body with Mastra
     const bodyChunksResult = await this.mastraChunkingService.chunkFile(body, filePath, sourceId);
     const bodyChunks = bodyChunksResult.isOk() ? bodyChunksResult.getValue() : [];
 
-    // 6. Enrich all chunks with session metadata
+    // 7. Enrich all chunks with session metadata and companion edges
     const allChunks = [...chunks, ...bodyChunks];
-    const enriched = allChunks.map(chunk => this.enrichWithSessionMetadata(chunk, sessionMetadata));
+    const enriched = allChunks.map(chunk =>
+      this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, edges),
+    );
 
     return Result.ok(enriched);
   }
@@ -130,7 +224,23 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     }).getValue();
   }
 
-  private enrichWithSessionMetadata(chunk: ContentChunk, sessionMetadata: SessionMetadata): ContentChunk {
+  private async listCompanionsSafe(sessionRoot: string): Promise<string[]> {
+    try {
+      return await listCompanionArtifacts(sessionRoot);
+    } catch (error) {
+      this.logger.debug('Failed to list companion artifacts in session root', {
+        sessionRoot,
+        error: String(error),
+      });
+      return [];
+    }
+  }
+
+  private enrichWithSessionMetadataAndEdges(
+    chunk: ContentChunk,
+    sessionMetadata: SessionMetadata,
+    edges: FileEdge[],
+  ): ContentChunk {
     const existingMeta = chunk.metadata ?? {};
     const enrichedMeta = {
       ...existingMeta,
@@ -140,6 +250,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     return ContentChunk.of({
       ...chunk.toJson(),
       metadata: enrichedMeta,
+      ...(edges.length > 0 && { edges }),
     }).getValue();
   }
 }

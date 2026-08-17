@@ -40,8 +40,29 @@ class TestFileChunkOfValidData:
         assert chunk.content_hash is None
         assert chunk.content_type == ContentType.UNKNOWN
         assert chunk.is_partial is False
+        assert chunk.section_header is None
+        assert chunk.parent_unit_ref is None
+        assert chunk.parent_unit_summary is None
         assert chunk.created_at is not None
         assert chunk.updated_at is not None
+
+    def test_of_returns_ok_with_parent_unit_fields(self):
+        result = FileChunk.of(
+            {
+                "id": "fc_pu",
+                "file_id": "f1",
+                "memory_id": "m1",
+                "chunk_index": 0,
+                "section_header": "## Chapter 2",
+                "parent_unit_ref": "ch:2",
+                "parent_unit_summary": "Chapter about testing",
+            }
+        )
+        assert result.is_ok is True
+        chunk = result.value
+        assert chunk.section_header == "## Chapter 2"
+        assert chunk.parent_unit_ref == "ch:2"
+        assert chunk.parent_unit_summary == "Chapter about testing"
 
     def test_of_returns_ok_with_all_fields(self):
         now = datetime.now()
@@ -536,6 +557,52 @@ class TestFileChunkUpdateMetadata:
         result = chunk.update_metadata(start_line=-1)
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_LINE_RANGE"
+
+    def test_update_parent_unit_fields(self):
+        chunk = self._create_chunk()
+        result = chunk.update_metadata(
+            section_header="## Section A",
+            parent_unit_ref="sec:a",
+            parent_unit_summary="Summary of A",
+        )
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.section_header == "## Section A"
+        assert updated.parent_unit_ref == "sec:a"
+        assert updated.parent_unit_summary == "Summary of A"
+        assert result.has_events() is True
+        changed = result.get_events()[0].changed_fields
+        assert "section_header" in changed
+        assert "parent_unit_ref" in changed
+        assert "parent_unit_summary" in changed
+
+    def test_update_parent_unit_fields_partial_preserves_others(self):
+        chunk = self._create_chunk(
+            section_header="## Old",
+            parent_unit_ref="old:ref",
+            parent_unit_summary="Old summary",
+        )
+        result = chunk.update_metadata(section_header="## New")
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.section_header == "## New"
+        assert updated.parent_unit_ref == "old:ref"
+        assert updated.parent_unit_summary == "Old summary"
+
+    def test_update_parent_unit_fields_no_change_returns_same_instance(self):
+        chunk = self._create_chunk(
+            section_header="## Same",
+            parent_unit_ref="same:ref",
+            parent_unit_summary="Same summary",
+        )
+        result = chunk.update_metadata(
+            section_header="## Same",
+            parent_unit_ref="same:ref",
+            parent_unit_summary="Same summary",
+        )
+        assert result.is_ok is True
+        assert result.value is chunk
+        assert result.has_events() is False
 
     def test_update_rejects_negative_end_line(self):
         chunk = self._create_chunk()

@@ -31,6 +31,9 @@ class FileChunk:
     content_hash: str | None
     content_type: ContentType
     is_partial: bool
+    section_header: str | None
+    parent_unit_ref: str | None
+    parent_unit_summary: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -49,6 +52,9 @@ class FileChunk:
                 content_hash=validated.content_hash,
                 content_type=validated.content_type,
                 is_partial=validated.is_partial,
+                section_header=validated.section_header,
+                parent_unit_ref=validated.parent_unit_ref,
+                parent_unit_summary=validated.parent_unit_summary,
                 created_at=validated.created_at,
                 updated_at=validated.updated_at,
             )
@@ -66,6 +72,9 @@ class FileChunk:
         is_partial: bool | None = None,
         start_line: int | None = None,
         end_line: int | None = None,
+        section_header: str | None = None,
+        parent_unit_ref: str | None = None,
+        parent_unit_summary: str | None = None,
     ) -> "Result[FileChunk]":
         """Update FileChunk metadata fields.
 
@@ -137,6 +146,11 @@ class FileChunk:
         new_content_type = content_type if content_type is not None else self.content_type
         new_content_hash = content_hash if content_hash is not None else self.content_hash
         new_is_partial = is_partial if is_partial is not None else self.is_partial
+        new_section_header = section_header if section_header is not None else self.section_header
+        new_parent_unit_ref = parent_unit_ref if parent_unit_ref is not None else self.parent_unit_ref
+        new_parent_unit_summary = (
+            parent_unit_summary if parent_unit_summary is not None else self.parent_unit_summary
+        )
 
         if new_content_type != self.content_type:
             changed.append("content_type")
@@ -148,6 +162,12 @@ class FileChunk:
             changed.append("start_line")
         if new_end != self.end_line:
             changed.append("end_line")
+        if new_section_header != self.section_header:
+            changed.append("section_header")
+        if new_parent_unit_ref != self.parent_unit_ref:
+            changed.append("parent_unit_ref")
+        if new_parent_unit_summary != self.parent_unit_summary:
+            changed.append("parent_unit_summary")
 
         if not changed:
             return Result.ok(self)
@@ -158,6 +178,9 @@ class FileChunk:
             is_partial=new_is_partial,
             start_line=new_start,
             end_line=new_end,
+            section_header=new_section_header,
+            parent_unit_ref=new_parent_unit_ref,
+            parent_unit_summary=new_parent_unit_summary,
         )
         event = FileChunkUpdatedEvent.of(self.id, changed_fields=changed)
         if event.is_ko:
@@ -176,6 +199,9 @@ class FileChunk:
             content_hash=changes.get("content_hash", self.content_hash),
             content_type=changes.get("content_type", self.content_type),
             is_partial=changes.get("is_partial", self.is_partial),
+            section_header=changes.get("section_header", self.section_header),
+            parent_unit_ref=changes.get("parent_unit_ref", self.parent_unit_ref),
+            parent_unit_summary=changes.get("parent_unit_summary", self.parent_unit_summary),
             created_at=changes.get("created_at", self.created_at),
             updated_at=changes.get("updated_at", datetime.now()),
         )

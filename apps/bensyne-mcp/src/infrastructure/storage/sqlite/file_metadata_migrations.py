@@ -170,6 +170,16 @@ _MIGRATION_V5_UP_SQL = """
 ALTER TABLE files ADD COLUMN summary TEXT;
 """
 
+# ---------------------------------------------------------------------------
+# Migration V6 — Add parent-unit columns to file_chunks
+# ---------------------------------------------------------------------------
+
+_MIGRATION_V6_UP_SQL = """
+-- Add parent-unit (hierarchical summary) columns to file_chunks
+ALTER TABLE file_chunks ADD COLUMN parent_unit_ref TEXT;
+ALTER TABLE file_chunks ADD COLUMN parent_unit_summary TEXT;
+"""
+
 MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
@@ -195,5 +205,10 @@ MIGRATIONS: list[Migration] = [
         version=5,
         up_sql=_MIGRATION_V5_UP_SQL,
         description="Add summary column to files table",
+    ),
+    Migration(
+        version=6,
+        up_sql=_MIGRATION_V6_UP_SQL,
+        description="Add parent_unit_ref and parent_unit_summary columns to file_chunks",
     ),
 ]

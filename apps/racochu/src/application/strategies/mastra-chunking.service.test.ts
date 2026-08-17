@@ -756,7 +756,19 @@ describe('MastraChunkingService', () => {
       const callArg = mockDoc.extractMetadata.mock.calls[0][0];
       expect(callArg.schema.llm).toBe(mockCustomLlm);
       expect(callArg.schema.instructions).toBe(
-        'Extract a concise title and comma-separated keywords from this document.',
+        `You must respond ONLY with valid JSON.
+
+Extract the following fields from the document:
+- title: A concise title describing the content
+- keywords: Comma-separated keywords
+
+Respond in this format:
+{
+  "title": "string",
+  "keywords": "keyword1, keyword2, keyword3"
+}
+
+Do not include any other text, explanations, or markdown formatting.`,
       );
       expect(callArg.schema.metadataKey).toBe('enrichment');
     });

@@ -428,7 +428,7 @@ class TestRememberMemoryHandler:
                     {
                         "content": "test",
                         "memory_bank": "test-ns",
-                        "metadata": {"fileHash": "sha256_abc"},
+                        "metadata": {"chunk_hash": "sha256_abc"},
                     },
                 )
 

@@ -12,7 +12,7 @@ from src.domain.events.file_events import (
     FileUpdatedEvent,
 )
 from src.utils.result import ErrorWithDetails, Result
-from src.domain.models.file_model import FileSchema, FileStatus, SourceType
+from src.domain.models.file_model import FileRole, FileSchema, FileStatus, SourceType
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,7 @@ class File:
     id: str
     path: str
     source_type: SourceType
+    file_role: FileRole | None
     hash: str | None
     file_type: str | None
     size: int | None
@@ -30,6 +31,9 @@ class File:
     aggregated_tags: list[str]
     status: FileStatus
     summary: str | None
+    total_chunks: int
+    average_importance: float
+    metadata: dict[str, str]
     created_at: datetime
     updated_at: datetime
 
@@ -43,6 +47,7 @@ class File:
                     id=validated.id,
                     path=validated.path,
                     source_type=validated.source_type,
+                    file_role=validated.file_role,
                     hash=validated.hash,
                     file_type=validated.file_type,
                     size=validated.size,
@@ -51,6 +56,9 @@ class File:
                     aggregated_tags=validated.aggregated_tags,
                     status=validated.status,
                     summary=validated.summary,
+                    total_chunks=validated.total_chunks,
+                    average_importance=validated.average_importance,
+                    metadata=dict(validated.metadata),
                     created_at=validated.created_at,
                     updated_at=validated.updated_at,
                 ),
@@ -109,10 +117,14 @@ class File:
     def update_metadata(
         self,
         hash: str | None = None,
+        file_role: FileRole | None = None,
         file_type: str | None = None,
         size: int | None = None,
         language: str | None = None,
         summary: str | None = None,
+        total_chunks: int | None = None,
+        average_importance: float | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> "Result[File]":
         """Update file metadata fields.
 
@@ -124,13 +136,21 @@ class File:
 
         changed = []
         new_hash = hash if hash is not None else self.hash
+        new_file_role = file_role if file_role is not None else self.file_role
         new_file_type = file_type if file_type is not None else self.file_type
         new_size = size if size is not None else self.size
         new_language = language if language is not None else self.language
         new_summary = summary if summary is not None else self.summary
+        new_total_chunks = total_chunks if total_chunks is not None else self.total_chunks
+        new_average_importance = (
+            average_importance if average_importance is not None else self.average_importance
+        )
+        new_metadata = metadata if metadata is not None else self.metadata
 
         if new_hash != self.hash:
             changed.append("hash")
+        if new_file_role != self.file_role:
+            changed.append("file_role")
         if new_file_type != self.file_type:
             changed.append("file_type")
         if new_size != self.size:
@@ -139,16 +159,26 @@ class File:
             changed.append("language")
         if new_summary != self.summary:
             changed.append("summary")
+        if new_total_chunks != self.total_chunks:
+            changed.append("total_chunks")
+        if new_average_importance != self.average_importance:
+            changed.append("average_importance")
+        if new_metadata != self.metadata:
+            changed.append("metadata")
 
         if not changed:
             return Result.ok(self)
 
         updated = self._replace(
             hash=new_hash,
+            file_role=new_file_role,
             file_type=new_file_type,
             size=new_size,
             language=new_language,
             summary=new_summary,
+            total_chunks=new_total_chunks,
+            average_importance=new_average_importance,
+            metadata=dict(new_metadata),
         )
         event = FileUpdatedEvent.of(self.id, changed_fields=changed)
         return Result.ok(updated, events=[event.value])
@@ -232,16 +262,20 @@ class File:
         """Create a new File instance with updated fields (preserves immutability)."""
         return File(
             id=self.id,
-            path=changes.get("path", self.path),
-            source_type=changes.get("source_type", self.source_type),
-            hash=changes.get("hash", self.hash),
-            file_type=changes.get("file_type", self.file_type),
-            size=changes.get("size", self.size),
-            language=changes.get("language", self.language),
-            aggregated_keywords=changes.get("aggregated_keywords", self.aggregated_keywords),
-            aggregated_tags=changes.get("aggregated_tags", self.aggregated_tags),
-            status=changes.get("status", self.status),
-            summary=changes.get("summary", self.summary),
-            created_at=changes.get("created_at", self.created_at),
+            path=changes.get("path", self.path),  # type: ignore[arg-type]
+            source_type=changes.get("source_type", self.source_type),  # type: ignore[arg-type]
+            file_role=changes.get("file_role", self.file_role),  # type: ignore[arg-type]
+            hash=changes.get("hash", self.hash),  # type: ignore[arg-type]
+            file_type=changes.get("file_type", self.file_type),  # type: ignore[arg-type]
+            size=changes.get("size", self.size),  # type: ignore[arg-type]
+            language=changes.get("language", self.language),  # type: ignore[arg-type]
+            aggregated_keywords=changes.get("aggregated_keywords", self.aggregated_keywords),  # type: ignore[arg-type]
+            aggregated_tags=changes.get("aggregated_tags", self.aggregated_tags),  # type: ignore[arg-type]
+            status=changes.get("status", self.status),  # type: ignore[arg-type]
+            summary=changes.get("summary", self.summary),  # type: ignore[arg-type]
+            total_chunks=changes.get("total_chunks", self.total_chunks),  # type: ignore[arg-type]
+            average_importance=changes.get("average_importance", self.average_importance),  # type: ignore[arg-type]
+            metadata=changes.get("metadata", self.metadata),  # type: ignore[arg-type]
+            created_at=changes.get("created_at", self.created_at),  # type: ignore[arg-type]
             updated_at=changes.get("updated_at", datetime.now()),
         )

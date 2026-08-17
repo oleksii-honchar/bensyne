@@ -34,12 +34,14 @@ def _a_file(
     summary: str | None = None,
     keywords: list[str] | None = None,
     tags: list[str] | None = None,
+    hash: str | None = None,
 ) -> File:
     return File(
         id=id,
         path=path,
         source_type=source_type,
-        hash=None,
+        file_role=None,
+        hash=hash,
         file_type=None,
         size=None,
         language=None,
@@ -47,6 +49,9 @@ def _a_file(
         aggregated_tags=tags or [],
         status=FileStatus.INDEXED,
         summary=summary,
+        total_chunks=0,
+        average_importance=0.5,
+        metadata={},
         created_at=NOW,
         updated_at=NOW,
     )
@@ -59,6 +64,8 @@ def _a_chunk(
     chunk_index: int = 0,
     start_line: int = 1,
     end_line: int = 10,
+    section_header: str | None = None,
+    content_hash: str | None = "abc",
 ) -> FileChunk:
     return FileChunk(
         id=id,
@@ -67,9 +74,12 @@ def _a_chunk(
         chunk_index=chunk_index,
         start_line=start_line,
         end_line=end_line,
-        content_hash="abc",
+        content_hash=content_hash,
         content_type=ContentType.TEXT,
         is_partial=False,
+        section_header=section_header,
+        parent_unit_ref=None,
+        parent_unit_summary=None,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -498,6 +508,158 @@ class TestFetchFileMetadata:
 
 
 # ---------------------------------------------------------------------------
+# Dual-hash wire contract (D15) — chunk_hash on chunk entries, file_hash on
+# the include_metadata file block (null-tolerant for legacy NULLs — S7)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchFileHashSurfacing:
+    def test_chunk_entries_carry_content_hash(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Default mode: each chunk entry carries the chunk row's content_hash."""
+        file = _a_file(id="f1")
+        hash_1 = "1" * 64
+        hash_2 = "2" * 64
+        chunks = [
+            _a_chunk(id="c1", memory_id="mem_1", chunk_index=0, content_hash=hash_1),
+            _a_chunk(id="c2", memory_id="mem_2", chunk_index=1, content_hash=hash_2),
+        ]
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne_client.get.return_value = {"content": "x"}
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        val = result.value
+        assert [c["chunk_hash"] for c in val["chunks"]] == [hash_1, hash_2]
+
+    def test_chunk_hash_null_tolerant_when_content_hash_absent(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Legacy chunk row with NULL content_hash ⇒ chunk_hash is null, not an error."""
+        file = _a_file(id="f1")
+        chunk = _a_chunk(id="c1", memory_id="mem_1", chunk_index=0, content_hash=None)
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok([chunk])
+        mnemosyne_client.get.return_value = {"content": "x"}
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        assert result.value["chunks"][0]["chunk_hash"] is None
+
+    def test_neighbor_mode_chunk_entries_carry_content_hash(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """Neighbor mode: window chunk entries also carry their content_hash."""
+        file = _a_file(id="f1")
+        hash_2 = "2" * 64
+        chunks = [
+            _a_chunk(id="c1", memory_id="mem_1", chunk_index=1, content_hash="1" * 64),
+            _a_chunk(id="c2", memory_id="mem_2", chunk_index=2, content_hash=hash_2),
+        ]
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne = _mnemosyne_for(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 1, "adjacent_chunks": 1}
+        )
+        assert result.is_ok is True
+
+        val = result.value
+        assert [c["chunk_index"] for c in val["chunks"]] == [1, 2]
+        assert val["chunks"][0]["chunk_hash"] == "1" * 64
+        assert val["chunks"][1]["chunk_hash"] == hash_2
+
+    def test_include_metadata_file_block_carries_file_hash(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """include_metadata file block carries file_hash = File.hash entity value."""
+        file_hash = "f" * 64
+        file = _a_file(id="f1", path="/tmp/test.py", hash=file_hash)
+        chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok([chunk])
+        mnemosyne_client.get.return_value = {"content": "Hello world"}
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "include_metadata": True}
+        )
+        assert result.is_ok is True
+
+        f = result.value["file"]
+        assert f["file_hash"] == file_hash
+
+    def test_include_metadata_file_hash_null_tolerant(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Legacy File row with NULL hash ⇒ file_hash is null, not an error."""
+        file = _a_file(id="f1", hash=None)
+        chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok([chunk])
+        mnemosyne_client.get.return_value = {"content": "Hello world"}
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "include_metadata": True}
+        )
+        assert result.is_ok is True
+
+        assert result.value["file"]["file_hash"] is None
+
+    def test_chunk_hash_present_on_missing_memory_chunks_too(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Chunk entries for MISSING memories (gap indicators) still carry their
+        chunk_hash — the hash is a property of the chunk row, not the content."""
+        file = _a_file(id="f1")
+        hash_1 = "1" * 64
+        chunk = _a_chunk(id="c1", memory_id="mem_1", chunk_index=0, content_hash=hash_1)
+
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok([chunk])
+        mnemosyne_client.get.return_value = None
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        val = result.value
+        assert val["reconstruction_status"] == "partial"
+        assert val["chunks"][0]["chunk_hash"] == hash_1
+
+
+# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 
@@ -543,3 +705,306 @@ class TestFetchFileErrors:
         val = result.value
         assert val["reconstruction_status"] == "partial"
         assert val["missing_chunks"] == ["mem_1"]
+
+
+# ---------------------------------------------------------------------------
+# Neighbor-chunk mode (center_chunk_index + adjacent_chunks)
+# ---------------------------------------------------------------------------
+
+
+def _five_chunks(file_id: str = "f1") -> list[FileChunk]:
+    """Five chunks with distinct memory_ids, lines 1..50, section headers."""
+    return [
+        _a_chunk(
+            id=f"c{i}",
+            file_id=file_id,
+            memory_id=f"mem_{i}",
+            chunk_index=i,
+            start_line=i * 10 + 1,
+            end_line=(i + 1) * 10,
+            section_header=f"Section {i}" if i % 2 == 0 else None,
+        )
+        for i in range(5)
+    ]
+
+
+def _mnemosyne_for(chunks: list[FileChunk]) -> MagicMock:
+    """Mnemosyne mock returning per-chunk content keyed by memory_id."""
+    client = MagicMock()
+    contents = {c.memory_id: f"content of {c.memory_id}" for c in chunks}
+    client.get.side_effect = lambda mid: {"content": contents[mid]} if mid in contents else None
+    return client
+
+
+class TestFetchFileNeighborMode:
+    def test_returns_window_of_center_plus_adjacent_in_ascending_order(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """center=2, N=1 on 5-chunk file ⇒ exactly chunks [1,2,3] with full per-chunk shape."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 2, "adjacent_chunks": 1}
+        )
+        assert result.is_ok is True
+
+        val = result.value
+        assert [c["chunk_index"] for c in val["chunks"]] == [1, 2, 3]
+        # Full per-chunk shape: content + position + section_header
+        expected = {
+            1: ("mem_1", 11, 20, "content of mem_1", None),
+            2: ("mem_2", 21, 30, "content of mem_2", "Section 2"),
+            3: ("mem_3", 31, 40, "content of mem_3", None),
+        }
+        for c in val["chunks"]:
+            memory_id, start_line, end_line, content, header = expected[c["chunk_index"]]
+            assert set(c.keys()) == {
+                "memory_id",
+                "chunk_index",
+                "start_line",
+                "end_line",
+                "content",
+                "section_header",
+                "chunk_hash",
+            }
+            assert c["memory_id"] == memory_id
+            assert c["start_line"] == start_line
+            assert c["end_line"] == end_line
+            assert c["content"] == content
+            assert c["section_header"] == header
+
+    def test_clamps_window_at_start_of_file(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """center=0, N=2 ⇒ chunks [0,1,2] (clamped at 0)."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne = _mnemosyne_for(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 0, "adjacent_chunks": 2}
+        )
+        assert result.is_ok is True
+        assert [c["chunk_index"] for c in result.value["chunks"]] == [0, 1, 2]
+
+    def test_clamps_window_at_end_of_file(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """center=4, N=2 ⇒ chunks [2,3,4] (clamped at total-1)."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne = _mnemosyne_for(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 4, "adjacent_chunks": 2}
+        )
+        assert result.is_ok is True
+        assert [c["chunk_index"] for c in result.value["chunks"]] == [2, 3, 4]
+
+    def test_zero_adjacent_returns_center_only(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """center=2, N=0 ⇒ exactly chunk [2]."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne = _mnemosyne_for(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 2, "adjacent_chunks": 0}
+        )
+        assert result.is_ok is True
+        val = result.value
+        assert [c["chunk_index"] for c in val["chunks"]] == [2]
+        assert val["chunks"][0]["memory_id"] == "mem_2"
+
+    def test_neighbor_mode_does_not_reconstruct_full_content(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Neighbor mode returns the window instead of whole-file reconstruction."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 2, "adjacent_chunks": 1}
+        )
+        assert result.is_ok is True
+        val = result.value
+        # Only the window's memories are fetched — not all 5
+        fetched = {call.args[0] for call in mnemosyne_client.get.call_args_list}
+        assert fetched == {"mem_1", "mem_2", "mem_3"}
+
+
+class TestFetchFileNeighborModeValidation:
+    def test_adjacent_chunks_above_max_is_error(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """adjacent_chunks=6 ⇒ error result, no exception."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 2, "adjacent_chunks": 6}
+        )
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "ADJACENT_CHUNKS_OUT_OF_RANGE"
+
+    def test_adjacent_chunks_negative_is_error(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """adjacent_chunks=-1 ⇒ error result, no exception."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 2, "adjacent_chunks": -1}
+        )
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "ADJACENT_CHUNKS_OUT_OF_RANGE"
+
+    def test_center_below_zero_is_error(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """center_chunk_index=-1 ⇒ error result (documented decision: error over clamp)."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": -1, "adjacent_chunks": 1}
+        )
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "CENTER_CHUNK_INDEX_OUT_OF_RANGE"
+
+    def test_center_at_total_chunks_is_error(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+    ) -> None:
+        """center_chunk_index=5 on 5-chunk file ⇒ error result (documented decision)."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 5, "adjacent_chunks": 1}
+        )
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "CENTER_CHUNK_INDEX_OUT_OF_RANGE"
+
+    def test_center_out_of_range_does_not_touch_mnemosyne(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Out-of-range center ⇒ no partial output — mnemosyne never queried."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+
+        result = use_case.execute(
+            {"file_id": "f1", "memory_bank": "bank", "center_chunk_index": 99, "adjacent_chunks": 1}
+        )
+        assert result.is_ko is True
+        mnemosyne_client.get.assert_not_called()
+
+
+class TestFetchFileDefaultModeUnchanged:
+    def test_shape_stable_without_center_param(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """Without center_chunk_index the response shape is identical to whole-file reconstruction."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        val = result.value
+        assert set(val.keys()) == {"file", "content", "chunks", "reconstruction_status", "missing_chunks"}
+        # Whole-file reconstruction: all 5 chunks, full content joined
+        assert [c["chunk_index"] for c in val["chunks"]] == [0, 1, 2, 3, 4]
+        for c in val["chunks"]:
+            assert set(c.keys()) == {
+                "memory_id",
+                "chunk_index",
+                "start_line",
+                "end_line",
+                "content",
+                "chunk_hash",
+            }
+        assert val["content"] == "\n".join(f"content of mem_{i}" for i in range(5))
+        assert val["reconstruction_status"] == "complete"
+
+    def test_adjacent_chunks_alone_without_center_is_ignored(
+        self,
+        use_case: FetchFileUseCase,
+        file_repo: MagicMock,
+        chunk_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """adjacent_chunks without center_chunk_index ⇒ default whole-file behavior."""
+        file = _a_file(id="f1")
+        chunks = _five_chunks()
+        file_repo.get_file_by_id.return_value = Result.ok(file)
+        chunk_repo.get_chunks_by_file_id.return_value = Result.ok(chunks)
+        mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank", "adjacent_chunks": 3})
+        assert result.is_ok is True
+        assert [c["chunk_index"] for c in result.value["chunks"]] == [0, 1, 2, 3, 4]

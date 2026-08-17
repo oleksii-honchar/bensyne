@@ -2,7 +2,7 @@
 
 Test manually all the bensyne and racochu functionality - use mcp tools, do not try to call server via curl.
 
-**MCP enforcement:** Use only Bensyne MCP tools available via `meta_search` / `meta_use` (e.g., `memory_recall`, `memory_list_banks`). **Never curl the MCP server.**
+**MCP enforcement:** Use only Bensyne MCP tools available via `meta_search` / `meta_use` (e.g., `recallMemory`, `listMemoryBanks`). **Never curl the MCP server.**
 
 ## Enrichment Scenario
 
@@ -25,7 +25,7 @@ Verify end-to-end enrichment feature in racochu:
 
 #### Step 1: Check Current State
 
-- List existing memory banks (use `memory_list_banks`)
+- List existing memory banks (use `listMemoryBanks`)
 - Get memory stats to see current memory count
 
 #### Step 2: Create Test File with Enrichable Content
@@ -39,7 +39,7 @@ Verify end-to-end enrichment feature in racochu:
 
 #### Step 4: Verify Enrichment
 
-- Recall the content using the test file's unique identifier (use `memory_recall`)
+- Recall the content using the test file's unique identifier (use `recallMemory`)
 - Check if returned chunks have enriched metadata (title, keywords)
 - Compare with expected enrichment
 

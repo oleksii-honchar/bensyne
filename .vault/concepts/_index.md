@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-16"
+updatedAt: "2026-08-17"
 tags: []
 ---
 
@@ -12,6 +12,7 @@ Domain concepts and models. Grouped by `system` frontmatter.
 
 ### shared
 
+- [[0020-file-hash-deduplication]] — Dual-Hash Deduplication
 - [[0022-bensyne-bundle-cornerstone]] — Bensyne Bundle Cornerstone
 
 ### bensyne-mcp
@@ -38,5 +39,4 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0017-agent-session-chunking]] — Agent Session Chunking
 - [[0018-obsidian-note-chunking]] — Obsidian Note Chunking
 - [[0019-session-metadata-service]] — Session Metadata Service
-- [[0020-file-hash-deduplication]] — File Hash Deduplication
 - [[0021-llm-enrichment]] — LLM Enrichment

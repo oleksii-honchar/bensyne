@@ -2,7 +2,7 @@
 
 Test manually all the bensyne and racochu functionality — use mcp tools, do not try to call server via curl.
 
-**MCP enforcement:** Use only Bensyne MCP tools available via `meta_search` / `meta_use` (e.g., `memory_recall`, `memory_list_banks`). **Never curl the MCP server.**
+**MCP enforcement:** Use only Bensyne MCP tools available via `meta_search` / `meta_use` (e.g., `recallMemory`, `listMemoryBanks`). **Never curl the MCP server.**
 
 Fixtures go to `tmp/obsidian/` (obsidian strategy).
 
@@ -25,7 +25,7 @@ Verify end-to-end Obsidian frontmatter preservation and wikilink graph feature i
 
 #### Step 1: Check Current State
 
-- List existing memory banks to confirm `tmp-obsidian` bank exists (use `memory_list_banks`)
+- List existing memory banks to confirm `tmp-obsidian` bank exists (use `listMemoryBanks`)
 - Get memory stats to see current memory count in `dev-watch`
 - Recall a query that should return 0 results from an Obsidian-specific search (e.g., search by a property that doesn't exist yet)
 
@@ -75,7 +75,7 @@ More content to ensure body chunks are created.
 
 #### Step 4: Verify Frontmatter Preservation — Typed Fields
 
-- Recall with query containing "obsidian test" or "Test Obsidian Note" (use `memory_recall`)
+- Recall with query containing "obsidian test" or "Test Obsidian Note" (use `recallMemory`)
 - Verify returned chunks have these metadata keys:
   - `note.aliases` = JSON array containing "Test Note Aliases"
   - `note.tags` = JSON array containing "obsidian" and "test"
@@ -117,7 +117,7 @@ Some body content here.
 ```
 
 - Wait 2 seconds for debounce
-- Recall with query "No Frontmatter Note" or "Link Alpha" (use `memory_recall`)
+- Recall with query "No Frontmatter Note" or "Link Alpha" (use `recallMemory`)
 - Verify returned chunks have `note.wikilinks` = JSON array containing "Link Alpha", "Link Beta"
 - Verify chunks do **NOT** have `note.base` or `note.properties.*` keys (no frontmatter = no properties)
 

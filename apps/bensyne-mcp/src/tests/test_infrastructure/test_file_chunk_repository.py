@@ -22,6 +22,7 @@ from src.infrastructure.storage.sqlite.file_chunk_repository import (
     FileChunkRepository,
 )
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
+from src.infrastructure.storage.sqlite.models import FileChunkORM
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -99,6 +100,9 @@ def _a_chunk(
     content_hash: Optional[str] = None,
     content_type: ContentType = ContentType.UNKNOWN,
     is_partial: bool = False,
+    section_header: Optional[str] = None,
+    parent_unit_ref: Optional[str] = None,
+    parent_unit_summary: Optional[str] = None,
     created_at: Optional[datetime] = None,
 ) -> FileChunk:
     """Create a valid FileChunk instance with sensible defaults."""
@@ -113,6 +117,9 @@ def _a_chunk(
             "content_hash": content_hash,
             "content_type": content_type,
             "is_partial": is_partial,
+            "section_header": section_header,
+            "parent_unit_ref": parent_unit_ref,
+            "parent_unit_summary": parent_unit_summary,
             "created_at": created_at or datetime.now(),
         }
     )
@@ -467,3 +474,116 @@ class TestRoundTrip:
         assert after_file.is_ok
         assert after_file.value is not None
         assert len(after_file.value) == 0
+
+    def test_round_trip_new_fields(self, repo: FileChunkRepository, file_repo: FileRepository) -> None:
+        _seed_file(file_repo, "f6")
+        chunk = _a_chunk(
+            id="rt6",
+            file_id="f6",
+            memory_id="m6",
+            section_header="## Chapter 2",
+            parent_unit_ref="ch:2",
+            parent_unit_summary="Chapter about testing",
+        )
+        save_result = repo.save_chunk(chunk)
+        assert save_result.is_ok
+
+        find_result = repo.get_chunk_by_id("rt6")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.section_header == "## Chapter 2"
+        assert f.parent_unit_ref == "ch:2"
+        assert f.parent_unit_summary == "Chapter about testing"
+
+    def test_round_trip_new_fields_defaults_when_db_null(
+        self, repo: FileChunkRepository, file_repo: FileRepository, manager: FileMetadataConnectionManager
+    ) -> None:
+        """A row without the new fields (e.g. pre-V6 data) maps back to None."""
+        _seed_file(file_repo, "f7")
+        chunk = _a_chunk(id="rt7", file_id="f7", memory_id="m7")
+        repo.save_chunk(chunk)
+
+        # Simulate legacy row state: NULL parent-unit columns
+        session = manager.get_session()
+        try:
+            orm = session.query(FileChunkORM).filter(FileChunkORM.id == "rt7").first()
+            orm.parent_unit_ref = None
+            orm.parent_unit_summary = None
+            session.commit()
+        finally:
+            manager.close_session(session)
+
+        find_result = repo.get_chunk_by_id("rt7")
+        assert find_result.is_ok
+        f = find_result.value
+        assert f is not None
+        assert f.section_header is None
+        assert f.parent_unit_ref is None
+        assert f.parent_unit_summary is None
+
+
+# ---------------------------------------------------------------------------
+# delete_chunks_by_file_id
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteChunksByFileId:
+    """FileChunkRepository.delete_chunks_by_file_id prune operations."""
+
+    def test_excluded_chunk_survives_others_deleted(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        repo.save_chunk(_a_chunk(id="pc1", file_id="f1", memory_id="m1"))
+        repo.save_chunk(_a_chunk(id="pc2", file_id="f1", memory_id="m2", chunk_index=1))
+        repo.save_chunk(_a_chunk(id="pc3", file_id="f2", memory_id="m3"))
+
+        result = repo.delete_chunks_by_file_id("f1", {"m1"})
+        assert result.is_ok is True
+
+        # m1 survives, m2 gone
+        by_file = repo.get_chunks_by_file_id("f1")
+        assert by_file.is_ok
+        assert [c.memory_id for c in by_file.value] == ["m1"]
+        assert repo.get_chunk_by_id("pc2").value is None
+
+        # Other file's chunk untouched
+        by_file2 = repo.get_chunks_by_file_id("f2")
+        assert by_file2.is_ok
+        assert [c.memory_id for c in by_file2.value] == ["m3"]
+
+    def test_empty_exclude_set_deletes_all_chunks_of_file(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        repo.save_chunk(_a_chunk(id="pe1", file_id="f1", memory_id="m1"))
+        repo.save_chunk(_a_chunk(id="pe2", file_id="f1", memory_id="m2", chunk_index=1))
+        repo.save_chunk(_a_chunk(id="pe3", file_id="f2", memory_id="m3"))
+
+        result = repo.delete_chunks_by_file_id("f1", set())
+        assert result.is_ok is True
+
+        by_file = repo.get_chunks_by_file_id("f1")
+        assert by_file.is_ok
+        assert by_file.value == []
+        # Other file untouched
+        by_file2 = repo.get_chunks_by_file_id("f2")
+        assert by_file2.is_ok
+        assert [c.memory_id for c in by_file2.value] == ["m3"]
+
+    def test_no_chunks_for_file_is_noop(self, repo: FileChunkRepository) -> None:
+        result = repo.delete_chunks_by_file_id("nonexistent", set())
+        assert result.is_ok is True
+        assert result.value is False
+
+    def test_returns_true_when_rows_deleted(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        repo.save_chunk(_a_chunk(id="pv1", file_id="f1", memory_id="m1"))
+        result = repo.delete_chunks_by_file_id("f1", set())
+        assert result.is_ok is True
+        assert result.value is True

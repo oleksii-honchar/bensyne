@@ -7,15 +7,29 @@ state changes. All operations return Result[T].
 
 from __future__ import annotations
 
+import hashlib
+
 import structlog.stdlib
 from src.domain.file_metadata_aggregate import FileMetadataAggregate
 from src.domain.file_entity import File
-from src.domain.file_chunk_entity import FileChunk
-from src.domain.file_relation_entity import FileRelation, RelationType
-from src.utils.result import ErrorWithDetails, Result
+from src.domain.file_chunk_entity import ContentType, FileChunk
+from src.domain.file_relation_entity import Direction, FileRelation, RelationType
+from src.domain.models.file_context_model import FileContext
+from src.domain.models.file_model import FileStatus, SourceType
+from src.utils.result import DomainEvent, ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
 from src.infrastructure.storage.sqlite.file_relation_repository import FileRelationRepository
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
+
+
+def derive_file_id(bank: str, path: str) -> str:
+    """Derive the deterministic file id for a bank+path pair (contract rule 2).
+
+    Producers never send file ids — identity is derived so the same logical
+    file always maps to the same row within a bank.
+    """
+    digest = hashlib.sha256(f"{bank}:{path}".encode("utf-8")).hexdigest()[:32]
+    return f"file_{digest}"
 
 
 class FileService:
@@ -107,20 +121,20 @@ class FileService:
             return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {"file_id": file_id})])
 
         file = find_result.value
-        update_result = file.update_metadata(
+        updated_file_result = file.update_metadata(
             hash=hash,
             file_type=file_type,
             size=size,
             language=language,
             summary=summary,
         )
-        if update_result.is_ko:
-            return update_result
+        if updated_file_result.is_ko:
+            return updated_file_result
 
-        save_result = self.file_repository.save_file(update_result.value)
+        save_result = self.file_repository.save_file(updated_file_result.value)
         # Propagate events from update_metadata alongside any from the save
-        if save_result.is_ok and update_result.has_events():
-            return Result.ok(save_result.value, events=update_result.events)
+        if save_result.is_ok and updated_file_result.has_events():
+            return Result.ok(save_result.value, events=updated_file_result.events)
         return save_result
 
     def delete_file(self, file_id: str) -> Result[File]:
@@ -136,14 +150,24 @@ class FileService:
             return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {"file_id": file_id})])
 
         file = find_result.value
-        delete_result = file.mark_deleted()
-        if delete_result.is_ko:
-            return delete_result
+        deleted_file_result = file.mark_deleted()
+        if deleted_file_result.is_ko:
+            return deleted_file_result
 
-        save_result = self.file_repository.save_file(delete_result.value)
+        save_result = self.file_repository.save_file(deleted_file_result.value)
+        if save_result.is_ko:
+            return save_result
+
+        # Forget symmetry (spec §6.4): the file row is SOFT-deleted, so ORM FK
+        # CASCADE never fires — remove this file's relation rows explicitly.
+        # Relations between other (non-deleted) files are untouched by design.
+        relations_result = self.relation_repository.delete_relations_by_file_id(file_id)
+        if relations_result.is_ko:
+            return relations_result  # type: ignore[return-value]
+
         # Propagate events from mark_deleted
-        if save_result.is_ok and delete_result.has_events():
-            return Result.ok(save_result.value, events=delete_result.events)
+        if deleted_file_result.has_events():
+            return Result.ok(save_result.value, events=deleted_file_result.events)
         return save_result
 
     # ------------------------------------------------------------------
@@ -453,8 +477,322 @@ class FileService:
         """Return the number of chunks for a given file."""
         chunks_result = self.chunk_repository.get_chunks_by_file_id(file_id)
         if not chunks_result.is_ok:
-            return chunks_result
+            return chunks_result  # type: ignore[return-value]
         return Result.ok(len(chunks_result.value))
+
+    # ------------------------------------------------------------------
+    # Materialization API (remember-as-materializer, spec §4.1 / §4.3)
+    # ------------------------------------------------------------------
+
+    def materialize_file_context(
+        self,
+        bank: str,
+        context: FileContext,
+        memory_id: str,
+    ) -> Result[dict]:
+        """Materialize a unified chunk contract v1 payload into the file layer.
+
+        Order (spec §4.1): upsert File by deterministic id → link FileChunk →
+        per edge: stub-upsert target File (D4) + create relation → rebuild
+        projection when the stored file_hash differs from the incoming one
+        (spec §4.3, D5). When file_hash is absent on either side the rebuild
+        branch never fires — upsert-only, still idempotent on
+        file_id + memory_id.
+
+        All upserts use ON CONFLICT DO UPDATE semantics (the repository's
+        merge() convention); replace-style deletes are forbidden (DEC-0018).
+        Failures are collected into the Result — no exception escapes.
+        """
+        self._log_info(
+            "Materializing file context",
+            method="materialize_file_context",
+            bank=bank,
+            path=context.file_path,
+            memory_id=memory_id,
+        )
+        errors: list[ErrorWithDetails] = []
+        events: list[DomainEvent] = []
+        file_id = derive_file_id(bank, context.file_path)
+
+        # 1. Read the stored file BEFORE upserting (rebuild decision needs it).
+        stored_result = self.file_repository.get_file_by_id(file_id)
+        if stored_result.is_ko:
+            errors.append(ErrorWithDetails("MATERIALIZE_FILE_READ_ERROR", stored_result.errors[0].details))
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        stored_file = stored_result.value
+
+        # 2. Rebuild the projection when the whole-file hash changed (D5).
+        #    Runs BEFORE upserting the new chunk/relations so stale chunks of
+        #    this file and its outbound relations are pruned first.
+        rebuilt = False
+        if stored_file is not None and stored_file.hash is not None and context.file_hash != stored_file.hash:
+            rebuild_result = self.rebuild_projection(file_id, {memory_id})
+            if rebuild_result.is_ko:
+                errors.extend(rebuild_result.errors)
+                return Result.ko(errors, events=events)  # type: ignore[return-value]
+            rebuilt = True
+
+        # 3. Upsert the File row (deterministic id; status → INDEXED).
+        file_result = self._upsert_materialized_file(bank, context, stored_file)
+        if file_result.is_ko:
+            errors.extend(file_result.errors)
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        events.extend(file_result.events)
+
+        # 4. Link the FileChunk (PK = file_id + memory_id).
+        chunk_result = self._link_materialized_chunk(file_id, context, memory_id)
+        if chunk_result.is_ko:
+            errors.extend(chunk_result.errors)
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        events.extend(chunk_result.events)
+
+        # 5. Per edge: stub-upsert the target File (D4), then create the relation.
+        relations_created = 0
+        for edge in context.edges_list or []:
+            target_file_id = derive_file_id(bank, edge.target_path)
+            stub_result = self._ensure_target_stub(bank, edge.target_path, target_file_id)
+            if stub_result.is_ko:
+                errors.extend(stub_result.errors)
+                continue
+            events.extend(stub_result.events)
+
+            relation_result = self._create_materialized_relation(
+                file_id, target_file_id, edge.relation_type, edge.strength, edge.description
+            )
+            if relation_result.is_ko:
+                errors.extend(relation_result.errors)
+                continue
+            events.extend(relation_result.events)
+            relations_created += 1
+
+        payload = {
+            "file_id": file_id,
+            "relations_created": relations_created,
+            "rebuilt": rebuilt,
+            "errors": [e.error_code for e in errors],
+        }
+        if errors:
+            self._log_info(
+                "Materialization completed with errors",
+                method="materialize_file_context",
+                file_id=file_id,
+                error_count=len(errors),
+            )
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        return Result.ok(payload, events=events)
+
+    def rebuild_projection(self, file_id: str, keep_memory_ids: set[str]) -> Result[None]:
+        """Rebuild a file's projection after a content change (spec §4.3, D5).
+
+        Prunes the stale chunks of THIS file whose memory_id is not in the
+        keep-set and deletes this file's relations; the caller recreates them
+        from the incoming contract edges. Live memories of other files are
+        untouched by construction.
+        """
+        self._log_info(
+            "Rebuilding projection",
+            method="rebuild_projection",
+            file_id=file_id,
+            keep_memory_ids=sorted(keep_memory_ids),
+        )
+        chunks_result = self.chunk_repository.delete_chunks_by_file_id(file_id, keep_memory_ids)
+        if chunks_result.is_ko:
+            return Result.ko(chunks_result.errors)  # type: ignore[return-value]
+        relations_result = self.relation_repository.delete_relations_by_file_id(file_id)
+        if relations_result.is_ko:
+            return relations_result  # type: ignore[return-value]
+        return Result.ok(None)
+
+    def get_relations_by_file_id(self, file_id: str) -> Result[list[FileRelation]]:
+        """Passthrough to the relation repository (enrichment consumer)."""
+        self._log_info("Getting relations by file id", method="get_relations_by_file_id", file_id=file_id)
+        return self.relation_repository.get_relations_by_file_id(file_id)
+
+    def get_file_by_id(self, file_id: str) -> Result[File | None]:
+        """Passthrough to the file repository (enrichment consumer)."""
+        self._log_info("Getting file by id", method="get_file_by_id", file_id=file_id)
+        return self.file_repository.get_file_by_id(file_id)
+
+    def get_chunks_by_file_id(self, file_id: str) -> Result[list[FileChunk]]:
+        """Passthrough to the chunk repository (enrichment consumer)."""
+        self._log_info("Getting chunks by file id", method="get_chunks_by_file_id", file_id=file_id)
+        return self.chunk_repository.get_chunks_by_file_id(file_id)
+
+    def get_chunk_by_memory_id(self, memory_id: str) -> Result[FileChunk | None]:
+        """Passthrough to the chunk repository (enrichment consumer)."""
+        self._log_info("Getting chunk by memory id", method="get_chunk_by_memory_id", memory_id=memory_id)
+        return self.chunk_repository.get_chunk_by_memory_id(memory_id)
+
+    def get_related_file_by_id(self, file_id: str) -> Result[File | None]:
+        """Passthrough resolving a relation's other end (enrichment consumer)."""
+        self._log_info("Getting related file by id", method="get_related_file_by_id", file_id=file_id)
+        return self.file_repository.get_file_by_id(file_id)
+
+    # ------------------------------------------------------------------
+    # Materialization helpers
+    # ------------------------------------------------------------------
+
+    def _upsert_materialized_file(
+        self,
+        bank: str,
+        context: FileContext,
+        stored_file: File | None,
+    ) -> Result[File]:
+        """Upsert the File row from a materialized contract (ON CONFLICT DO UPDATE)."""
+        file_id = derive_file_id(bank, context.file_path)
+
+        if stored_file is not None:
+            # Merge extra into metadata — last-writer-wins per key.
+            merged_metadata = {**stored_file.metadata, **context.extra}
+            update_result = stored_file.update_metadata(
+                hash=context.file_hash,
+                file_role=context.file_role,
+                language=context.language,
+                summary=context.summary,
+                total_chunks=context.total_chunks,
+                metadata=merged_metadata,
+            )
+            if update_result.is_ko:
+                return update_result
+            candidate = update_result.value
+            assert candidate is not None
+            # Status → INDEXED (upsert never downgrades an indexed file).
+            if candidate.status != FileStatus.INDEXED:
+                index_result = candidate.mark_indexed()
+                if index_result.is_ko:
+                    return index_result
+                candidate = index_result.value
+                assert candidate is not None
+                events = update_result.events + index_result.events
+            else:
+                events = update_result.events
+        else:
+            file_data = {
+                "id": file_id,
+                "path": context.file_path,
+                "source_type": context.source_type,
+                "file_role": context.file_role,
+                "hash": context.file_hash,
+                "language": context.language,
+                "summary": context.summary,
+                "total_chunks": context.total_chunks,
+                "metadata": dict(context.extra),
+                "status": FileStatus.INDEXED,
+            }
+            file_result = File.of(file_data)
+            if file_result.is_ko:
+                return file_result
+            candidate = file_result.value
+            assert candidate is not None
+            events = file_result.events
+
+        save_result = self.file_repository.save_file(candidate)
+        if save_result.is_ko:
+            return save_result
+        saved = save_result.value
+        assert saved is not None
+        return Result.ok(saved, events=events)
+
+    def _link_materialized_chunk(
+        self,
+        file_id: str,
+        context: FileContext,
+        memory_id: str,
+    ) -> Result[FileChunk]:
+        """Link the incoming chunk (id derived from file_id + memory_id)."""
+        parent_ref = context.parent_unit.ref if context.parent_unit else None
+        parent_summary = context.parent_unit.summary if context.parent_unit else None
+
+        chunk_result = FileChunk.of(
+            {
+                "id": f"fc_{file_id}_{memory_id}",
+                "file_id": file_id,
+                "memory_id": memory_id,
+                "chunk_index": context.chunk_index,
+                "start_line": context.start_line if context.start_line is not None else 0,
+                "end_line": context.end_line if context.end_line is not None else 0,
+                "content_type": ContentType.TEXT,
+                "is_partial": False,
+                "section_header": context.section_header,
+                "parent_unit_ref": parent_ref,
+                "parent_unit_summary": parent_summary,
+                "content_hash": context.chunk_hash,
+            }
+        )
+        if chunk_result.is_ko:
+            return chunk_result
+        chunk = chunk_result.value
+        assert chunk is not None
+
+        save_result = self.chunk_repository.save_chunk(chunk)
+        if save_result.is_ko:
+            return save_result
+        saved = save_result.value
+        assert saved is not None
+        return Result.ok(saved, events=chunk_result.events)
+
+    def _ensure_target_stub(self, bank: str, target_path: str, target_file_id: str) -> Result[File]:
+        """Ensure the edge target has a File row (D4 dangling-edge policy).
+
+        Missing targets get a minimal PENDING stub (source_type unknown);
+        existing files are left untouched.
+        """
+        existing_result = self.file_repository.get_file_by_id(target_file_id)
+        if existing_result.is_ko:
+            return Result.ko(existing_result.errors)  # type: ignore[return-value]
+        if existing_result.value is not None:
+            return Result.ok(existing_result.value)
+
+        stub_data = {
+            "id": target_file_id,
+            "path": target_path,
+            "source_type": SourceType.UNKNOWN,
+            "status": FileStatus.PENDING,
+        }
+        stub_result = File.of(stub_data)
+        if stub_result.is_ko:
+            return Result.ko(stub_result.errors)  # type: ignore[return-value]
+        stub = stub_result.value
+        assert stub is not None
+
+        save_result = self.file_repository.save_file(stub)
+        if save_result.is_ko:
+            return Result.ko(save_result.errors)  # type: ignore[return-value]
+        saved = save_result.value
+        assert saved is not None
+        return Result.ok(saved, events=stub_result.events)
+
+    def _create_materialized_relation(
+        self,
+        source_file_id: str,
+        target_file_id: str,
+        relation_type: RelationType,
+        strength: float,
+        description: str | None,
+    ) -> Result[FileRelation]:
+        """Create (or upsert) a relation; id includes the type to avoid collisions."""
+        relation_result = FileRelation.of(
+            {
+                "id": f"fr_{source_file_id}_{target_file_id}_{relation_type.value}",
+                "source_file_id": source_file_id,
+                "target_file_id": target_file_id,
+                "relation_type": relation_type,
+                "strength": strength,
+                "direction": Direction.UNIDIRECTIONAL,
+                "description": description,
+            }
+        )
+        if relation_result.is_ko:
+            return Result.ko(relation_result.errors)  # type: ignore[return-value]
+        relation = relation_result.value
+        assert relation is not None
+
+        save_result = self.relation_repository.save_relation(relation)
+        if save_result.is_ko:
+            return Result.ko(save_result.errors)  # type: ignore[return-value]
+        saved = save_result.value
+        assert saved is not None
+        return Result.ok(saved, events=relation_result.events)
 
     # ------------------------------------------------------------------
     # Internal helpers

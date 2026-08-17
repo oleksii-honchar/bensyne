@@ -18,13 +18,30 @@ class TestRecallMemoryUseCase:
         return MagicMock()
 
     @pytest.fixture
+    def file_enrichment_service(self) -> MagicMock:
+        """Mock enrichment service — mirrors contract: row copy + file_enrichment=None (pure)."""
+        service = MagicMock()
+
+        def _passthrough(memories, limit=5):
+            rows = []
+            for m in memories:
+                row = dict(m)
+                row["file_enrichment"] = None
+                rows.append(row)
+            return rows
+
+        service.enrich.side_effect = _passthrough
+        return service
+
+    @pytest.fixture
     def logger(self) -> LoggerMock:
         return LoggerMock()
 
     @pytest.fixture
-    def use_case(self, mnemosyne_client, logger) -> RecallMemoryUseCase:
+    def use_case(self, mnemosyne_client, file_enrichment_service, logger) -> RecallMemoryUseCase:
         return RecallMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
+            file_enrichment_service=file_enrichment_service,
             logger=logger,
         )
 
@@ -67,7 +84,10 @@ class TestRecallMemoryUseCase:
         )
 
         assert result.is_ok is True
-        assert result.value["results"] == mock_results
+        # Enrichment post-pass adds file_enrichment=None to pure rows (service contract).
+        assert result.value["results"] == [
+            {"id": "mem_1", "content": "Some memory", "file_enrichment": None}
+        ]
         assert result.value["memory_bank"] == "my_bank"
         mnemosyne_client.recall.assert_called_once_with("search term", 5)
 
@@ -82,6 +102,139 @@ class TestRecallMemoryUseCase:
         )
 
         mnemosyne_client.recall.assert_called_once_with("search term", 10)
+
+
+class TestRecallMemoryEnrichment:
+    """FileEnrichmentService post-pass on recall results (Task 15, D7)."""
+
+    @pytest.fixture
+    def mnemosyne_client(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def file_enrichment_service(self) -> MagicMock:
+        service = MagicMock()
+
+        def _passthrough(memories, limit=5):
+            rows = []
+            for m in memories:
+                row = dict(m)
+                row["file_enrichment"] = None
+                rows.append(row)
+            return rows
+
+        service.enrich.side_effect = _passthrough
+        return service
+
+    @pytest.fixture
+    def logger(self) -> LoggerMock:
+        return LoggerMock()
+
+    @pytest.fixture
+    def use_case(self, mnemosyne_client, file_enrichment_service, logger) -> RecallMemoryUseCase:
+        return RecallMemoryUseCase(
+            mnemosyne_client=mnemosyne_client,
+            file_enrichment_service=file_enrichment_service,
+            logger=logger,
+        )
+
+    def test_file_based_memory_gains_populated_file_enrichment(
+        self, use_case, mnemosyne_client, file_enrichment_service
+    ) -> None:
+        """Recall of a file-based memory ⇒ result carries the service's enrichment block."""
+        mock_results = [
+            {
+                "id": "mem_f1",
+                "content": "chunk content",
+                "file_enrichment": {
+                    "file": {"id": "f1", "path": "/vault/a.md"},
+                    "relations": [{"id": "r1", "relation_type": "sibling", "strength": 0.9}],
+                },
+            }
+        ]
+        mnemosyne_client.recall.return_value = Result.ok(
+            [{"id": "mem_f1", "content": "chunk content"}]
+        )
+        file_enrichment_service.enrich.side_effect = lambda memories, limit=5: mock_results
+
+        result = use_case.execute({"query": "q", "memory_bank": "bank"})
+
+        assert result.is_ok is True
+        enriched = result.value["results"][0]["file_enrichment"]
+        assert enriched is not None
+        assert enriched["file"]["id"] == "f1"
+        assert enriched["relations"][0]["relation_type"] == "sibling"
+
+    def test_pure_memory_result_byte_identical_except_file_enrichment_none(
+        self, use_case, mnemosyne_client
+    ) -> None:
+        """Pure memory ⇒ file_enrichment is None and every other field unchanged."""
+        original = {
+            "id": "mem_pure",
+            "content": "plain memory",
+            "importance": 0.3,
+            "relevance_score": 0.85,
+        }
+        mnemosyne_client.recall.return_value = Result.ok([dict(original)])
+
+        result = use_case.execute({"query": "q", "memory_bank": "bank"})
+
+        assert result.is_ok is True
+        enriched_row = result.value["results"][0]
+        assert enriched_row["file_enrichment"] is None
+        without_key = {k: v for k, v in enriched_row.items() if k != "file_enrichment"}
+        assert without_key == original
+
+    def test_enrich_limit_propagates_to_service(self, use_case, mnemosyne_client, file_enrichment_service) -> None:
+        """enrich_limit=2 ⇒ service.enrich called with limit 2."""
+        mnemosyne_client.recall.return_value = Result.ok([{"id": "m1"}])
+
+        use_case.execute({"query": "q", "memory_bank": "bank", "enrich_limit": 2})
+
+        args, kwargs = file_enrichment_service.enrich.call_args
+        limit = kwargs.get("limit", args[1] if len(args) > 1 else None)
+        assert limit == 2
+
+    def test_enrich_limit_absent_defaults_to_5(self, use_case, mnemosyne_client, file_enrichment_service) -> None:
+        """No enrich_limit ⇒ service.enrich called with default 5."""
+        mnemosyne_client.recall.return_value = Result.ok([{"id": "m1"}])
+
+        use_case.execute({"query": "q", "memory_bank": "bank"})
+
+        args, kwargs = file_enrichment_service.enrich.call_args
+        limit = kwargs.get("limit", args[1] if len(args) > 1 else None)
+        assert limit == 5
+
+    def test_enrichment_scoped_to_returned_results_only(self, use_case, mnemosyne_client, file_enrichment_service) -> None:
+        """Recall limit=1 ⇒ enrich receives exactly the returned results (1 row)."""
+        mnemosyne_client.recall.return_value = Result.ok([{"id": "m1"}])
+
+        use_case.execute({"query": "q", "memory_bank": "bank", "limit": 1})
+
+        file_enrichment_service.enrich.assert_called_once()
+        memories_arg = file_enrichment_service.enrich.call_args[0][0]
+        assert len(memories_arg) == 1
+        assert memories_arg[0]["id"] == "m1"
+
+    def test_recall_ko_skips_enrichment(self, use_case, mnemosyne_client, file_enrichment_service) -> None:
+        """When mnemosyne recall fails, enrichment must not run."""
+        from src.utils.result import ErrorWithDetails
+
+        mnemosyne_client.recall.return_value = Result.ko([ErrorWithDetails("RECALL_FAILED", {})])
+
+        result = use_case.execute({"query": "q", "memory_bank": "bank"})
+
+        assert result.is_ko is True
+        file_enrichment_service.enrich.assert_not_called()
+
+    def test_input_result_rows_not_mutated(self, use_case, mnemosyne_client) -> None:
+        """Mnemosyne result dicts are never mutated in place by the post-pass."""
+        original = {"id": "m1", "content": "x"}
+        mnemosyne_client.recall.return_value = Result.ok([original])
+
+        use_case.execute({"query": "q", "memory_bank": "bank"})
+
+        assert "file_enrichment" not in original
 
 
 class TestForgetMemoryUseCase:
@@ -277,6 +430,9 @@ class TestForgetMemoryUseCase:
             content_hash="abc",
             content_type=ChunkContentType.TEXT,
             is_partial=False,
+            section_header=None,
+            parent_unit_ref=None,
+            parent_unit_summary=None,
             created_at=now,
             updated_at=now,
         )
@@ -376,6 +532,9 @@ class TestForgetMemoryUseCase:
             content_hash="abc",
             content_type=ChunkContentType.TEXT,
             is_partial=False,
+            section_header=None,
+            parent_unit_ref=None,
+            parent_unit_summary=None,
             created_at=now,
             updated_at=now,
         )
@@ -427,6 +586,9 @@ class TestForgetMemoryUseCase:
             content_hash="abc",
             content_type=ChunkContentType.TEXT,
             is_partial=False,
+            section_header=None,
+            parent_unit_ref=None,
+            parent_unit_summary=None,
             created_at=now,
             updated_at=now,
         )
@@ -478,6 +640,9 @@ class TestForgetMemoryUseCase:
             content_hash="abc",
             content_type=ChunkContentType.TEXT,
             is_partial=False,
+            section_header=None,
+            parent_unit_ref=None,
+            parent_unit_summary=None,
             created_at=now,
             updated_at=now,
         )

@@ -954,6 +954,143 @@ Plain text with no wikilinks here.`;
       expect(chunks[1].metadata?.['note.wikilinks']).toBeUndefined();
     });
 
+    // --- Wikilink → edges resolution (unified chunk contract v1) ---
+
+    const VAULT_ROOT = '/vault';
+
+    const vaultConfig = aWatchSourceConfig({
+      id: 'test-source',
+      path: VAULT_ROOT,
+      memoryBank: 'test-source',
+      exclude: ['**/node_modules/**'],
+      strategy: 'obsidian',
+    });
+
+    function chunkWith(content: string, filePath = '/vault/note-a.md') {
+      const bodyChunk = aBodyChunk();
+      mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
+      strategy = new ObsidianChunkingStrategy(
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+      return strategy.chunkFile(content, filePath, 'test-source', vaultConfig);
+    }
+
+    it('resolves [[Note B]] to <root>/Note B.md backlink edge (exact object)', async () => {
+      const result = await chunkWith('This note links to [[Note B]].');
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      for (const chunk of chunks) {
+        expect(chunk.edges).toEqual([
+          {
+            target_path: '/vault/Note B.md',
+            relation_type: 'backlink',
+            strength: 1,
+            description: 'wikilink from note-a to Note B',
+          },
+        ]);
+      }
+    });
+
+    it('resolves [[Note|alias]] to target before the pipe', async () => {
+      const result = await chunkWith('Link with alias: [[Target Note|some alias]].');
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toEqual([
+        {
+          target_path: '/vault/Target Note.md',
+          relation_type: 'backlink',
+          strength: 1,
+          description: 'wikilink from note-a to Target Note',
+        },
+      ]);
+    });
+
+    it('resolves [[Note#heading]] by stripping the heading fragment', async () => {
+      const result = await chunkWith('Link with heading: [[Target Note#Section]].');
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toEqual([
+        {
+          target_path: '/vault/Target Note.md',
+          relation_type: 'backlink',
+          strength: 1,
+          description: 'wikilink from note-a to Target Note',
+        },
+      ]);
+    });
+
+    it('resolves [[sub/Note]] relative path to <root>/sub/Note.md', async () => {
+      const result = await chunkWith('Relative link: [[sub/Note]].');
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toEqual([
+        {
+          target_path: '/vault/sub/Note.md',
+          relation_type: 'backlink',
+          strength: 1,
+          description: 'wikilink from note-a to sub/Note',
+        },
+      ]);
+    });
+
+    it('emits one edge per wikilink and de-duplicates repeated links (exact count)', async () => {
+      const content =
+        'Links: [[Alpha]] and [[Beta|b]] and [[Gamma#h]]. Duplicates: [[Alpha]] again, [[Beta|x]].';
+      const result = await chunkWith(content);
+
+      expect(result.isOk()).toBe(true);
+      for (const chunk of result.getValue()) {
+        expect(chunk.edges).toHaveLength(3);
+        expect(chunk.edges?.map(e => e.target_path)).toEqual([
+          '/vault/Alpha.md',
+          '/vault/Beta.md',
+          '/vault/Gamma.md',
+        ]);
+      }
+    });
+
+    it('emits edge with best-effort path for unresolvable target without throwing', async () => {
+      const result = await chunkWith('Dangling link: [[missing note]].');
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toEqual([
+        {
+          target_path: '/vault/missing note.md',
+          relation_type: 'backlink',
+          strength: 1,
+          description: 'wikilink from note-a to missing note',
+        },
+      ]);
+    });
+
+    it('keeps legacy note.wikilinks metadata alongside new edges', async () => {
+      const result = await chunkWith('Links: [[Note A]] and [[Note B]].');
+
+      expect(result.isOk()).toBe(true);
+      for (const chunk of result.getValue()) {
+        expect(chunk.metadata?.['note.wikilinks']).toBeDefined();
+        const wikilinks = JSON.parse(chunk.metadata!['note.wikilinks']);
+        expect(wikilinks).toEqual(['Note A', 'Note B']);
+        expect(chunk.edges).toHaveLength(2);
+      }
+    });
+
+    it('emits no edges for a note with no wikilinks (behavior identical to today)', async () => {
+      const result = await chunkWith('Plain text, no links here.');
+
+      expect(result.isOk()).toBe(true);
+      for (const chunk of result.getValue()) {
+        expect(chunk.edges).toBeUndefined();
+        expect(chunk.metadata?.['note.wikilinks']).toBeUndefined();
+      }
+    });
+
     it('obsidian-with-wikilinks fixture: all chunks get note.base and note.properties.*', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);

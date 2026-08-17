@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { z } from 'zod';
 import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
@@ -132,24 +133,45 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       finalChunks = chunks;
     }
 
-    // Inject fileHash and hardwareId into chunk metadata if available
-    if (params.fileHash || params.hardwareId) {
-      finalChunks = finalChunks.map(chunk => {
-        const existingMetadata = chunk.metadata ?? {};
-        const updatedMetadata: Record<string, string> = { ...existingMetadata };
-        if (params.fileHash) {
-          updatedMetadata.fileHash = params.fileHash;
-        }
-        if (params.hardwareId) {
-          updatedMetadata.hardwareId = params.hardwareId;
-        }
+    // Inject fileHash, hardwareId, and chunkHash into chunk metadata.
+    // chunkHash (sha256 of the chunk's exact text) is always computed; fileHash and
+    // hardwareId are injected when provided. chunkHash computation is non-fatal — on
+    // failure the key is omitted (mirrors the fileHash policy).
+    finalChunks = finalChunks.map(chunk => {
+      const existingMetadata = chunk.metadata ?? {};
+      const updatedMetadata: Record<string, string> = { ...existingMetadata };
+      if (params.fileHash) {
+        updatedMetadata.fileHash = params.fileHash;
+      }
+      if (params.hardwareId) {
+        updatedMetadata.hardwareId = params.hardwareId;
+      }
+      const chunkHash = this.computeChunkHash(chunk.text);
+      if (chunkHash !== undefined) {
+        updatedMetadata.chunkHash = chunkHash;
+      }
 
-        const updatedProps = chunk.toJson();
-        updatedProps.metadata = updatedMetadata;
-        return ContentChunk.of(updatedProps).getValue();
-      });
-    }
+      const updatedProps = chunk.toJson();
+      updatedProps.metadata = updatedMetadata;
+      return ContentChunk.of(updatedProps).getValue();
+    });
 
     return Result.ok(finalChunks);
+  }
+
+  /**
+   * Computes the sha256 hex digest of a chunk's exact text as sent in `content`.
+   * Non-fatal: on any error the failure is logged and undefined returned so the
+   * `chunkHash` key is omitted from metadata (mirrors the fileHash policy).
+   */
+  private computeChunkHash(text: string): string | undefined {
+    try {
+      return crypto.createHash('sha256').update(text).digest('hex');
+    } catch (error) {
+      this.logger.error(
+        `Failed to compute chunkHash: error="${error instanceof Error ? error.message : String(error)}"`,
+      );
+      return undefined;
+    }
   }
 }

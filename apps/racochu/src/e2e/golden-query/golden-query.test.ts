@@ -89,7 +89,7 @@ describe('[E2E] Golden-query validation harness', () => {
       corpus: GOLDEN_QUERY_CORPUS,
       recall: async query => {
         const result = await bensyneClient.recall(query, 2, 500, memoryBank);
-        return result.isOk() ? result.getValue() : [];
+        return result.isOk() ? result.getValue().map(r => r.content) : [];
       },
       resolveExpectedContent: key => GOLDEN_QUERY_EXPECTED_CONTENT[key] ?? [],
     });
