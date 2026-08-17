@@ -1,25 +1,49 @@
-"""FileContext — Bensyne half of the unified chunk contract v1.
+"""FileContext — the wire contract for "remember this memory as part of a file."
 
-Source of truth: ``materials/unified-chunk-contract.md`` (session 260811-0000).
-Racochu mirrors this contract with zod; both sides assert a shared JSON fixture.
+When a rememberMemory metadata payload carries a non-empty ``file_path``, that
+payload is the unified chunk contract v1. This module is bensyne's half of the
+contract: it parses and validates the payload into a frozen FileContext, which
+the materialization path (``FileService.materialize_file_context``) then
+projects into the file layer (SQLite: files / file_chunks / file_relations).
 
-Parse entry point: :func:`parse_file_context`. Documented decisions:
+FileContext is NOT the File entity (``domain/file_entity.py``). It is the
+input declaration of ONE remember call; File is the persisted row that
+survives across calls. They share only a small core (path, source_type,
+file_role, language, hash, summary) — full boundary table: spec §2.2.
 
-- **Rule 1 (trigger):** ``file_path`` absent/empty ⇒ returns ``None`` — plain
-  memory, zero file-layer writes.
-- **Legacy chunk fields:** absent ``chunk_index`` / ``total_chunks`` on a legacy
-  payload degrade best-effort to ``0`` / ``1`` with a warn (graceful option,
-  never reject). Explicit out-of-bounds values are still rejected (None).
-- **Unknown keys:** string-valued unknown top-level keys are captured into
-  ``extra`` (the only extension point); non-string unknown values are ignored
-  with a warn. Dotted legacy keys (``session.*``, ``note.*``) follow the same rule.
-- **Edges:** an edge whose ``relation_type`` is not a bensyne ``RelationType``
-  value (or that is otherwise malformed) is DROPPED with a warn; the chunk
-  still materializes.
-- **source_type / file_role:** invalid values degrade to ``unknown`` / ``None``
-  with a warn rather than rejecting the whole payload.
-- **Versioning (rule 6):** ``contract_version > 1`` ⇒ warn + best-effort parse
-  of known keys.
+Flow:
+    rememberMemory args
+      → parse_file_context(metadata) → FileContext | None
+          (None = pure memory, zero file-layer writes — rule 1)
+      → FileService.materialize_file_context(bank, context, memory_id)
+          → File / FileChunk / FileRelation rows
+
+Where each field lands (which type owns what):
+    file_path                  → File.path (+ derived file id)
+    source_type, file_role,
+    language, summary          → same-named File fields
+    file_hash                  → File.hash (change ⇒ rebuild_projection)
+    extra (str→str map)        → merged into File.metadata
+    tags                       → File.aggregated_tags (union — O5)
+    chunk_index, start_line,
+    end_line, section_header,
+    chunk_hash, parent_unit    → FileChunk row (chunk-level facts, never File)
+    edges                      → FileRelation rows (+ missing-target stubs)
+    contract_version,
+    total_chunks               → wire-only (validation, not stored)
+
+Contract rules (full contract: materials/unified-chunk-contract.md;
+racochu mirrors this contract with zod + a shared JSON fixture):
+    Rule 1 (trigger): file_path absent/empty ⇒ None — plain memory,
+                      zero file-layer writes.
+    Legacy keys:      camelCase aliases map to canonical (filePath→file_path,
+                      hash/fileHash→file_hash, ...); canonical wins.
+    Degrade, never reject: invalid source_type/file_role ⇒ unknown/None with
+                      warn; malformed edges DROPPED with warn (the chunk still
+                      materializes); unknown string keys captured into extra;
+                      non-string unknowns ignored with warn.
+    Versioning (rule 6): contract_version > 1 ⇒ warn + best-effort parse of
+                      known keys.
 """
 
 import logging
