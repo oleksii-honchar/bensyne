@@ -351,7 +351,7 @@ class TestFileRelationOfRejectsInvalidData:
 class TestFileRelationStrengthValidation:
     """FileRelation strength boundary and precision tests."""
 
-    def _create_relation(self, **overrides) -> FileRelation:
+    def _make_relation(self, **overrides) -> FileRelation:
         props = {
             "id": "fr_str",
             "source_file_id": "f_str",
@@ -362,23 +362,23 @@ class TestFileRelationStrengthValidation:
         return FileRelation.of(props).value
 
     def test_strength_at_exact_zero(self):
-        rel = self._create_relation(strength=0.0)
+        rel = self._make_relation(strength=0.0)
         assert rel.strength == 0.0
 
     def test_strength_at_exact_one(self):
-        rel = self._create_relation(strength=1.0)
+        rel = self._make_relation(strength=1.0)
         assert rel.strength == 1.0
 
     def test_strength_fractions(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         assert rel.strength == 0.5
 
     def test_strength_small_positive(self):
-        rel = self._create_relation(strength=0.001)
+        rel = self._make_relation(strength=0.001)
         assert rel.strength == 0.001
 
     def test_strength_near_one(self):
-        rel = self._create_relation(strength=0.999)
+        rel = self._make_relation(strength=0.999)
         assert rel.strength == 0.999
 
     def test_strength_rejected_for_negative(self):
@@ -409,7 +409,7 @@ class TestFileRelationStrengthValidation:
 class TestFileRelationDirection:
     """FileRelation direction enum and behavior."""
 
-    def _create_relation(self, **overrides) -> FileRelation:
+    def _make_relation(self, **overrides) -> FileRelation:
         props = {
             "id": "fr_dir",
             "source_file_id": "f_dir",
@@ -420,15 +420,15 @@ class TestFileRelationDirection:
         return FileRelation.of(props).value
 
     def test_default_direction_is_unidirectional(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         assert rel.direction == Direction.UNIDIRECTIONAL
 
     def test_unidirectional_direction(self):
-        rel = self._create_relation(direction=Direction.UNIDIRECTIONAL)
+        rel = self._make_relation(direction=Direction.UNIDIRECTIONAL)
         assert rel.direction == Direction.UNIDIRECTIONAL
 
     def test_bidirectional_direction(self):
-        rel = self._create_relation(direction=Direction.BIDIRECTIONAL)
+        rel = self._make_relation(direction=Direction.BIDIRECTIONAL)
         assert rel.direction == Direction.BIDIRECTIONAL
 
     def test_direction_enum_values(self):
@@ -445,7 +445,7 @@ class TestFileRelationDirection:
 class TestFileRelationRelationType:
     """FileRelation relation_type enum values."""
 
-    def _create_relation(self, **overrides) -> FileRelation:
+    def _make_relation(self, **overrides) -> FileRelation:
         props = {
             "id": "fr_rt",
             "source_file_id": "f_rt",
@@ -471,46 +471,46 @@ class TestFileRelationRelationType:
             assert getattr(RelationType, name).value == value
 
     def test_parent_child_relation(self):
-        rel = self._create_relation(relation_type=RelationType.PARENT_CHILD)
+        rel = self._make_relation(relation_type=RelationType.PARENT_CHILD)
         assert rel.relation_type == RelationType.PARENT_CHILD
 
     def test_sibling_relation(self):
-        rel = self._create_relation(relation_type=RelationType.SIBLING)
+        rel = self._make_relation(relation_type=RelationType.SIBLING)
         assert rel.relation_type == RelationType.SIBLING
 
     def test_backlink_relation(self):
-        rel = self._create_relation(relation_type=RelationType.BACKLINK)
+        rel = self._make_relation(relation_type=RelationType.BACKLINK)
         assert rel.relation_type == RelationType.BACKLINK
 
     def test_folder_hierarchy_relation(self):
-        rel = self._create_relation(relation_type=RelationType.FOLDER_HIERARCHY)
+        rel = self._make_relation(relation_type=RelationType.FOLDER_HIERARCHY)
         assert rel.relation_type == RelationType.FOLDER_HIERARCHY
 
     def test_cross_reference_relation(self):
-        rel = self._create_relation(relation_type=RelationType.CROSS_REFERENCE)
+        rel = self._make_relation(relation_type=RelationType.CROSS_REFERENCE)
         assert rel.relation_type == RelationType.CROSS_REFERENCE
 
     def test_version_relation(self):
-        rel = self._create_relation(relation_type=RelationType.VERSION)
+        rel = self._make_relation(relation_type=RelationType.VERSION)
         assert rel.relation_type == RelationType.VERSION
 
     def test_override_relation(self):
-        rel = self._create_relation(relation_type=RelationType.OVERRIDE)
+        rel = self._make_relation(relation_type=RelationType.OVERRIDE)
         assert rel.relation_type == RelationType.OVERRIDE
 
     def test_dependency_relation(self):
-        rel = self._create_relation(relation_type=RelationType.DEPENDENCY)
+        rel = self._make_relation(relation_type=RelationType.DEPENDENCY)
         assert rel.relation_type == RelationType.DEPENDENCY
 
     def test_recommendation_relation(self):
-        rel = self._create_relation(relation_type=RelationType.RECOMMENDATION)
+        rel = self._make_relation(relation_type=RelationType.RECOMMENDATION)
         assert rel.relation_type == RelationType.RECOMMENDATION
 
 
 class TestFileRelationUpdateStrength:
     """FileRelation.update_strength method with event emission."""
 
-    def _create_relation(self, **overrides) -> FileRelation:
+    def _make_relation(self, **overrides) -> FileRelation:
         props = {
             "id": "fr_upd",
             "source_file_id": "f_upd",
@@ -521,7 +521,7 @@ class TestFileRelationUpdateStrength:
         return FileRelation.of(props).value
 
     def test_update_strength_success(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         result = rel.update_strength(0.8)
         assert result.is_ok is True
         updated = result.value
@@ -530,38 +530,38 @@ class TestFileRelationUpdateStrength:
         assert isinstance(result.get_events()[0], FileRelationUpdatedEvent)
 
     def test_update_strength_to_zero(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         result = rel.update_strength(0.0)
         assert result.is_ok is True
         assert result.value.strength == 0.0
 
     def test_update_strength_to_one(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         result = rel.update_strength(1.0)
         assert result.is_ok is True
         assert result.value.strength == 1.0
 
     def test_update_strength_rejected_negative(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         result = rel.update_strength(-0.1)
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_STRENGTH"
 
     def test_update_strength_rejected_above_one(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         result = rel.update_strength(1.5)
         assert result.is_ko is True
         assert result.errors[0].error_code == "INVALID_STRENGTH"
 
     def test_update_strength_no_change_returns_same(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         result = rel.update_strength(0.5)
         assert result.is_ok is True
         assert result.value is rel
         assert result.has_events() is False
 
     def test_update_strength_changed_field_in_event(self):
-        rel = self._create_relation(strength=0.5)
+        rel = self._make_relation(strength=0.5)
         result = rel.update_strength(0.8)
         assert result.is_ok is True
         events = result.get_events()
@@ -571,7 +571,7 @@ class TestFileRelationUpdateStrength:
         assert "strength" in event.changed_fields
 
     def test_update_strength_preserves_other_fields(self):
-        rel = self._create_relation(
+        rel = self._make_relation(
             relation_type=RelationType.PARENT_CHILD,
             direction=Direction.BIDIRECTIONAL,
             description="test",
@@ -585,7 +585,7 @@ class TestFileRelationUpdateStrength:
         assert updated.strength == 0.7
 
     def test_update_strength_updates_timestamp(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         result = rel.update_strength(0.7)
         assert result.is_ok is True
         updated = result.value
@@ -596,7 +596,7 @@ class TestFileRelationUpdateStrength:
 class TestFileRelationUpdateDescription:
     """FileRelation.update_description method with event emission."""
 
-    def _create_relation(self, **overrides) -> FileRelation:
+    def _make_relation(self, **overrides) -> FileRelation:
         props = {
             "id": "fr_desc",
             "source_file_id": "f_desc",
@@ -607,35 +607,35 @@ class TestFileRelationUpdateDescription:
         return FileRelation.of(props).value
 
     def test_update_description_from_none(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         result = rel.update_description("New description")
         assert result.is_ok is True
         assert result.value.description == "New description"
         assert result.has_events() is True
 
     def test_update_description_replace(self):
-        rel = self._create_relation(description="Old")
+        rel = self._make_relation(description="Old")
         result = rel.update_description("New")
         assert result.is_ok is True
         assert result.value.description == "New"
         assert result.has_events() is True
 
     def test_update_description_to_none(self):
-        rel = self._create_relation(description="Old")
+        rel = self._make_relation(description="Old")
         result = rel.update_description(None)
         assert result.is_ok is True
         assert result.value.description is None
         assert result.has_events() is True
 
     def test_update_description_no_change_returns_same(self):
-        rel = self._create_relation(description="Same")
+        rel = self._make_relation(description="Same")
         result = rel.update_description("Same")
         assert result.is_ok is True
         assert result.value is rel
         assert result.has_events() is False
 
     def test_update_description_event_has_changed_field(self):
-        rel = self._create_relation()
+        rel = self._make_relation()
         result = rel.update_description("New")
         assert result.is_ok is True
         event = result.get_events()[0]

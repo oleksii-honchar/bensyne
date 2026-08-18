@@ -170,7 +170,7 @@ class TestMaterializeFullContract:
         assert file.summary is None
         assert file.language == "markdown"
         assert file.hash == CONTRACT_HASH
-        assert file.source_type == SourceType.AGENT_SESSION
+        assert file.source_type == SourceType.AGENT_SESSIONS
         # extra → metadata, last-writer-wins merge
         assert file.metadata.get("session.id") == "260811-0000"
 
@@ -225,6 +225,145 @@ class TestMaterializeFullContract:
         file_id = derive_file_id(BANK, "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md")
         chunks = service.chunk_repository.get_chunks_by_file_id(file_id)
         assert len(chunks.value) == 1  # type: ignore[arg-type]
+
+
+# ===================================================================
+# materialize_file_context — idempotency silence (gate 3 / D14)
+# ===================================================================
+
+
+class TestMaterializeIdempotencySilence:
+    """Gate 3 (D14): a dedup-hit re-materialization is event-silent and row-stable.
+
+    The first pass emits creation events; the SECOND pass — same context, same
+    memory_id — must emit zero domain events and change zero rows (no new rows,
+    no updated-timestamp drift on any file/chunk/relation row).
+    """
+
+    def _timestamps(self, service: FileService, file_id: str) -> dict:
+        file = service.get_file_by_id(file_id)
+        assert file.is_ok and file.value is not None
+        file_ts = file.value.updated_at
+        chunks = service.get_chunks_by_file_id(file_id)
+        assert chunks.is_ok
+        chunk_ts = {c.memory_id: c.updated_at for c in chunks.value}  # type: ignore[union-attr]
+        relations = service.get_relations_by_file_id(file_id)
+        assert relations.is_ok
+        relation_ts = {r.id: r.updated_at for r in relations.value}  # type: ignore[union-attr]
+        return {"file": file_ts, "chunks": chunk_ts, "relations": relation_ts}
+
+    def test_second_pass_emits_zero_events_and_changes_zero_rows(self, service: FileService) -> None:
+        context = _context()
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+
+        first = service.materialize_file_context(BANK, context, "mem_idem")
+        assert first.is_ok is True
+        assert len(first.events) > 0, "first pass must emit creation events"
+
+        counts_first = _counts(service)
+        ts_first = self._timestamps(service, file_id)
+
+        second = service.materialize_file_context(BANK, context, "mem_idem")
+        assert second.is_ok is True
+
+        # Gate 3: the dedup-hit re-materialization is event-silent.
+        assert second.events == [], f"expected zero events on re-materialize, got {second.events}"
+
+        # And row-stable: no new rows, no updated-timestamp drift.
+        assert _counts(service) == counts_first
+        ts_second = self._timestamps(service, file_id)
+        assert ts_second == ts_first, "re-materialization must not change row timestamps"
+
+
+# ===================================================================
+# materialize_file_context — tags union-merge (O5)
+# ===================================================================
+
+
+class TestMaterializeTagsUnionMerge:
+    """O5: context.tags union-merge into File.aggregated_tags; idempotent under re-remember."""
+
+    def _file_tags(self, service: FileService, file_id: str) -> list[str]:
+        file = service.get_file_by_id(file_id)
+        assert file.is_ok and file.value is not None
+        return list(file.value.aggregated_tags)
+
+    def test_first_materialize_persists_contract_tags(self, service: FileService) -> None:
+        context = _context(tags=["alpha", "beta"])
+        result = service.materialize_file_context(BANK, context, "mem_tags1")
+        assert result.is_ok is True
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+        assert self._file_tags(service, file_id) == ["alpha", "beta"]
+
+    def test_re_materialize_unions_new_tags_preserving_order(self, service: FileService) -> None:
+        context = _context(tags=["alpha", "beta"])
+        assert service.materialize_file_context(BANK, context, "mem_tags2").is_ok is True
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+
+        # Overlapping + one new tag: set-union, order-preserving, no duplicates.
+        second = _context(tags=["beta", "gamma"])
+        result = service.materialize_file_context(BANK, second, "mem_tags2b")
+        assert result.is_ok is True
+        assert self._file_tags(service, file_id) == ["alpha", "beta", "gamma"]
+
+    def test_re_materialize_same_tags_is_a_noop(self, service: FileService) -> None:
+        context = _context(tags=["alpha", "beta"])
+        assert service.materialize_file_context(BANK, context, "mem_tags3").is_ok is True
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+        before = self._file_tags(service, file_id)
+
+        # Same tags again: union == current ⇒ no change.
+        second = service.materialize_file_context(BANK, _context(tags=["alpha", "beta"]), "mem_tags3b")
+        assert second.is_ok is True
+        assert self._file_tags(service, file_id) == before == ["alpha", "beta"]
+
+
+# ===================================================================
+# materialize_file_context — resurrection (gate 4c / D21)
+# ===================================================================
+
+
+class TestMaterializeResurrection:
+    """Gate 4c (D21): re-materializing a DELETED file revives it — fresh rows, no stale rows."""
+
+    def test_rematerialize_deleted_file_resurrects_with_fresh_rows(self, service: FileService) -> None:
+        context = _context(edges=[{"target_path": "/edge_x.md", "relation_type": "backlink"}])
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+
+        # 1. Initial materialize: INDEXED, 1 chunk, 1 relation.
+        assert service.materialize_file_context(BANK, context, "mem_res1").is_ok is True
+        assert service.get_file_by_id(file_id).value.status == FileStatus.INDEXED  # type: ignore[union-attr]
+        assert len(service.get_chunks_by_file_id(file_id).value) == 1  # type: ignore[union-attr]
+        assert len(service.get_relations_by_file_id(file_id).value) == 1  # type: ignore[union-attr]
+
+        # 2. Forget the last chunk: file -> DELETED tombstone, 0 chunks, 0 relations.
+        assert service.delete_file(file_id).is_ok is True
+        deleted = service.get_file_by_id(file_id)
+        assert deleted.value is not None and deleted.value.status == FileStatus.DELETED  # type: ignore[union-attr]
+        assert service.get_chunks_by_file_id(file_id).value == []  # type: ignore[union-attr]
+        assert service.get_relations_by_file_id(file_id).value == []  # type: ignore[union-attr]
+
+        # 3. Re-remember the same file: resurrected INDEXED, fresh chunk + relation,
+        #    same deterministic file_id, no stale/duplicate rows.
+        result = service.materialize_file_context(BANK, context, "mem_res2")
+        assert result.is_ok is True, f"resurrection failed: {result.errors}"
+        assert result.value["file_id"] == file_id  # type: ignore[index]
+
+        resurrected = service.get_file_by_id(file_id)
+        assert resurrected.value is not None
+        assert resurrected.value.status == FileStatus.INDEXED  # type: ignore[union-attr]
+
+        chunks = service.get_chunks_by_file_id(file_id)
+        assert [c.memory_id for c in chunks.value] == ["mem_res2"]  # type: ignore[union-attr]
+
+        relations = service.get_relations_by_file_id(file_id)
+        outbound = [r for r in relations.value if r.source_file_id == file_id]  # type: ignore[union-attr]
+        assert len(outbound) == 1
+        assert outbound[0].target_file_id == derive_file_id(BANK, "/edge_x.md")
+
+        # No stale rows: exactly one file row for the deterministic id.
+        all_files = service.file_repository.list_files()
+        assert len([f for f in all_files.value if f.id == file_id]) == 1  # type: ignore[union-attr]
 
 
 # ===================================================================
@@ -458,6 +597,87 @@ class TestMaterializeContentHash:
 
 
 # ===================================================================
+# File.total_chunks is projection state — re-aggregated from the chunk set,
+# never copied from the producer's contract claim (spec §2.2, DDD)
+# ===================================================================
+
+
+class TestMaterializeTotalChunksInvariant:
+    """File.total_chunks must equal the file's ACTUAL chunk count, not the
+    producer's claimed context.total_chunks. A producer that under/over-states
+    the count must not leak a wrong projection value."""
+
+    def test_producer_total_chunks_claim_does_not_leak_to_file(self, service: FileService) -> None:
+        # Producer claims 99 chunks, but this materialization writes exactly 1.
+        context = _context(total_chunks=99)
+        result = service.materialize_file_context(BANK, context, "mem_tc")
+        assert result.is_ok is True
+
+        file_id = derive_file_id(
+            BANK,
+            "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md",
+        )
+        actual = len(
+            service.chunk_repository.get_chunks_by_file_id(file_id).value or []  # type: ignore[arg-type]
+        )
+        assert actual == 1  # one chunk row was materialized
+
+        file = service.file_repository.get_file_by_id(file_id).value
+        assert file is not None
+        # The persisted projection reflects reality, not the producer claim.
+        assert file.total_chunks == actual
+        assert file.total_chunks != 99
+
+
+# ===================================================================
+# materialize_file_context — source-type axis (D29, spec §6.6)
+# ===================================================================
+
+
+class TestMaterializeSourceTypeAxis:
+    """D29: materializing with each canonical source_type stores it verbatim;
+    legacy/garbage values degrade to unknown (degrade-never-reject) — the
+    stored value always satisfies the frozen bootstrap CHECK."""
+
+    @pytest.mark.parametrize("source_type", ["obsidian", "agent-sessions", "vault", "unknown"])
+    def test_each_d29_source_type_stored_verbatim(self, service: FileService, source_type: str) -> None:
+        context = _context(source_type=source_type)
+        assert context.source_type.value == source_type  # parse sanity
+
+        result = service.materialize_file_context(BANK, context, f"mem_st_{source_type}")
+        assert result.is_ok is True
+
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+        file = service.file_repository.get_file_by_id(file_id).value
+        assert file is not None
+        assert file.source_type.value == source_type
+
+    def test_legacy_source_type_degrades_to_unknown_on_store(self, service: FileService) -> None:
+        context = _context(source_type="git")
+        assert context.source_type is SourceType.UNKNOWN  # parse degrades pre-D29 values
+
+        result = service.materialize_file_context(BANK, context, "mem_st_legacy")
+        assert result.is_ok is True
+
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+        file = service.file_repository.get_file_by_id(file_id).value
+        assert file is not None
+        assert file.source_type is SourceType.UNKNOWN
+
+    def test_garbage_source_type_degrades_to_unknown_on_store(self, service: FileService) -> None:
+        context = _context(source_type="quantum_flux")
+        assert context.source_type is SourceType.UNKNOWN
+
+        result = service.materialize_file_context(BANK, context, "mem_st_garbage")
+        assert result.is_ok is True
+
+        file_id = derive_file_id(BANK, FIXTURE_PATH)
+        file = service.file_repository.get_file_by_id(file_id).value
+        assert file is not None
+        assert file.source_type is SourceType.UNKNOWN
+
+
+# ===================================================================
 # rebuild_projection
 # ===================================================================
 
@@ -566,6 +786,7 @@ class TestMaterializeFailureHandling:
         service, file_repo, chunk_repo, _ = self._mock_service()
         file_repo.get_file_by_id.return_value = self._ok_result(None)
         file_repo.save_file.side_effect = lambda f: Result.ok(f)
+        chunk_repo.delete_chunks_by_file_id.return_value = Result.ok(True)
         chunk_repo.save_chunk.return_value = Result.ko([ErrorWithDetails("CHUNK_SAVE_ERROR", {"error": "db down"})])
 
         result = service.materialize_file_context(BANK, _context(), "mem_1")
@@ -577,6 +798,7 @@ class TestMaterializeFailureHandling:
         service, file_repo, chunk_repo, relation_repo = self._mock_service()
         file_repo.get_file_by_id.return_value = self._ok_result(None)
         file_repo.save_file.side_effect = lambda f: Result.ok(f)
+        chunk_repo.delete_chunks_by_file_id.return_value = Result.ok(True)
         chunk_repo.save_chunk.side_effect = lambda c: Result.ok(c)
         relation_repo.save_relation.return_value = Result.ko(
             [ErrorWithDetails("RELATION_SAVE_ERROR", {"error": "db down"})]

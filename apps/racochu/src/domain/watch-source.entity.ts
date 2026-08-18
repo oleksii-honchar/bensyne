@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
 
@@ -10,7 +10,8 @@ export const watchSourceEntitySchema = z.object({
   exclude: z.array(z.string()),
   debounceMs: z.number().positive(),
   ignorePatterns: z.array(z.string()),
-  strategy: z.enum(Object.values(SOURCE_STRATEGIES)).default(SOURCE_STRATEGIES.CONTENT_AWARE),
+  // D29: the field IS the source type (default vault, the content-aware successor).
+  sourceType: z.enum(Object.values(SOURCE_TYPES) as [string, ...string[]]).default(SOURCE_TYPES.VAULT),
 });
 
 export type WatchSourceProps = z.infer<typeof watchSourceEntitySchema>;
@@ -36,7 +37,7 @@ export class WatchSource {
       exclude: [...this.props.exclude],
       debounceMs: this.props.debounceMs,
       ignorePatterns: [...this.props.ignorePatterns],
-      strategy: this.props.strategy,
+      sourceType: this.props.sourceType,
     };
   }
 
@@ -58,7 +59,7 @@ export class WatchSource {
   get ignorePatterns(): string[] {
     return this.props.ignorePatterns;
   }
-  get strategy(): string {
-    return this.props.strategy;
+  get sourceType(): string {
+    return this.props.sourceType;
   }
 }

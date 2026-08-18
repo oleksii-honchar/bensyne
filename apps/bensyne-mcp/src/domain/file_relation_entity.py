@@ -101,6 +101,70 @@ class FileRelation:
             return Result.ko(event.errors)
         return Result.ok(updated, events=[event.value])
 
+    def update_metadata(
+        self,
+        strength: float,
+        description: str | None,
+        direction: Direction,
+    ) -> "Result[FileRelation]":
+        """Update the upsertable relation fields (spec §4.2, D19b).
+
+        All three fields are provided by the caller (the upsert contract)
+        — there is no "unchanged" sentinel, so description=None is a real
+        "clear the description" value.
+
+        Returns Result.ko if strength is outside [0.0, 1.0] or direction
+        is not a Direction. Emits exactly one FileRelationUpdatedEvent
+        listing the changed fields; returns Result.ok(self) with no events
+        when nothing changed (idempotency silence).
+        """
+        if strength < 0.0 or strength > 1.0:
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_STRENGTH",
+                        {
+                            "given": strength,
+                            "min": 0.0,
+                            "max": 1.0,
+                        },
+                    )
+                ]
+            )
+
+        if not isinstance(direction, Direction):
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "INVALID_DIRECTION",
+                        {
+                            "given": direction,
+                        },
+                    )
+                ]
+            )
+
+        changed: list[str] = []
+        if strength != self.strength:
+            changed.append("strength")
+        if description != self.description:
+            changed.append("description")
+        if direction != self.direction:
+            changed.append("direction")
+
+        if not changed:
+            return Result.ok(self)
+
+        updated = self._replace(
+            strength=strength,
+            description=description,
+            direction=direction,
+        )
+        event = FileRelationUpdatedEvent.of(self.id, changed_fields=changed)
+        if event.is_ko:
+            return Result.ko(event.errors)
+        return Result.ok(updated, events=[event.value])
+
     def _replace(self, **changes: object) -> "FileRelation":
         """Create a new FileRelation instance with updated fields (preserves immutability)."""
         return FileRelation(

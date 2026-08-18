@@ -50,7 +50,7 @@ describe('BensyneRememberDto', () => {
         fileRole: 'docs' as const,
         language: undefined,
         tags: ['meeting'],
-        metadata: { filePath: '/vault/notes/meeting.md', sourceId: 'file_system' },
+        metadata: { filePath: '/vault/notes/meeting.md', sourceType: 'vault' },
       });
 
       const dto = BensyneRememberDto.fromChunk(chunk);
@@ -63,7 +63,7 @@ describe('BensyneRememberDto', () => {
         section_header: '## Decisions',
         start_line: 10,
         end_line: 25,
-        source_type: 'file_system',
+        source_type: 'vault',
         file_role: 'docs',
         summary: null,
         tags: ['meeting'],
@@ -121,7 +121,7 @@ describe('BensyneRememberDto', () => {
         text: 'exact chunk text',
         metadata: {
           filePath: '/vault/a.md',
-          sourceId: 'file_system',
+          sourceType: 'vault',
           fileHash: 'b'.repeat(64),
           chunkHash: 'a'.repeat(64),
         },
@@ -140,7 +140,7 @@ describe('BensyneRememberDto', () => {
           chunk_index: 0,
           total_chunks: 1,
           section_header: 'Test Section',
-          source_type: 'file_system',
+          source_type: 'vault',
           file_role: 'docs',
           file_hash: 'b'.repeat(64),
           chunk_hash: 'a'.repeat(64),
@@ -214,7 +214,7 @@ describe('BensyneRememberDto', () => {
         breadcrumb: '/vault/notes/deep.md',
         metadata: {
           filePath: '/vault/notes/deep.md',
-          sourceId: 'agent_session',
+          sourceType: 'agent-sessions',
           'session.id': '260811-0000',
           'session.status': 'in-progress',
           'note.aliases': '["Deep Dive"]',
@@ -232,8 +232,8 @@ describe('BensyneRememberDto', () => {
       });
       // Consumed keys must not leak into extra or top level
       expect(dto.metadata).not.toHaveProperty('filePath');
-      expect(dto.metadata).not.toHaveProperty('sourceId');
-      expect(dto.metadata.source_type).toBe('agent_session');
+      expect(dto.metadata).not.toHaveProperty('sourceType');
+      expect(dto.metadata.source_type).toBe('agent-sessions');
     });
 
     it('derives parent_unit from session.* metadata when present', () => {
@@ -295,26 +295,43 @@ describe('BensyneRememberDto', () => {
       expect(dto.metadata).not.toHaveProperty('source_type');
     });
 
+    // D29: SOURCE_TYPE_MAP deleted — the chunk's stamped sourceType passes through
+    // zod-validated (the 4-value wire axis is exactly what bensyne SourceType accepts).
     it.each([
-      ['file_system', 'file_system'],
-      ['agent_session', 'agent_session'],
-      ['git', 'git'],
-      ['database', 'database'],
-      ['external', 'external'],
-      ['remote', 'remote'],
-      ['unknown_source_id', undefined],
-    ])('maps sourceId %s to source_type %s (identity map, unknown omitted)', (sourceId, expected) => {
+      ['obsidian', 'obsidian'],
+      ['agent-sessions', 'agent-sessions'],
+      ['vault', 'vault'],
+      ['unknown', 'unknown'],
+    ])('passes through stamped sourceType %s as source_type %s (D29 4-value axis)', (sourceType, expected) => {
       const chunk = aContentChunk({
-        metadata: { sourceId },
+        metadata: { sourceType },
       });
 
       const dto = BensyneRememberDto.fromChunk(chunk);
 
-      if (expected === undefined) {
-        expect(dto.metadata).not.toHaveProperty('source_type');
-      } else {
-        expect(dto.metadata.source_type).toBe(expected);
-      }
+      expect(dto.metadata.source_type).toBe(expected);
+    });
+
+    it('omits source_type when the chunk carries no stamped sourceType (key absent, bensyne degrades)', () => {
+      const chunk = aContentChunk({
+        metadata: {},
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata).not.toHaveProperty('source_type');
+    });
+
+    it('omits source_type for values off the D29 axis (zod-validated — no legacy wire values ship)', () => {
+      const chunk = aContentChunk({
+        metadata: { sourceType: 'file_system' },
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata).not.toHaveProperty('source_type');
+      // Off-axis value must not leak into extra either (consumed internal key)
+      expect(dto.metadata.extra ?? {}).not.toHaveProperty('sourceType');
     });
   });
 
@@ -323,7 +340,7 @@ describe('BensyneRememberDto', () => {
       const raw = readFileSync(join(__dirname, 'fixtures', 'unified-chunk-contract-v1.json'));
 
       expect(createHash('sha256').update(raw).digest('hex')).toBe(
-        '02c99bb5aac5b367d8a6271a43baff48b145d1c6def64dd8258e4c6958a52887',
+        'b0b6f7f967c3da353f9396414f92128a96315ddb798abe1c7587fc5b8ab22603',
       );
     });
 

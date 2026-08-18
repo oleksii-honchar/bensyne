@@ -7,7 +7,6 @@ import { AppModule } from './app.module';
 import { Configuration } from './infrastructure/config/config-schemas';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { aConfigServiceStub, aSourceConfig } from './infrastructure/config/configuration.service.test-utils';
-import { SOURCE_STRATEGIES } from './infrastructure/config/source-strategies';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { aLogger } from './infrastructure/logging/logger.test-utils';
 import { FileMemoryTrackerRepository } from './infrastructure/repositories/file-memory-tracker.repository';
@@ -23,7 +22,6 @@ const buildMockConfig = (watchSources: Configuration['watchSources']): Configura
   ({
     watchSources,
     chunking: {
-      strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
       maxSizes: {
         agentSessions: 400,
         obsidianNotes: 500,

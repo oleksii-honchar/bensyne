@@ -39,7 +39,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 def _a_file(
     id: str = "f1",
     path: str = "/vault/notes/a.md",
-    source_type: SourceType = SourceType.AGENT_SESSION,
+    source_type: SourceType = SourceType.AGENT_SESSIONS,
     summary: Optional[str] = None,
     total_chunks: int = 0,
     average_importance: float = 0.0,
@@ -374,9 +374,9 @@ class TestPureMemoryPassthrough:
 
 class TestSourceTypeEnrichment:
     def test_source_type_enrichment_carries_metadata_extra_keys(self) -> None:
-        """agent_session file with session.* metadata ⇒ same keys in enrichment."""
+        """agent-sessions file with session.* metadata ⇒ same keys in enrichment."""
         source = _a_file(
-            source_type=SourceType.AGENT_SESSION,
+            source_type=SourceType.AGENT_SESSIONS,
             metadata={"session.id": "sess_42", "session.started_at": "2026-08-16T10:00:00Z"},
         )
         chunks = [_a_chunk()]
@@ -511,7 +511,7 @@ class TestHashSurfacing:
     and top-level `chunk_hash` (the recalled memory's chunk row; null for
     legacy/absent rows — S7)."""
 
-    def test_file_block_carries_file_hash_from_file_row(self) -> None:
+    def test_file_dict_carries_file_hash_from_file_row(self) -> None:
         """file_hash is the real File.hash entity value (not a stub)."""
         file_hash = "f" * 64
         source = _a_file(total_chunks=1, hash=file_hash)

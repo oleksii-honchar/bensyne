@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import * as os from 'os';
 import * as path from 'path';
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { startBensyneDocker } from './env-setup/bensyne-docker-setup';
 
 /**
@@ -85,15 +85,15 @@ module.exports = async (): Promise<void> => {
       {
         id: 'e2e-obsidian-source',
         path: obsidianWatchDir,
-        strategy: SOURCE_STRATEGIES.OBSIDIAN,
+        sourceType: SOURCE_TYPES.OBSIDIAN,
         exclude: [],
         debounceMs: 1000,
         memoryBank: 'tmp-obsidian',
-        description: 'E2E obsidian watch source for obsidian-chunking strategy verification',
+        description: 'E2E obsidian watch source for obsidian-chunking verification',
       },
     ],
     chunking: {
-      strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+      sourceType: SOURCE_TYPES.VAULT,
       maxSizes: {
         agentSessions: 400,
         obsidianNotes: 500,

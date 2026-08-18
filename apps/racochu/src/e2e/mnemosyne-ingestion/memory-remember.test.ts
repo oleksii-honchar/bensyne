@@ -1,5 +1,5 @@
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
-import { SOURCE_STRATEGIES } from '@/infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '@/infrastructure/config/source-types';
 import { BensyneClient } from '@/infrastructure/services/bensyne-client.service';
 import { ProcessFileUseCase } from '@/use-cases/process-file.use-case';
 import { INestApplication } from '@nestjs/common';
@@ -20,7 +20,7 @@ describe('[E2E] Chunking and Mnemosyne Ingestion Flow', () => {
     id: TEST_SOURCE_ID,
     path: '',
     memoryBank: TEST_SOURCE_ID,
-    strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+    sourceType: SOURCE_TYPES.VAULT,
     description: '',
     exclude: [],
     debounceMs: 3000,

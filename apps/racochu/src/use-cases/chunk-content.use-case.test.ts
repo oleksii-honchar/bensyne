@@ -2,12 +2,16 @@ import '@/utils/mastra-rag.test-utils';
 
 import * as crypto from 'crypto';
 import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
+import { ImportanceScoringService } from '../application/services/importance-scoring.service';
+import { TagExtractionService } from '../application/services/tag-extraction.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
+import { FileEdge } from '../domain/content-chunk.entity';
+import { BensyneRememberDto } from '../infrastructure/dto/bensyne-remember.dto';
 import { EnhancementConfig, WatchSourceConfig } from '../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { Result } from '../utils/result';
@@ -44,7 +48,7 @@ const defaultSourceConfig: WatchSourceConfig = {
   memoryBank: 'test-memoryBank',
   exclude: [],
   debounceMs: 3000,
-  strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+  sourceType: SOURCE_TYPES.VAULT,
 };
 
 describe('ChunkContentUseCase', () => {
@@ -131,7 +135,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategyRouter.selectStrategy).toHaveBeenCalledWith(defaultSourceConfig);
     });
 
-    it('should call selected strategy.chunkFile with content, filePath, sourceId, sourceConfig', async () => {
+    it('should call selected chunker.chunkFile with content, filePath, sourceId, sourceConfig', async () => {
       const content = 'Test content';
       const filePath = '/path/to/file.md';
       const sourceId = 'test-source';
@@ -150,7 +154,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategy.chunkFile).toHaveBeenCalledWith(content, filePath, sourceId, defaultSourceConfig);
     });
 
-    it('should select strategy and chunk for markdown files', async () => {
+    it('should select chunker and chunk for markdown files', async () => {
       const content = '# Title\n\nContent';
       const filePath = '/path/to/README.md';
       const sourceId = 'test-source';
@@ -170,7 +174,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategy.chunkFile).toHaveBeenCalled();
     });
 
-    it('should select strategy and chunk for TypeScript files', async () => {
+    it('should select chunker and chunk for TypeScript files', async () => {
       const content = 'const x = 1;';
       const filePath = '/path/to/app.ts';
       const sourceId = 'test-source';
@@ -190,7 +194,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategy.chunkFile).toHaveBeenCalled();
     });
 
-    it('should select strategy and chunk for JSON config files', async () => {
+    it('should select chunker and chunk for JSON config files', async () => {
       const content = '{"key": "value"}';
       const filePath = '/path/to/config.json';
       const sourceId = 'test-source';
@@ -210,7 +214,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategy.chunkFile).toHaveBeenCalled();
     });
 
-    it('should select strategy and chunk for plain text files', async () => {
+    it('should select chunker and chunk for plain text files', async () => {
       const content = 'First sentence. Second sentence.';
       const filePath = '/path/to/notes.txt';
       const sourceId = 'test-source';
@@ -230,7 +234,7 @@ describe('ChunkContentUseCase', () => {
       expect(mockStrategy.chunkFile).toHaveBeenCalled();
     });
 
-    it('should fallback to content-aware strategy when sourceConfig is not provided', async () => {
+    it('should fallback to the vault chunker when sourceConfig is not provided', async () => {
       const content = 'Test content';
       const filePath = '/path/to/file.ts';
       const sourceId = 'test-source';
@@ -247,7 +251,7 @@ describe('ChunkContentUseCase', () => {
 
       expect(mockStrategyRouter.selectStrategy).toHaveBeenCalledWith(
         expect.objectContaining({
-          strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+          sourceType: SOURCE_TYPES.VAULT,
           id: sourceId,
           path: filePath,
           memoryBank: 'test-memoryBank',
@@ -315,8 +319,8 @@ describe('ChunkContentUseCase', () => {
     });
   });
 
-  describe('strategy guard', () => {
-    it('should return StrategySelectionError when strategyRouter returns undefined', async () => {
+  describe('chunker guard', () => {
+    it('should return StrategySelectionError when the router returns undefined', async () => {
       mockStrategyRouter.selectStrategy.mockReturnValue(undefined);
 
       const result = await useCase.execute({
@@ -328,7 +332,7 @@ describe('ChunkContentUseCase', () => {
       });
 
       expect(result.isKo()).toBe(true);
-      expect(result.getErrors()[0].message).toBe('No chunking strategy selected for sourceId="test-source"');
+      expect(result.getErrors()[0].message).toBe('No chunker selected for sourceId="test-source"');
       expect((result.getErrors()[0] as any).code).toBe('StrategySelectionError');
       expect(mockStrategy.chunkFile).not.toHaveBeenCalled();
     });
@@ -344,8 +348,59 @@ describe('ChunkContentUseCase', () => {
       });
 
       expect(result.isKo()).toBe(true);
-      expect(result.getErrors()[0].message).toBe('No chunking strategy selected for sourceId="test-source"');
+      expect(result.getErrors()[0].message).toBe('No chunker selected for sourceId="test-source"');
       expect((result.getErrors()[0] as any).code).toBe('StrategySelectionError');
+    });
+  });
+
+  describe('D29 sourceType chunk stamping', () => {
+    it('stamps the watch source sourceType (vault) into every chunk metadata', async () => {
+      const chunks = [aContentChunk({ text: 'chunk 1' }), aContentChunk({ text: 'chunk 2' })];
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(chunks));
+
+      const result = await useCase.execute({
+        content: 'Test content',
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: { ...defaultSourceConfig, sourceType: SOURCE_TYPES.VAULT },
+      });
+
+      expect(result.isOk()).toBe(true);
+      for (const chunk of result.getValue()) {
+        expect(chunk.metadata?.sourceType).toBe(SOURCE_TYPES.VAULT);
+      }
+    });
+
+    it('stamps agent-sessions for agent-session ingest (the remember payload carries source_type: agent-sessions)', async () => {
+      const chunks = [aContentChunk({ text: 'session chunk' })];
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(chunks));
+
+      const result = await useCase.execute({
+        content: 'Test content',
+        filePath: '/sessions/26/08/11/session.md',
+        sourceId: 'agent-sessions',
+        memoryBank: 'agent-sessions',
+        sourceConfig: { ...defaultSourceConfig, id: 'agent-sessions', sourceType: SOURCE_TYPES.AGENT_SESSIONS },
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()[0].metadata?.sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
+    });
+
+    it('stamps the default watch source type (vault) when no sourceConfig is provided', async () => {
+      const chunks = [aContentChunk({ text: 'chunk 1' })];
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(chunks));
+
+      const result = await useCase.execute({
+        content: 'Test content',
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()[0].metadata?.sourceType).toBe(SOURCE_TYPES.VAULT);
     });
   });
 
@@ -835,6 +890,93 @@ describe('ChunkContentUseCase', () => {
       const chunk = result.getValue()[0];
       expect(chunk.metadata?.chunkHash).toBeUndefined();
       expect(chunk.metadata?.fileHash).toBe(fileHash);
+    });
+  });
+
+  describe('D40 — edges survive the production chunk→enhance→remember chain (wire-level)', () => {
+    // CRITICAL wiring constraint (spec §4.2): this test wires the REAL
+    // EnhancementPipelineService (only its ImportanceScoringService +
+    // TagExtractionService deps mocked, same pattern as
+    // enhancement-pipeline.service.test.ts) and the REAL BensyneRememberDto.
+    // A mocked pipeline here would produce a false green — the test must be
+    // able to catch a Stage-3 edge drop.
+    let wireUseCase: ChunkContentUseCase;
+    let wireStrategyRouter: jest.Mocked<{ selectStrategy: jest.Mock }>;
+    let wireStrategy: jest.Mocked<{ chunkFile: jest.Mock }>;
+    let wireConfigService: jest.Mocked<{ getEnhancementConfig: jest.Mock }>;
+
+    beforeEach(() => {
+      const importanceScoringService = {
+        score: jest.fn().mockReturnValue(0.75),
+      } as unknown as jest.Mocked<ImportanceScoringService>;
+      const tagExtractionService = {
+        extract: jest.fn().mockReturnValue(['tag1']),
+      } as unknown as jest.Mocked<TagExtractionService>;
+
+      // REAL pipeline service — only its internal scoring/tagging deps are mocked.
+      const realPipelineService = new EnhancementPipelineService(
+        importanceScoringService,
+        tagExtractionService,
+        aLogger() as unknown as BasePinoLogger,
+      );
+
+      wireStrategy = { chunkFile: jest.fn() };
+      wireStrategyRouter = {
+        selectStrategy: jest.fn().mockReturnValue(wireStrategy as unknown as BaseChunkingStrategy),
+      };
+      // Enhancement config enabled (importance + tags on) — matches dev.yaml.
+      wireConfigService = {
+        getEnhancementConfig: jest.fn(() => defaultEnhancementConfig),
+      };
+
+      wireUseCase = new ChunkContentUseCase(
+        wireStrategyRouter as unknown as StrategyRouter,
+        realPipelineService,
+        wireConfigService as unknown as ConfigurationService,
+        aLogger() as unknown as BasePinoLogger,
+      );
+
+      // Real sha256 (chunkHash is always injected; keep it deterministic).
+      mockedCreateHash.mockImplementation(realCrypto.createHash);
+    });
+
+    it('carries the chunk edges on the remember wire payload (metadata.edges) after real enhancement', async () => {
+      const inputEdges: FileEdge[] = [
+        { target_path: '/vault/hub.md', relation_type: 'backlink', strength: 1 },
+      ];
+      const chunkWithEdge = aContentChunk({
+        text: 'note body',
+        metadata: { filePath: '/vault/hub.md' },
+        edges: inputEdges,
+      });
+      // zod-normalized edges (the entity's stored form) are the expectation.
+      const expectedEdges = chunkWithEdge.edges;
+      expect(expectedEdges).toBeDefined();
+
+      wireStrategy.chunkFile.mockResolvedValue(Result.ok([chunkWithEdge]));
+
+      const result = await wireUseCase.execute({
+        content: 'note body',
+        filePath: '/vault/hub.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const resultingChunk = result.getValue()[0];
+
+      // REAL DTO maps the resulting chunk to the remember wire payload.
+      const payload = BensyneRememberDto.fromChunk(resultingChunk);
+
+      // The wire location for edges is metadata.edges (unified chunk contract v1).
+      expect(payload.metadata.edges).toBeDefined();
+      expect(payload.metadata.edges).toEqual(expectedEdges);
+      // Sanity: the REAL pipeline actually ran (importance/tags applied) and
+      // the wire payload reflects the enhanced chunk.
+      expect(resultingChunk.importance).toBe(0.75);
+      expect(resultingChunk.tags).toContain('tag1');
+      expect(payload.importance).toBe(0.75);
     });
   });
 });

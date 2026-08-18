@@ -7,7 +7,7 @@ import {
   telemetryConfigSchema,
   watchSourceConfigSchema,
 } from './config-schemas';
-import { SOURCE_STRATEGIES } from './source-strategies';
+import { SOURCE_TYPES } from './source-types';
 
 describe('config-schemas', () => {
   describe('watchSourceConfigSchema', () => {
@@ -108,51 +108,51 @@ describe('config-schemas', () => {
       }
     });
 
-    it('accepts valid strategy values', () => {
-      const input = { id: 'test-source', path: '/path', strategy: SOURCE_STRATEGIES.AGENT_SESSIONS };
+    it('accepts valid sourceType values', () => {
+      const input = { id: 'test-source', path: '/path', sourceType: SOURCE_TYPES.AGENT_SESSIONS };
       const result = watchSourceConfigSchema.safeParse(input);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.strategy).toBe(SOURCE_STRATEGIES.AGENT_SESSIONS);
+        expect(result.data.sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
       }
 
       const result2 = watchSourceConfigSchema.safeParse({
         id: 'test-source',
         path: '/path',
-        strategy: SOURCE_STRATEGIES.OBSIDIAN,
+        sourceType: SOURCE_TYPES.OBSIDIAN,
       });
       expect(result2.success).toBe(true);
       if (result2.success) {
-        expect(result2.data.strategy).toBe(SOURCE_STRATEGIES.OBSIDIAN);
+        expect(result2.data.sourceType).toBe(SOURCE_TYPES.OBSIDIAN);
       }
 
       const result3 = watchSourceConfigSchema.safeParse({
         id: 'test-source',
         path: '/path',
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+        sourceType: SOURCE_TYPES.VAULT,
       });
       expect(result3.success).toBe(true);
       if (result3.success) {
-        expect(result3.data.strategy).toBe(SOURCE_STRATEGIES.CONTENT_AWARE);
+        expect(result3.data.sourceType).toBe(SOURCE_TYPES.VAULT);
       }
     });
 
-    it('rejects invalid strategy value', () => {
-      const input = { id: 'test-source', path: '/path', strategy: 'invalid-strategy' };
+    it('rejects invalid sourceType value', () => {
+      const input = { id: 'test-source', path: '/path', sourceType: 'invalid-source-type' };
       const result = watchSourceConfigSchema.safeParse(input);
       expect(result.success).toBe(false);
     });
 
-    it('defaults strategy to content-aware when omitted', () => {
+    it('defaults sourceType to vault when omitted', () => {
       const input = { id: 'test-source', path: '/path' };
       const result = watchSourceConfigSchema.safeParse(input);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.strategy).toBe('content-aware');
+        expect(result.data.sourceType).toBe('vault');
       }
     });
 
-    it('backward compatible: config without strategy field parses successfully', () => {
+    it('backward compatible: config without sourceType field parses successfully', () => {
       const input = {
         id: 'legacy-source',
         path: '/legacy/path',
@@ -162,7 +162,7 @@ describe('config-schemas', () => {
       const result = watchSourceConfigSchema.safeParse(input);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.strategy).toBe('content-aware');
+        expect(result.data.sourceType).toBe('vault');
         expect(result.data.memoryBank).toBe('legacy-bank');
       }
     });
@@ -258,7 +258,6 @@ describe('config-schemas', () => {
   describe('chunkingConfigSchema', () => {
     it('parses valid chunking config', () => {
       const input = {
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
         maxSizes: {
           agentSessions: 400,
           obsidianNotes: 500,
@@ -278,7 +277,6 @@ describe('config-schemas', () => {
       const result = chunkingConfigSchema.safeParse({});
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.strategy).toBe('content-aware');
         expect(result.data.maxSizes?.agentSessions).toBe(400);
         expect(result.data.overlap).toBe(50);
         expect(result.data.hardCap).toBe(600);
@@ -418,7 +416,6 @@ describe('config-schemas', () => {
           },
         ],
         chunking: {
-          strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
           maxSizes: {
             agentSessions: 400,
             obsidianNotes: 500,
@@ -452,7 +449,7 @@ describe('config-schemas', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.watchSources).toHaveLength(3);
-        expect(result.data.chunking.strategy).toBe('content-aware');
+        expect(result.data.watchSources[0].sourceType).toBe('vault');
         expect(result.data.mcp.url).toBe('https://lite-llm.lan/mcp/mnemosyne');
       }
     });
@@ -462,7 +459,6 @@ describe('config-schemas', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.watchSources).toEqual([]);
-        expect(result.data.chunking.strategy).toBe('content-aware');
         expect(result.data.enrichment.enabled).toBe(false);
         expect(result.data.enhancement.maxCharacters.prose).toBe(200);
         expect(result.data.enhancement.importance.enabled).toBe(true);

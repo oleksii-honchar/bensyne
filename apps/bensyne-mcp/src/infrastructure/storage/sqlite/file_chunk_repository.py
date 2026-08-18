@@ -141,10 +141,20 @@ class FileChunkRepository:
     # ------------------------------------------------------------------
 
     def get_chunk_by_memory_id(self, memory_id: str) -> Result[FileChunk | None]:
-        """Find a chunk by its associated memory id."""
+        """Find a chunk by its associated memory id.
+
+        A memory_id may back a chunk row in more than one file; the result is
+        made deterministic on (chunk_index, file_id) so the lookup is stable
+        regardless of row insertion order.
+        """
         session = self._conn_manager.get_session()
         try:
-            orm = session.query(FileChunkORM).filter(FileChunkORM.memory_id == memory_id).first()
+            orm = (
+                session.query(FileChunkORM)
+                .filter(FileChunkORM.memory_id == memory_id)
+                .order_by(FileChunkORM.chunk_index.asc(), FileChunkORM.file_id.asc())
+                .first()
+            )
             if orm is None:
                 return Result.ok(None)
             return Result.ok(_orm_to_chunk(orm))

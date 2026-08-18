@@ -44,12 +44,11 @@ class TestHandleRemember:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_remember(router, arguments)
+        mock_container = MagicMock()
+        mock_container.remember_memory_use_case.return_value = mock_use_case
+        result = await handle_remember(router, arguments, container=mock_container)
 
+        mock_container.remember_memory_use_case.assert_called_once()
         mock_use_case.execute.assert_called_once()
         call_args = mock_use_case.execute.call_args[0][0]
         assert call_args["content"] == "Remember this"
@@ -68,11 +67,9 @@ class TestHandleRemember:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_remember(router, arguments)
+        mock_container = MagicMock()
+        mock_container.remember_memory_use_case.return_value = mock_use_case
+        result = await handle_remember(router, arguments, container=mock_container)
 
         assert result["status"] == "stored"
         assert result["memory_id"] == "mem-1"
@@ -85,12 +82,10 @@ class TestHandleRemember:
         mock_use_case = MagicMock()
         mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("CONTENT_REQUIRED", {})])
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            with pytest.raises(ValidationError):
-                await handle_remember(router, arguments)
+        mock_container = MagicMock()
+        mock_container.remember_memory_use_case.return_value = mock_use_case
+        with pytest.raises(ValidationError):
+            await handle_remember(router, arguments, container=mock_container)
 
     async def test_raises_validation_error_when_content_missing(self, router) -> None:
         """handle_remember should raise ValidationError when content is missing."""
@@ -128,12 +123,11 @@ class TestHandleRecall:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_recall(router, arguments)
+        mock_container = MagicMock()
+        mock_container.recall_memory_use_case.return_value = mock_use_case
+        result = await handle_recall(router, arguments, container=mock_container)
 
+        mock_container.recall_memory_use_case.assert_called_once()
         mock_use_case.execute.assert_called_once()
         call_args = mock_use_case.execute.call_args[0][0]
         assert call_args["query"] == "test query"
@@ -151,11 +145,9 @@ class TestHandleRecall:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_recall(router, arguments)
+        mock_container = MagicMock()
+        mock_container.recall_memory_use_case.return_value = mock_use_case
+        result = await handle_recall(router, arguments, container=mock_container)
 
         assert len(result["results"]) == 1
         assert result["memory_bank"] == "default"
@@ -167,12 +159,10 @@ class TestHandleRecall:
         mock_use_case = MagicMock()
         mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("QUERY_REQUIRED", {})])
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            with pytest.raises(ValidationError):
-                await handle_recall(router, arguments)
+        mock_container = MagicMock()
+        mock_container.recall_memory_use_case.return_value = mock_use_case
+        with pytest.raises(ValidationError):
+            await handle_recall(router, arguments, container=mock_container)
 
 
 class TestHandleForget:
@@ -203,12 +193,11 @@ class TestHandleForget:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_forget(router, arguments)
+        mock_container = MagicMock()
+        mock_container.forget_memory_use_case.return_value = mock_use_case
+        result = await handle_forget(router, arguments, container=mock_container)
 
+        mock_container.forget_memory_use_case.assert_called_once()
         mock_use_case.execute.assert_called_once()
         call_args = mock_use_case.execute.call_args[0][0]
         assert call_args["memory_id"] == "mem-1"
@@ -226,11 +215,9 @@ class TestHandleForget:
             }
         )
 
-        with patch(
-            "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            result = await handle_forget(router, arguments)
+        mock_container = MagicMock()
+        mock_container.forget_memory_use_case.return_value = mock_use_case
+        result = await handle_forget(router, arguments, container=mock_container)
 
         assert result["status"] == "deleted"
         assert result["memory_bank"] == "default"
@@ -242,12 +229,10 @@ class TestHandleForget:
         mock_use_case = MagicMock()
         mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("MEMORY_ID_REQUIRED", {})])
 
-        with patch(
-            "src.infrastructure.mcp.handlers.ForgetMemoryUseCase",
-            return_value=mock_use_case,
-        ):
-            with pytest.raises(ValidationError):
-                await handle_forget(router, arguments)
+        mock_container = MagicMock()
+        mock_container.forget_memory_use_case.return_value = mock_use_case
+        with pytest.raises(ValidationError):
+            await handle_forget(router, arguments, container=mock_container)
 
 
 class TestHandleUpdate:
@@ -505,3 +490,45 @@ class TestHandleRegisterBank:
         ):
             with pytest.raises(ValidationError):
                 await handle_register_bank(router, arguments)
+
+
+class TestHandleExpandFileRelations:
+    """Test handle_expand_file_relations delegates to ExpandFileRelationsUseCase."""
+
+    async def test_passes_callable_get_not_client_object(self, tmp_path) -> None:
+        """Handler must pass the bound `get` method (callable), not the client object.
+
+        Regression guard: `FileMetadata.compose_content/compose_fetch` call
+        `mnemosyne_client(chunk.memory_id)`, so the use case receives a
+        callable (memory_id -> memory dict), not the raw MnemosyneClient.
+        Passing the object caused a live `INTERNAL_ERROR`:
+        `'MnemosyneClient' object is not callable`.
+        """
+        from src.infrastructure.mcp.handlers import handle_expand_file_relations
+
+        router = MagicMock()
+        router.get_instance = AsyncMock()
+        router.config.data_dir = str(tmp_path)
+        instance = MagicMock(name="client")
+        router.get_instance.return_value = instance
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "file_id": "file_x",
+                "memory_bank": "tmp-obsidian",
+                "relations": [],
+            }
+        )
+        mock_container = MagicMock()
+        mock_container.expand_file_relations_use_case.return_value = mock_use_case
+
+        arguments = {"memory_bank": "tmp-obsidian", "file_id": "file_x"}
+        await handle_expand_file_relations(router, arguments, container=mock_container)
+
+        mock_container.expand_file_relations_use_case.assert_called_once()
+        # The wiring must pass the callable bound method, not the client object.
+        assert (
+            mock_container.expand_file_relations_use_case.call_args.kwargs["mnemosyne_client"]
+            is instance.get
+        )

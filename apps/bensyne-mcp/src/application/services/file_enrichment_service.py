@@ -6,8 +6,10 @@ memory the service probes the file layer:
 
 - File-backed memory (a FileChunk row links it to a File) ⇒ the result gains
   a `file_enrichment` block built from REAL entity values:
-    - `file`: id, path, source_type, total_chunks, average_importance, metadata,
-      file_hash (the File row's stored hash; null for legacy rows)
+    - `file`: the canonical file block via File.to_dict() (D24.1) — id, path,
+      source_type, file_role, total_chunks, keywords, tags,
+      average_importance, metadata, file_hash (the File row's stored hash;
+      null for legacy rows)
     - `chunk_hash`: the recalled memory's chunk row content_hash (per-memory;
       null for legacy/absent rows — S7). Applied OUTSIDE the per-file cache so
       multiple memories of the same file each surface their own chunk hash.
@@ -135,7 +137,7 @@ class FileEnrichmentService:
         chunks: list[FileChunk] = chunks_result.value if chunks_result.is_ok else []
 
         return {
-            "file": self._file_block(file),
+            "file": file.to_dict(),
             "relations": [self._relation_block(rel) for rel in relations],
             "related_files": self._resolve_related_files(relations, file_id),
             "summary_chain": self._build_summary_chain(file, chunks),
@@ -154,18 +156,6 @@ class FileEnrichmentService:
             return []
         ordered = sorted(relations_result.value, key=lambda rel: rel.strength, reverse=True)
         return ordered[:limit]
-
-    def _file_block(self, file: File) -> dict:
-        """Real entity values for the source file (no hardcoded zeros/empty dict)."""
-        return {
-            "id": file.id,
-            "path": file.path,
-            "source_type": file.source_type.value,
-            "total_chunks": file.total_chunks,
-            "average_importance": file.average_importance,
-            "metadata": dict(file.metadata),
-            "file_hash": file.hash,
-        }
 
     def _relation_block(self, relation: FileRelation) -> dict:
         """Compact relation row (id + type + strength) for the enrichment block."""

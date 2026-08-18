@@ -62,7 +62,10 @@ def file_repo(manager: FileMetadataConnectionManager) -> FileRepository:
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.FILE_SYSTEM,
+    # D28: bootstrap DDL freezes the D29 source_type CHECK set; only
+    # SourceType.UNKNOWN (the current enum member in that set) is persistable
+    # until Task 16 reshapes the enum.
+    source_type: SourceType = SourceType.UNKNOWN,
     status: FileStatus = FileStatus.PENDING,
     created_at: Optional[datetime] = None,
 ) -> File:
@@ -426,6 +429,79 @@ class TestDeleteRelationsByFileId:
         result = repo.delete_relations_by_file_id("f1")
         assert result.is_ok is True
         assert result.value is True
+
+
+# ---------------------------------------------------------------------------
+# get_by_pair (Task 5 — persistence contract, spec §6.2)
+# ---------------------------------------------------------------------------
+
+
+class TestGetByPair:
+    """FileRelationRepository.get_by_pair — pair lookup for id convergence."""
+
+    def test_get_by_pair_returns_relation_when_pair_matches(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        repo.save_relation(
+            _a_relation(
+                id="gp1",
+                source_file_id="f1",
+                target_file_id="f2",
+                relation_type=RelationType.SIBLING,
+                strength=0.66,
+            )
+        )
+        result = repo.get_by_pair("f1", "f2", RelationType.SIBLING)
+        assert result.is_ok is True
+        assert result.value is not None
+        assert result.value.id == "gp1"
+        assert result.value.strength == 0.66
+
+    def test_get_by_pair_returns_none_when_no_relation_for_pair(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        result = repo.get_by_pair("f1", "f2", RelationType.SIBLING)
+        assert result.is_ok is True
+        assert result.value is None
+
+    def test_get_by_pair_ignores_reversed_direction(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        # Only f2 -> f1 exists; f1 -> f2 must not match
+        repo.save_relation(_a_relation(id="gp2", source_file_id="f2", target_file_id="f1"))
+        result = repo.get_by_pair("f1", "f2", RelationType.PARENT_CHILD)
+        assert result.is_ok is True
+        assert result.value is None
+
+    def test_get_by_pair_ignores_other_relation_types(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        repo.save_relation(_a_relation(id="gp3", source_file_id="f1", target_file_id="f2", relation_type=RelationType.SIBLING))
+        result = repo.get_by_pair("f1", "f2", RelationType.VERSION)
+        assert result.is_ok is True
+        assert result.value is None
+
+    def test_get_by_pair_returns_canonical_and_legacy_row_for_same_pair(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        # Legacy pre-convergence row (id without type suffix)
+        repo.save_relation(_a_relation(id="fr_f1_f2", source_file_id="f1", target_file_id="f2", relation_type=RelationType.PARENT_CHILD))
+        # A canonical row for a different type must not shadow the pair match
+        repo.save_relation(_a_relation(id="fr_f1_f2_sibling", source_file_id="f1", target_file_id="f2", relation_type=RelationType.SIBLING))
+        result = repo.get_by_pair("f1", "f2", RelationType.PARENT_CHILD)
+        assert result.is_ok is True
+        assert result.value is not None
+        assert result.value.id == "fr_f1_f2"
 
 
 # ---------------------------------------------------------------------------

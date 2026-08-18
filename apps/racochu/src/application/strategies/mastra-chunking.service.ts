@@ -51,15 +51,15 @@ export class MastraChunkingService {
         return Result.ok([]);
       }
 
-      const strategy = this.determineStrategy(filePath);
+      const chunker = this.determineStrategy(filePath);
       const docType = this.determineDocumentType(filePath);
       const fileRole = this.determineFileRole(filePath);
 
       // Create MDocument using type-aware factory
       const document = this.createDocument(content, docType, filePath, sourceId);
 
-      // Apply chunking strategy with size config from enhancement.maxCharacters
-      await this.applyChunking(document, strategy, fileRole);
+      // Apply chunking with size config from enhancement.maxCharacters
+      await this.applyChunking(document, chunker, fileRole);
 
       // Document-level enrichment via custom LLM
       let enrichedDoc = document;
@@ -176,7 +176,7 @@ Do not include any other text, explanations, or markdown formatting.`,
   }
 
   /**
-   * Determine chunking strategy based on file extension.
+   * Determine the chunker (markdown/recursive/json/sentence) based on file extension.
    */
   private determineStrategy(filePath: string): MastraChunkStrategy {
     const ext = this.getExtension(filePath).toLowerCase();
@@ -187,7 +187,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       return 'markdown';
     }
 
-    // HTML — use markdown strategy (header-based splitting)
+    // HTML — use the markdown chunker (header-based splitting)
     if (['.html', '.htm'].includes(ext)) {
       return 'markdown';
     }
@@ -197,7 +197,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       return 'recursive';
     }
 
-    // Config files — json strategy
+    // Config files — json chunker
     if (this.isConfigExtension(ext) || basename === '.env' || basename.startsWith('.env.')) {
       return 'json';
     }
@@ -281,12 +281,12 @@ Do not include any other text, explanations, or markdown formatting.`,
   }
 
   /**
-   * Apply chunking strategy to MDocument with size limits from enhancement config.
+   * Apply chunking to an MDocument with size limits from enhancement config.
    * No post-chunk truncation — Mastra handles splitting within limits natively.
    */
   private async applyChunking(
     document: MDocument,
-    strategy: MastraChunkStrategy,
+    chunker: MastraChunkStrategy,
     fileRole: FileRole,
   ): Promise<void> {
     const maxChars = this.getMaxCharacters(fileRole);
@@ -295,7 +295,7 @@ Do not include any other text, explanations, or markdown formatting.`,
     // overlap must be < maxSize; use 25% of maxSize or 0 if too small
     const overlap = maxChars > 4 ? Math.floor(maxChars * 0.25) : 0;
 
-    switch (strategy) {
+    switch (chunker) {
       case 'markdown':
         // MarkdownTransformer: use maxSize per section
         await document.chunkMarkdown({ maxSize: maxChars, overlap });

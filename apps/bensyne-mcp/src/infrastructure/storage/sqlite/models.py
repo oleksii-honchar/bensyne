@@ -88,18 +88,14 @@ class FileORM(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "source_type IN ('agent_session', 'file_system', 'git', 'database', 'external', 'remote', 'unknown')",
+            "source_type IN "
+            "('obsidian', 'agent-sessions', 'vault', 'unknown')",
             name="ck_files_source_type",
         ),
         CheckConstraint(
             "file_role IN ('config', 'code', 'docs') OR file_role IS NULL",
             name="ck_files_file_role",
         ),
-        CheckConstraint(
-            "status IN ('pending', 'indexed', 'archived', 'deleted')",
-            name="ck_files_status",
-        ),
-        {"sqlite_autoincrement": False},
     )
 
 

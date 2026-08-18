@@ -1,5 +1,5 @@
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
-import { SOURCE_STRATEGIES, SourceStrategy } from '@/infrastructure/config/source-strategies';
+import { SOURCE_TYPES, SourceType } from '@/infrastructure/config/source-types';
 import { generateId } from '../utils/big-endian-id';
 import { faker } from '../utils/test-faker';
 import { WatchSource, WatchSourceProps } from './watch-source.entity';
@@ -12,7 +12,7 @@ export function aWatchSource(overrides?: Partial<WatchSourceProps>): WatchSource
     exclude: [`**/${faker.lorem.word()}/**`],
     debounceMs: 3000,
     ignorePatterns: [],
-    strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+    sourceType: SOURCE_TYPES.VAULT,
     ...overrides,
   };
   return WatchSource.of(props).getValue();
@@ -25,7 +25,7 @@ export interface WatchSourceConfigOverrides {
   description?: string;
   exclude?: string[];
   debounceMs?: number;
-  strategy?: SourceStrategy;
+  sourceType?: SourceType;
 }
 
 export function aWatchSourceConfig(overrides?: WatchSourceConfigOverrides): WatchSourceConfig {
@@ -38,6 +38,6 @@ export function aWatchSourceConfig(overrides?: WatchSourceConfigOverrides): Watc
     description: overrides?.description,
     exclude: overrides?.exclude ?? [`**/${faker.lorem.word()}/**`],
     debounceMs: overrides?.debounceMs ?? 3000,
-    strategy: overrides?.strategy ?? SOURCE_STRATEGIES.CONTENT_AWARE,
+    sourceType: overrides?.sourceType ?? SOURCE_TYPES.VAULT,
   };
 }

@@ -253,10 +253,6 @@ class TestForgetMemoryUseCase:
         return MagicMock()
 
     @pytest.fixture
-    def chunk_repository(self) -> MagicMock:
-        return MagicMock()
-
-    @pytest.fixture
     def bank_type_checker(self) -> MagicMock:
         return MagicMock(return_value="pure_memories")
 
@@ -270,7 +266,6 @@ class TestForgetMemoryUseCase:
         mnemosyne_client,
         hash_index_service,
         file_service,
-        chunk_repository,
         bank_type_checker,
         logger,
     ) -> ForgetMemoryUseCase:
@@ -279,7 +274,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
 
@@ -367,7 +361,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=MagicMock(),
-            chunk_repository=MagicMock(),
             bank_type_checker=bank_type_checker,
         )
 
@@ -391,7 +384,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=MagicMock(),
-            chunk_repository=MagicMock(),
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)
@@ -417,7 +409,6 @@ class TestForgetMemoryUseCase:
 
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
 
         now = datetime(2026, 1, 1, 0, 0, 0)
         chunk = FileChunk(
@@ -436,14 +427,13 @@ class TestForgetMemoryUseCase:
             created_at=now,
             updated_at=now,
         )
-        chunk_repository.get_chunks_by_memory_id.return_value = Result.ok([chunk])
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([chunk])
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)
@@ -461,15 +451,13 @@ class TestForgetMemoryUseCase:
         """When no chunks reference the memory, file_service.remove_chunk must not be called."""
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
-        chunk_repository.get_chunks_by_memory_id.return_value = Result.ok([])
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([])
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)
@@ -487,14 +475,12 @@ class TestForgetMemoryUseCase:
         """When memory was not found, chunk cleanup must not run."""
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(False)
@@ -506,7 +492,7 @@ class TestForgetMemoryUseCase:
             }
         )
 
-        chunk_repository.get_chunks_by_memory_id.assert_not_called()
+        file_service.get_chunks_by_memory_id.assert_not_called()
         file_service.remove_chunk.assert_not_called()
 
     # -- File deletion when file becomes empty --
@@ -519,7 +505,6 @@ class TestForgetMemoryUseCase:
 
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
 
         now = datetime(2026, 1, 1, 0, 0, 0)
         chunk = FileChunk(
@@ -538,7 +523,7 @@ class TestForgetMemoryUseCase:
             created_at=now,
             updated_at=now,
         )
-        chunk_repository.get_chunks_by_memory_id.return_value = Result.ok([chunk])
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([chunk])
 
         # After removing the chunk, file has no remaining chunks
         file_service.remove_chunk.return_value = Result.ok(None, events=[])
@@ -549,7 +534,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)
@@ -573,7 +557,6 @@ class TestForgetMemoryUseCase:
 
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
 
         now = datetime(2026, 1, 1, 0, 0, 0)
         chunk = FileChunk(
@@ -592,7 +575,7 @@ class TestForgetMemoryUseCase:
             created_at=now,
             updated_at=now,
         )
-        chunk_repository.get_chunks_by_memory_id.return_value = Result.ok([chunk])
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([chunk])
 
         # After removing the chunk, file still has remaining chunks
         file_service.remove_chunk.return_value = Result.ok(None, events=[])
@@ -603,7 +586,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)
@@ -627,7 +609,6 @@ class TestForgetMemoryUseCase:
 
         bank_type_checker = lambda bank: "pure_memories"
         file_service = MagicMock()
-        chunk_repository = MagicMock()
 
         now = datetime(2026, 1, 1, 0, 0, 0)
         chunk = FileChunk(
@@ -646,7 +627,7 @@ class TestForgetMemoryUseCase:
             created_at=now,
             updated_at=now,
         )
-        chunk_repository.get_chunks_by_memory_id.return_value = Result.ok([chunk])
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([chunk])
         file_service.remove_chunk.return_value = Result.ok(None, events=[])
         file_service.get_chunks_count_by_file_id.return_value = Result.ok(0)
 
@@ -655,7 +636,6 @@ class TestForgetMemoryUseCase:
             hash_index_service=hash_index_service,
             logger=logger,
             file_service=file_service,
-            chunk_repository=chunk_repository,
             bank_type_checker=bank_type_checker,
         )
         mnemosyne_client.forget.return_value = Result.ok(True)

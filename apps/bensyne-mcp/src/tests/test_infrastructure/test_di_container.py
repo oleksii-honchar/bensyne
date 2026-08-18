@@ -184,3 +184,248 @@ class TestTestContainerProviders:
         container = TestContainer()
         logger = container.logger()
         assert isinstance(logger, LoggerMock)
+
+
+# ---------------------------------------------------------------------------
+# Per-bank file-metadata factories (D25) — wiring and single-instance identity
+# ---------------------------------------------------------------------------
+
+
+class TestFileMetadataBundleFactory:
+    """file_metadata_bundle builds one connection manager + 3 repositories per bank."""
+
+    def test_bundle_resolves_storage_objects(self, tmp_path) -> None:
+        """Bundle resolves a connection manager and the 3 file repositories."""
+        from src.infrastructure.di import FileMetadataBundle
+        from src.infrastructure.storage.sqlite.file_chunk_repository import (
+            FileChunkRepository,
+        )
+        from src.infrastructure.storage.sqlite.file_metadata_connection import (
+            FileMetadataConnectionManager,
+        )
+        from src.infrastructure.storage.sqlite.file_relation_repository import (
+            FileRelationRepository,
+        )
+        from src.infrastructure.storage.sqlite.file_repository import FileRepository
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+
+        assert isinstance(bundle, FileMetadataBundle)
+        assert isinstance(bundle.connection_manager, FileMetadataConnectionManager)
+        assert isinstance(bundle.file_repository, FileRepository)
+        assert isinstance(bundle.chunk_repository, FileChunkRepository)
+        assert isinstance(bundle.relation_repository, FileRelationRepository)
+
+    def test_bundle_shares_single_connection_manager(self, tmp_path) -> None:
+        """All 3 repositories are wired to the bundle's single connection manager."""
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+
+        assert bundle.file_repository._conn_manager is bundle.connection_manager
+        assert bundle.chunk_repository._conn_manager is bundle.connection_manager
+        assert bundle.relation_repository._conn_manager is bundle.connection_manager
+
+
+class TestFileServiceFactory:
+    """file_service builds FileService from a bundle with the container logger."""
+
+    def test_file_service_reuses_bundle_repositories(self, tmp_path) -> None:
+        """FileService gets the exact repository instances from the bundle."""
+        from src.application.services.file_service import FileService
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        service = container.file_service(bundle=bundle)
+
+        assert isinstance(service, FileService)
+        assert service.file_repository is bundle.file_repository
+        assert service.chunk_repository is bundle.chunk_repository
+        assert service.relation_repository is bundle.relation_repository
+
+    def test_file_service_uses_container_logger(self, tmp_path) -> None:
+        """FileService logger is the container's logger singleton."""
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        service = container.file_service(bundle=bundle)
+
+        assert service._logger is container.logger()
+
+
+class TestFileUseCaseFactories:
+    """Use case factories produce use cases wired to the same container objects."""
+
+    def test_fetch_file_use_case_shares_injected_file_service(self, tmp_path) -> None:
+        """fetch_file_use_case injects the exact FileService instance given."""
+        from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        instance = MagicMock()
+
+        use_case = container.fetch_file_use_case(mnemosyne_client=instance, file_service=file_service)
+
+        assert isinstance(use_case, FetchFileUseCase)
+        assert use_case.file_service is file_service
+        assert use_case.mnemosyne_client is instance
+
+    def test_remember_memory_use_case_shares_container_objects(self, tmp_path) -> None:
+        """remember_memory_use_case shares the FileService and hash index service instances."""
+        from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        hash_index_service = container.hash_index_service(memory_bank="bank")
+        instance = MagicMock()
+
+        use_case = container.remember_memory_use_case(
+            memory_repository=instance,
+            hash_index_service=hash_index_service,
+            file_service=file_service,
+        )
+
+        assert isinstance(use_case, RememberMemoryUseCase)
+        assert use_case.file_service is file_service
+        assert use_case.hash_index_service is hash_index_service
+        assert use_case.memory_repository is instance
+
+    def test_recall_memory_use_case_shares_enrichment_service(self, tmp_path) -> None:
+        """recall_memory_use_case shares the FileEnrichmentService instance."""
+        from src.application.services.file_enrichment_service import FileEnrichmentService
+        from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        enrichment = container.file_enrichment_service(file_service=file_service)
+        instance = MagicMock()
+
+        use_case = container.recall_memory_use_case(
+            mnemosyne_client=instance,
+            file_enrichment_service=enrichment,
+        )
+
+        assert isinstance(use_case, RecallMemoryUseCase)
+        assert use_case.file_enrichment_service is enrichment
+        assert enrichment._file_service is file_service
+
+    def test_forget_memory_use_case_shares_container_objects(self, tmp_path) -> None:
+        """forget_memory_use_case shares FileService, hash index and bank type checker."""
+        from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        hash_index_service = container.hash_index_service(memory_bank="bank")
+        checker = container.bank_type_checker(data_dir=tmp_path)
+        instance = MagicMock()
+
+        use_case = container.forget_memory_use_case(
+            mnemosyne_client=instance,
+            hash_index_service=hash_index_service,
+            file_service=file_service,
+            bank_type_checker=checker,
+        )
+
+        assert isinstance(use_case, ForgetMemoryUseCase)
+        assert use_case.file_service is file_service
+        assert use_case.hash_index_service is hash_index_service
+        assert use_case.bank_type_checker is checker
+
+    def test_search_files_use_case_shares_injected_file_service(self, tmp_path) -> None:
+        """search_files_use_case injects the exact FileService instance given."""
+        from src.application.use_cases.search_files_use_case import SearchFilesUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        instance = MagicMock()
+
+        use_case = container.search_files_use_case(mnemosyne_client=instance, file_service=file_service)
+
+        assert isinstance(use_case, SearchFilesUseCase)
+        assert use_case.file_service is file_service
+
+    def test_expand_file_relations_use_case_shares_bundle_relation_repository(self, tmp_path) -> None:
+        """expand_file_relations_use_case wires FileService and relation repo from one bundle."""
+        from src.application.use_cases.expand_file_relations_use_case import (
+            ExpandFileRelationsUseCase,
+        )
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        instance = MagicMock()
+
+        use_case = container.expand_file_relations_use_case(mnemosyne_client=instance, bundle=bundle)
+
+        assert isinstance(use_case, ExpandFileRelationsUseCase)
+        assert use_case.relation_repository is bundle.relation_repository
+        # FileService must come from the SAME bundle (single connection manager)
+        assert use_case.file_service.file_repository is bundle.file_repository
+        assert use_case.file_service.chunk_repository is bundle.chunk_repository
+
+
+class TestFileMetadataSupportFactories:
+    """hash_index_service and bank_type_checker factories."""
+
+    def test_hash_index_service_factory(self) -> None:
+        """hash_index_service factory builds a HashIndexService for the bank."""
+        from src.infrastructure.mcp.hash_index_service import HashIndexService
+
+        container = ProductionContainer()
+        service = container.hash_index_service(memory_bank="bank")
+
+        assert isinstance(service, HashIndexService)
+        assert service.memory_bank == "bank"
+
+    def test_bank_type_checker_detects_file_metadata_banks(self, tmp_path) -> None:
+        """bank_type_checker returns file_metadata when the bank DB exists."""
+        container = ProductionContainer()
+        bank_db = tmp_path / "banks" / "bank-a" / "file_metadata.db"
+        bank_db.parent.mkdir(parents=True)
+        bank_db.touch()
+
+        checker = container.bank_type_checker(data_dir=tmp_path)
+
+        assert checker("bank-a") == "file_metadata"
+        assert checker("unknown-bank") == "pure_memories"
+
+    def test_bank_type_checker_default_bank_path(self, tmp_path) -> None:
+        """Default bank resolves file_metadata.db at the data_dir root."""
+        container = ProductionContainer()
+        (tmp_path / "file_metadata.db").touch()
+
+        checker = container.bank_type_checker(data_dir=tmp_path)
+
+        assert checker("default") == "file_metadata"
+
+
+class TestTestContainerFileFactories:
+    """TestContainer inherits the file-metadata factories with the mock logger."""
+
+    def test_test_container_file_service_uses_mock_logger(self, tmp_path) -> None:
+        """TestContainer file_service wires the LoggerMock singleton."""
+        from src.utils.structured_logging import LoggerMock
+
+        container = TestContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        service = container.file_service(bundle=bundle)
+
+        assert service._logger is container.logger()
+        assert isinstance(service._logger, LoggerMock)
+
+    def test_test_container_use_case_factories_resolve(self, tmp_path) -> None:
+        """TestContainer use case factories resolve with mock logger."""
+        from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
+
+        container = TestContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        instance = MagicMock()
+
+        use_case = container.fetch_file_use_case(mnemosyne_client=instance, file_service=file_service)
+
+        assert isinstance(use_case, FetchFileUseCase)
+        assert use_case.file_service is file_service

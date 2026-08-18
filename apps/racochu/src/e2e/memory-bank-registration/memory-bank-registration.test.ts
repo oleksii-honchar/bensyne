@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import * as os from 'os';
 import * as path from 'path';
-import { SOURCE_STRATEGIES } from '../../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { initializeMcpSession, listBanks } from '../../utils/mcp-e2e-client';
 import { createTestApplication } from '../main.test-application';
 
@@ -71,7 +71,7 @@ describe('[E2E] Memory Bank Registration — racochu registers memory banks on b
         },
       ],
       chunking: {
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+        sourceType: SOURCE_TYPES.VAULT,
         maxSizes: {
           agentSessions: 400,
           obsidianNotes: 500,

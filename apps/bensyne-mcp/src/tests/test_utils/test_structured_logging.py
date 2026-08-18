@@ -504,7 +504,7 @@ class TestJsonlFileHandler:
         init_structlog()
 
         file_logger = get_file_logger()
-        file_logger.info("Creating file", service="file_service", method="create_file", file_id="f1")
+        file_logger.info("Updating file", service="file_service", method="update_file", file_id="f1")
 
         with open(log_file, "r") as f:
             lines = f.readlines()
@@ -516,11 +516,11 @@ class TestJsonlFileHandler:
             if not line:
                 continue
             parsed = json.loads(line)
-            if parsed.get("event") == "Creating file":
+            if parsed.get("event") == "Updating file":
                 matching.append(parsed)
 
         assert len(matching) >= 1
         entry = matching[0]
         assert entry.get("service") == "file_service"
-        assert entry.get("method") == "create_file"
+        assert entry.get("method") == "update_file"
         assert entry.get("file_id") == "f1"

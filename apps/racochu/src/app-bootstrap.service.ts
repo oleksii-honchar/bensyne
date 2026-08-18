@@ -26,9 +26,8 @@ export class AppBootstrapService implements OnApplicationBootstrap {
     const watchSources = this.configService.getWatchSources();
     this.logger.info(`  - Watch sources: ${watchSources.length}`);
     for (const source of watchSources) {
-      this.logger.info(`    - ${source.id}: ${source.path}`);
+      this.logger.info(`    - ${source.id}: ${source.path} (sourceType=${source.sourceType})`);
     }
-    this.logger.info(`  - Chunking strategy: ${this.configService.getChunkingConfig().strategy}`);
     this.logger.info(
       `  - Enrichment: ${this.configService.getEnrichmentConfig().enabled ? 'enabled' : 'disabled'}`,
     );

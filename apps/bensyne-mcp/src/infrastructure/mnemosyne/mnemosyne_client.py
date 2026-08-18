@@ -137,11 +137,24 @@ class MnemosyneClient:
             logger.error("Mnemosyne sleep failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def stats(self) -> Result[dict[str, Any]]:
+    def get_stats(self) -> Result[dict[str, Any]]:
         """Return memory statistics."""
         try:
-            value = self._instance.stats()
+            value = self._instance.get_stats()
             return Result.ok(value)
         except Exception as exc:
             logger.error("Mnemosyne stats failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
+
+    def get(self, memory_id: str) -> dict | None:
+        """Retrieve a single memory by id (callable contract for content composition)."""
+        try:
+            return self._instance.get(memory_id)
+        except Exception as exc:
+            logger.error(
+                "Mnemosyne get failed",
+                memory_bank=self.memory_bank,
+                memory_id=memory_id,
+                error=str(exc),
+            )
+            return None

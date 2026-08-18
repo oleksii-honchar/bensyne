@@ -71,14 +71,38 @@ class File:
         """Check if file is in deleted state."""
         return self.status == FileStatus.DELETED
 
+    def to_dict(self) -> dict:
+        """Canonical plain file block for retrieval responses (D24.1, spec §7.1).
+
+        Single source of the file block emitted by every retrieval site —
+        searchFiles ``file``, fetchFile ``file``, recall
+        ``file_enrichment.file`` and expandFileRelations ``source_file``.
+        Key set = the legacy SearchFilesUseCase file block + ``file_hash``
+        (D15 — the column exists and retrieval surfaces the hash).
+        Timestamps and lifecycle fields are system-managed and not part of
+        the block (D23).
+        """
+        return {
+            "id": self.id,
+            "path": self.path,
+            "source_type": self.source_type.value,
+            "file_role": self.file_role.value if self.file_role is not None else "",
+            "total_chunks": self.total_chunks,
+            "keywords": self.aggregated_keywords,
+            "tags": self.aggregated_tags,
+            "average_importance": self.average_importance,
+            "metadata": dict(self.metadata),
+            "file_hash": self.hash,
+        }
+
     def mark_indexed(self) -> "Result[File]":
         """Transition file to INDEXED status.
 
-        Returns Result.ko if already indexed or deleted.
-        Emits FileIndexCompletedEvent on success.
+        Returns Result.ko if already indexed. Emits FileIndexCompletedEvent on
+        success. A DELETED file is resurrected to INDEXED (D21 / O1):
+        re-materializing a forgotten file revives it, making forget ->
+        re-remember a clean round-trip rather than a one-way door.
         """
-        if self._is_deleted():
-            return Result.ko([ErrorWithDetails("FILE_DELETED", {"id": self.id})])
         if self.status == FileStatus.INDEXED:
             return Result.ko([ErrorWithDetails("FILE_ALREADY_INDEXED", {"id": self.id})])
 
@@ -116,30 +140,43 @@ class File:
 
     def update_metadata(
         self,
-        hash: str | None = None,
+        path: str | None = None,
+        source_type: SourceType | None = None,
         file_role: FileRole | None = None,
+        hash: str | None = None,
         file_type: str | None = None,
         size: int | None = None,
         language: str | None = None,
+        aggregated_keywords: list[str] | None = None,
+        aggregated_tags: list[str] | None = None,
         summary: str | None = None,
         total_chunks: int | None = None,
         average_importance: float | None = None,
         metadata: dict[str, str] | None = None,
     ) -> "Result[File]":
-        """Update file metadata fields.
+        """Update file metadata fields (partial — an omitted/None value is kept).
 
-        Returns Result.ko if file is deleted or validation fails.
-        Emits FileUpdatedEvent on success.
+        The merged state is validated against the single source of truth, the
+        Pydantic ``FileSchema`` (D23). Returns Result.ko if the file is
+        deleted or the merged state fails validation (stored row unchanged).
+        Emits FileUpdatedEvent on a real change.
         """
         if self._is_deleted():
             return Result.ko([ErrorWithDetails("FILE_DELETED", {"id": self.id})])
 
-        changed = []
-        new_hash = hash if hash is not None else self.hash
+        new_path = path if path is not None else self.path
+        new_source_type = source_type if source_type is not None else self.source_type
         new_file_role = file_role if file_role is not None else self.file_role
+        new_hash = hash if hash is not None else self.hash
         new_file_type = file_type if file_type is not None else self.file_type
         new_size = size if size is not None else self.size
         new_language = language if language is not None else self.language
+        new_aggregated_keywords = (
+            aggregated_keywords if aggregated_keywords is not None else self.aggregated_keywords
+        )
+        new_aggregated_tags = (
+            aggregated_tags if aggregated_tags is not None else self.aggregated_tags
+        )
         new_summary = summary if summary is not None else self.summary
         new_total_chunks = total_chunks if total_chunks is not None else self.total_chunks
         new_average_importance = (
@@ -147,16 +184,50 @@ class File:
         )
         new_metadata = metadata if metadata is not None else self.metadata
 
-        if new_hash != self.hash:
-            changed.append("hash")
+        # Single runtime validation source (D23): validate the merged state via
+        # the Pydantic FileSchema. Invalid ⇒ ko, stored row unchanged.
+        try:
+            FileSchema(
+                id=self.id,
+                path=new_path,
+                source_type=new_source_type,
+                file_role=new_file_role,
+                hash=new_hash,
+                file_type=new_file_type,
+                size=new_size,
+                language=new_language,
+                aggregated_keywords=new_aggregated_keywords,
+                aggregated_tags=new_aggregated_tags,
+                status=self.status,
+                summary=new_summary,
+                total_chunks=new_total_chunks,
+                average_importance=new_average_importance,
+                metadata=new_metadata,
+                created_at=self.created_at,
+                updated_at=self.updated_at,
+            )
+        except ValidationError as e:
+            return Result.ko([ErrorWithDetails("INVALID_FILE", e.errors())])
+
+        changed = []
+        if new_path != self.path:
+            changed.append("path")
+        if new_source_type != self.source_type:
+            changed.append("source_type")
         if new_file_role != self.file_role:
             changed.append("file_role")
+        if new_hash != self.hash:
+            changed.append("hash")
         if new_file_type != self.file_type:
             changed.append("file_type")
         if new_size != self.size:
             changed.append("size")
         if new_language != self.language:
             changed.append("language")
+        if new_aggregated_keywords != self.aggregated_keywords:
+            changed.append("aggregated_keywords")
+        if new_aggregated_tags != self.aggregated_tags:
+            changed.append("aggregated_tags")
         if new_summary != self.summary:
             changed.append("summary")
         if new_total_chunks != self.total_chunks:
@@ -170,11 +241,15 @@ class File:
             return Result.ok(self)
 
         updated = self._replace(
-            hash=new_hash,
+            path=new_path,
+            source_type=new_source_type,
             file_role=new_file_role,
+            hash=new_hash,
             file_type=new_file_type,
             size=new_size,
             language=new_language,
+            aggregated_keywords=new_aggregated_keywords,
+            aggregated_tags=new_aggregated_tags,
             summary=new_summary,
             total_chunks=new_total_chunks,
             average_importance=new_average_importance,
@@ -206,6 +281,31 @@ class File:
 
         new_tags = self.aggregated_tags + tags
         updated = self._replace(aggregated_tags=new_tags)
+        event = FileUpdatedEvent.of(self.id, changed_fields=["aggregated_tags"])
+        return Result.ok(updated, events=[event.value])
+
+    def merge_tags(self, tags: list[str]) -> "Result[File]":
+        """Union-merge tags into aggregated_tags, order-preserving (O5).
+
+        Returns Result.ok(self) — zero events — when the union is identical
+        to the current tag list (idempotent re-materialization is silent).
+        Returns Result.ko if the file is deleted.
+        """
+        if self._is_deleted():
+            return Result.ko([ErrorWithDetails("FILE_DELETED", {"id": self.id})])
+
+        # Order-preserving set-union: keep existing order, append new tags.
+        seen = set(self.aggregated_tags)
+        merged = list(self.aggregated_tags)
+        for tag in tags:
+            if tag not in seen:
+                seen.add(tag)
+                merged.append(tag)
+
+        if merged == self.aggregated_tags:
+            return Result.ok(self)
+
+        updated = self._replace(aggregated_tags=merged)
         event = FileUpdatedEvent.of(self.id, changed_fields=["aggregated_tags"])
         return Result.ok(updated, events=[event.value])
 

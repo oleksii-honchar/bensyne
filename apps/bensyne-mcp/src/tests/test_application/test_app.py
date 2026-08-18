@@ -57,7 +57,7 @@ class TestCreateApplication:
             mock_create_server.assert_called_once_with(mock_config)
 
     def test_create_application_registers_tools(self, mock_config, mock_router) -> None:
-        """create_application registers MCP tools with the router injected."""
+        """create_application registers MCP tools with the router injected (container defaults to None)."""
         with (
             patch("src.app.create_server") as mock_create_server,
             patch("src.app.register_tools") as mock_register_tools,
@@ -71,7 +71,25 @@ class TestCreateApplication:
 
             create_application(mock_config, mock_router)
 
-            mock_register_tools.assert_called_once_with(mock_mcp, mock_router)
+            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, None)
+
+    def test_create_application_plumbs_container_to_register_tools(self, mock_config, mock_router) -> None:
+        """create_application passes the DI container through to register_tools (D25)."""
+        with (
+            patch("src.app.create_server") as mock_create_server,
+            patch("src.app.register_tools") as mock_register_tools,
+            patch("src.app.mount_health_routes"),
+        ):
+
+            mock_mcp = MagicMock()
+            mock_create_server.return_value = mock_mcp
+            mock_container = MagicMock()
+
+            from src.app import create_application
+
+            create_application(mock_config, mock_router, mock_container)
+
+            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, mock_container)
 
     def test_create_application_mounts_health_routes(self, mock_config, mock_router) -> None:
         """create_application mounts health check endpoints."""

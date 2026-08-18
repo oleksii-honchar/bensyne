@@ -15,7 +15,7 @@ from typing import Callable
 import structlog.stdlib
 from src.application.services.file_service import FileService
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_metadata_aggregate import FileMetadata
 from src.domain.file_entity import File
 from src.domain.file_relation_entity import FileRelation, RelationType
 from src.utils.result import ErrorWithDetails, Result
@@ -25,7 +25,7 @@ from src.infrastructure.storage.sqlite.file_relation_repository import FileRelat
 class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
     """Orchestrates file relations expansion with content composition.
 
-    Delegates content composition to FileMetadataAggregate.compose_content()
+    Delegates content composition to FileMetadata.compose_content()
     to avoid anemic domain model — the aggregate owns its chunks and produces
     its own representation.
     """
@@ -85,6 +85,11 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
         else:
             relations = relations_result.value
 
+        # Expansion is one-way (outgoing): only relations where this file is
+        # the source. get_relations_by_file_id is bidirectional (shared with
+        # searchFiles), so restrict here to match traversal semantics.
+        relations = [r for r in relations if r.source_file_id == file_id]
+
         # Filter by relation_types if specified
         if relation_types:
             allowed = {RelationType(rt) for rt in relation_types}
@@ -115,7 +120,7 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         return Result.ok(
             {
-                "source_file": self._file_to_dict(source_file),
+                "source_file": source_file.to_dict(),
                 "related_files": related_files,
             }
         )
@@ -198,14 +203,4 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
 
         return expanded
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
-    def _file_to_dict(self, file: File) -> dict:
-        """Convert a File entity to a dict for the result."""
-        return {
-            "id": file.id,
-            "path": file.path,
-            "source_type": file.source_type.value,
-        }

@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
@@ -150,6 +151,7 @@ function formatSessionMetadata(metadata: SessionMetadata): Record<string, string
  * 5. Chunks body via MastraChunkingService
  * 6. Enriches all chunks with session metadata
  */
+@Injectable()
 export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
   constructor(
     private readonly sessionMetadataService: SessionMetadataService,

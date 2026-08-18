@@ -29,8 +29,8 @@ export class ContentChunkerService {
       throw new Error('File path is required');
     }
 
-    const strategy = this.determineStrategy(request.filePath);
-    return strategy.chunk(request.content, {
+    const chunker = this.determineChunker(request.filePath);
+    return chunker.chunk(request.content, {
       maxTokens: request.maxTokens ?? this.DEFAULT_MAX_TOKENS,
       overlapTokens: request.overlapTokens ?? this.DEFAULT_OVERLAP,
       hardCapTokens: request.hardCapTokens,
@@ -41,7 +41,7 @@ export class ContentChunkerService {
     });
   }
 
-  private determineStrategy(filePath: string): ChunkingStrategy {
+  private determineChunker(filePath: string): ChunkingStrategy {
     const ext = this.getExtension(filePath).toLowerCase();
 
     if (ext === '.md' || ext === '.mdx') {

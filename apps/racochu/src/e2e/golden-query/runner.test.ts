@@ -15,7 +15,7 @@ describe('golden-query runner helpers', () => {
     });
 
     it('returns false when expected content absent', () => {
-      expect(isContentHit(['vector search'], 'chunking strategy config')).toBe(false);
+      expect(isContentHit(['vector search'], 'chunking config')).toBe(false);
     });
 
     it('ignores empty expected snippets', () => {

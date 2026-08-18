@@ -6,29 +6,28 @@
 # Drop files into ./watch-folder-dev to trigger chunking.
 
 watchSources:
-  - id: tmp-general
-    path: ./tmp/general
-    strategy: content-aware
+  - id: tmp-vault
+    path: ./tmp/vault
+    sourceType: vault
     exclude:
       - '**/Thumbs.db'
       - '**/.env*'
     debounceMs: 1000
   - id: tmp-obsidian
     path: ./tmp/obsidian
-    strategy: obsidian
+    sourceType: obsidian
     exclude:
       - '**/Thumbs.db'
       - '**/.env*'
     debounceMs: 1000
   - id: tmp-agent-sessions
     path: ./tmp/agent-sessions
-    strategy: agent-sessions
+    sourceType: agent-sessions
     exclude:
       - '**/Thumbs.db'
       - '**/.env*'
     debounceMs: 1000
 chunking:
-  strategy: content-aware
   maxSizes:
     agentSessions: 400
     obsidianNotes: 500

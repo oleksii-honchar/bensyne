@@ -67,7 +67,9 @@ CONTRACT_TEMPLATE = {
     "section_header": "## Section One",
     "start_line": 1,
     "end_line": 40,
-    "source_type": "agent_session",
+    # D29: the template describes agent-sessions materials (session.* extras,
+    # agent-sessions paths) — the real producer value.
+    "source_type": "agent-sessions",
     "file_role": "docs",
     "language": "markdown",
     "file_hash": HASH_V1,
@@ -162,7 +164,6 @@ def _forget_use_case(
         hash_index_service=hash_index,
         logger=LoggerMock(),
         file_service=file_service,
-        chunk_repository=file_service.chunk_repository,
         bank_type_checker=lambda bank: "pure_memories",
     )
 
@@ -682,6 +683,83 @@ class TestForgetSymmetry:
         assert relations[0].source_file_id == FILE_ID_F
         assert relations[0].target_file_id == FILE_ID_G
 
+    def test_forget_shared_memory_removes_chunk_from_every_file(
+        self, file_service: FileService, hash_index: HashIndexService, manager
+    ) -> None:
+        """A memory id referenced by chunks of MORE THAN ONE file: forgetting it
+        must remove the chunk row from EACH file (plural get_chunks_by_memory_id →
+        per-chunk remove), not just the first. Real SQLite, only mnemosyne mocked."""
+        from datetime import datetime
+        from src.domain.file_chunk_entity import FileChunk
+        from src.domain.file_entity import File
+        from src.domain.models.file_chunk_model import ContentType as ChunkContentType
+        from src.domain.models.file_model import FileRole, SourceType
+
+        mnemosyne = _mock_mnemosyne()
+        remember = _remember_use_case(mnemosyne, hash_index, file_service)
+        forget = _forget_use_case(mnemosyne, hash_index, file_service)
+
+        # File F chunk 0 → memory mem_shared.
+        _, mem_shared = _remember_chunk(
+            remember, "m_shared", "shared content", _contract(chunk_index=0, total_chunks=1, edges=[])
+        )
+
+        # File H — a second file whose single chunk references the SAME memory id.
+        path_h = "/vault/notes/h_shared.md"
+        file_id_h = derive_file_id(BANK, path_h)
+        now = datetime(2026, 1, 1, 0, 0, 0)
+        file_h = File(
+            id=file_id_h,
+            path=path_h,
+            source_type=SourceType.VAULT,
+            file_role=FileRole.DOCS,
+            hash=None,
+            file_type=None,
+            size=None,
+            language="markdown",
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={},
+            created_at=now,
+            updated_at=now,
+        )
+        assert FileRepository(manager).save_file(file_h).is_ok
+        shared_chunk = FileChunk(
+            id=f"fc_{file_id_h}_{mem_shared}",
+            file_id=file_id_h,
+            memory_id=mem_shared,
+            chunk_index=0,
+            start_line=0,
+            end_line=10,
+            content_hash="sharedhash",
+            content_type=ChunkContentType.TEXT,
+            is_partial=False,
+            section_header=None,
+            parent_unit_ref=None,
+            parent_unit_summary=None,
+            created_at=now,
+            updated_at=now,
+        )
+        repo = FileChunkRepository(manager)
+        saved = repo.save_chunk(shared_chunk)
+        assert saved.is_ok
+
+        # Pre-condition: the memory id is referenced by chunks of BOTH files.
+        assert [c.memory_id for c in _chunk_rows(file_service, FILE_ID_F)] == [mem_shared]
+        assert [c.memory_id for c in _chunk_rows(file_service, file_id_h)] == [mem_shared]
+
+        result = forget.execute({"memory_id": mem_shared, "memory_bank": BANK})
+        assert result.is_ok
+        assert result.value["status"] == "deleted"  # type: ignore[index]
+
+        # The chunk row for the shared memory is gone from EVERY referencing file.
+        assert _chunk_rows(file_service, FILE_ID_F) == []
+        assert _chunk_rows(file_service, file_id_h) == []
+
     def test_forgetting_all_chunks_leaves_other_files_relations_untouched(
         self, file_service: FileService, hash_index: HashIndexService
     ) -> None:
@@ -781,8 +859,7 @@ class TestFetchRoundTripHashes:
 
         fetch = FetchFileUseCase(
             mnemosyne_client=mnemosyne,
-            chunk_repository=file_service.chunk_repository,
-            file_repository=file_service.file_repository,
+            file_service=file_service,
             logger=LoggerMock(),
         )
         result = fetch.execute(

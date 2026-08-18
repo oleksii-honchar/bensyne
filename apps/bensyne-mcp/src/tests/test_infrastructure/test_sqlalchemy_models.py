@@ -10,11 +10,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Generator, List, Optional
+from typing import Generator
 
 import pytest
 
-from src.domain.file_entity import File, FileStatus, SourceType
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
@@ -61,39 +60,6 @@ def session(manager: FileMetadataConnectionManager) -> Generator:
 VALID_HASH = "a" * 64
 
 
-def _a_file(
-    id: str = "f1",
-    path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.FILE_SYSTEM,
-    hash: Optional[str] = None,
-    file_type: Optional[str] = None,
-    size: Optional[int] = None,
-    language: Optional[str] = None,
-    aggregated_keywords: Optional[List[str]] = None,
-    aggregated_tags: Optional[List[str]] = None,
-    status: FileStatus = FileStatus.PENDING,
-    created_at: Optional[datetime] = None,
-) -> File:
-    """Create a valid File instance with sensible defaults."""
-    result = File.of(
-        {
-            "id": id,
-            "path": path,
-            "source_type": source_type,
-            "hash": hash,
-            "file_type": file_type,
-            "size": size,
-            "language": language,
-            "aggregated_keywords": aggregated_keywords or [],
-            "aggregated_tags": aggregated_tags or [],
-            "status": status,
-            "created_at": created_at or datetime.now(),
-        }
-    )
-    assert result.is_ok, f"Failed to create test file: {result.errors}"
-    return result.value
-
-
 # ---------------------------------------------------------------------------
 # FileORM model tests
 # ---------------------------------------------------------------------------
@@ -107,7 +73,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm1",
             path="/tmp/orm_test.py",
-            source_type="file_system",
+            source_type="vault",
             file_hash=VALID_HASH,
             file_type="python",
             size=1024,
@@ -140,7 +106,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm2",
             path="/tmp/roundtrip.py",
-            source_type="git",
+            source_type="obsidian",
             file_hash=VALID_HASH,
             file_type="python",
             size=2048,
@@ -155,7 +121,7 @@ class TestFileORM:
         retrieved = session.get(FileORM, "orm2")
         assert retrieved is not None
         assert retrieved.path == "/tmp/roundtrip.py"
-        assert retrieved.source_type == "git"
+        assert retrieved.source_type == "obsidian"
         assert retrieved.file_type == "python"
         assert retrieved.size == 2048
         assert retrieved.language == "python"
@@ -166,7 +132,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm3",
             path="/tmp/minimal.txt",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             created_at=datetime.now(),
         )
@@ -187,7 +153,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm4",
             path="/tmp/with_json.py",
-            source_type="agent_session",
+            source_type="agent-sessions",
             keywords=json.dumps(["domain", "entity"]),
             tags=json.dumps(["core", "important"]),
             status="indexed",
@@ -207,7 +173,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm5",
             path="/tmp/old.py",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             created_at=datetime.now(),
         )
@@ -229,7 +195,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm6",
             path="/tmp/deletable.py",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             created_at=datetime.now(),
         )
@@ -247,7 +213,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm7",
             path="/tmp/unique_path.py",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             created_at=datetime.now(),
         )
@@ -261,8 +227,8 @@ class TestFileORM:
     def test_file_orm_list_all_ordered(self, session: Session) -> None:
         """FileORM can list all files ordered by created_at DESC."""
         now = datetime.now()
-        orm1 = FileORM(id="orm8a", path="/tmp/a.py", source_type="file_system", status="pending", created_at=now)
-        orm2 = FileORM(id="orm8b", path="/tmp/b.py", source_type="file_system", status="pending", created_at=now)
+        orm1 = FileORM(id="orm8a", path="/tmp/a.py", source_type="vault", status="pending", created_at=now)
+        orm2 = FileORM(id="orm8b", path="/tmp/b.py", source_type="vault", status="pending", created_at=now)
         session.add_all([orm1, orm2])
         session.commit()
 
@@ -274,7 +240,7 @@ class TestFileORM:
         orm_file = FileORM(
             id="orm9",
             path="/tmp/with_summary.py",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             summary="This is a summary",
             created_at=datetime.now(),
@@ -299,7 +265,7 @@ class TestFileChunkORM:
         """FileChunkORM can be created and persisted."""
         # First create a file (FK constraint)
         orm_file = FileORM(
-            id="fc1", path="/tmp/chunk_file.py", source_type="file_system", status="pending", created_at=datetime.now()
+            id="fc1", path="/tmp/chunk_file.py", source_type="vault", status="pending", created_at=datetime.now()
         )
         session.add(orm_file)
         session.flush()
@@ -331,7 +297,7 @@ class TestFileChunkORM:
     def test_chunk_orm_ordered_by_chunk_index(self, session: Session) -> None:
         """FileChunkORM can be queried ordered by chunk_index."""
         orm_file = FileORM(
-            id="fc2", path="/tmp/ordered.py", source_type="file_system", status="pending", created_at=datetime.now()
+            id="fc2", path="/tmp/ordered.py", source_type="vault", status="pending", created_at=datetime.now()
         )
         session.add(orm_file)
         session.flush()
@@ -365,10 +331,10 @@ class TestFileRelationORM:
     def test_create_and_persist_relation_orm(self, session: Session) -> None:
         """FileRelationORM can be created and persisted."""
         f1 = FileORM(
-            id="fr1", path="/tmp/src.py", source_type="file_system", status="pending", created_at=datetime.now()
+            id="fr1", path="/tmp/src.py", source_type="vault", status="pending", created_at=datetime.now()
         )
         f2 = FileORM(
-            id="fr2", path="/tmp/tgt.py", source_type="file_system", status="pending", created_at=datetime.now()
+            id="fr2", path="/tmp/tgt.py", source_type="vault", status="pending", created_at=datetime.now()
         )
         session.add_all([f1, f2])
         session.flush()
@@ -394,8 +360,8 @@ class TestFileRelationORM:
 
     def test_relation_orm_query_by_file_id(self, session: Session) -> None:
         """FileRelationORM can be queried where file is source or target."""
-        f1 = FileORM(id="fr3", path="/tmp/a.py", source_type="file_system", status="pending", created_at=datetime.now())
-        f2 = FileORM(id="fr4", path="/tmp/b.py", source_type="file_system", status="pending", created_at=datetime.now())
+        f1 = FileORM(id="fr3", path="/tmp/a.py", source_type="vault", status="pending", created_at=datetime.now())
+        f2 = FileORM(id="fr4", path="/tmp/b.py", source_type="vault", status="pending", created_at=datetime.now())
         session.add_all([f1, f2])
         session.flush()
 
@@ -420,8 +386,8 @@ class TestFileRelationORM:
 
     def test_relation_orm_query_by_type(self, session: Session) -> None:
         """FileRelationORM can be queried by relation_type."""
-        f1 = FileORM(id="fr5", path="/tmp/x.py", source_type="file_system", status="pending", created_at=datetime.now())
-        f2 = FileORM(id="fr6", path="/tmp/y.py", source_type="file_system", status="pending", created_at=datetime.now())
+        f1 = FileORM(id="fr5", path="/tmp/x.py", source_type="vault", status="pending", created_at=datetime.now())
+        f2 = FileORM(id="fr6", path="/tmp/y.py", source_type="vault", status="pending", created_at=datetime.now())
         session.add_all([f1, f2])
         session.flush()
 
@@ -465,7 +431,7 @@ class TestFTS5Compatibility:
         orm_file = FileORM(
             id="fts_orm1",
             path="/tmp/fts_searchable.py",
-            source_type="file_system",
+            source_type="vault",
             status="pending",
             created_at=datetime.now(),
         )

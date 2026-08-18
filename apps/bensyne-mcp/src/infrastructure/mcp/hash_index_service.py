@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, Text, create_engine, event, inspect
+from sqlalchemy import String, Text, create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -58,8 +58,9 @@ class _HashIndexConnection:
     Thread-safe via per-operation locking on sessions.
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, memory_bank: str | None = None) -> None:
         self._db_path = Path(db_path)
+        self._memory_bank = memory_bank
         self._lock = threading.Lock()
         self._engine = self._create_engine()
         self._session_factory = sessionmaker(bind=self._engine)
@@ -79,30 +80,45 @@ class _HashIndexConnection:
             connect_args={"check_same_thread": False},
         )
 
-    def _migrate_legacy_schema(self) -> None:
-        """Migrate a legacy file_hash-keyed hash_index table to the chunk_hash schema.
-
-        One-time, idempotent migration: the legacy table is dropped and
-        recreated with the new chunk_hash primary key. Rows are NOT copied —
-        legacy keys are file hashes (a different value space from chunk
-        content hashes), so copying would produce incorrect dedup entries.
-        """
-        inspector = inspect(self._engine)
-        if not inspector.has_table("hash_index"):
-            return
-        columns = {column["name"] for column in inspector.get_columns("hash_index")}
-        if "file_hash" in columns:
-            logger.info(
-                "Migrating legacy file_hash hash_index table to chunk_hash schema",
-                db_path=str(self._db_path),
-            )
-            HashIndexRow.__table__.drop(self._engine)
-
     def _ensure_tables(self) -> None:
-        """Create the hash_index table, migrating a legacy schema if present."""
+        """Create the hash_index table on a fresh database (D28 bootstrap).
+
+        Idempotent: ``create_all`` is a no-op when the table already exists.
+        D30 self-heal: a pre-D14 stale schema (no ``chunk_hash`` column) is
+        detected and replaced before ``create_all``. No row copy — legacy rows
+        are a dead value space. No versioning, no migration framework.
+        """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._migrate_legacy_schema()
+        self._heal_legacy_schema()
         _HashIndexBase.metadata.create_all(self._engine)
+
+    def _heal_legacy_schema(self) -> None:
+        """D30 self-heal guard: replace a stale pre-D14 hash_index table.
+
+        Fires ONLY when the ``hash_index`` table exists AND has no
+        ``chunk_hash`` column (the known pre-D14 ``file_hash``-PK shape).
+        When firing, the stale table is dropped so ``create_all`` recreates the
+        canonical schema, and one structured warning is logged. No row copy:
+        the legacy ``file_hash``-keyed rows are never read by current code
+        (post-D12). Fresh DBs and correct-schema DBs are untouched.
+        """
+        with self._engine.connect() as conn:
+            rows = conn.execute(text("PRAGMA table_info(hash_index)")).fetchall()
+            if not rows:
+                # Table does not exist — fresh DB, nothing to heal.
+                return
+            column_names = {row[1] for row in rows}
+            if "chunk_hash" in column_names:
+                # Canonical schema already present — no-op.
+                return
+            # Stale schema: drop it so create_all recreates the canonical table.
+            conn.execute(text("DROP TABLE hash_index"))
+            conn.commit()
+            logger.warning(
+                "hash_index legacy schema replaced",
+                db_path=str(self._db_path),
+                memory_bank=self._memory_bank,
+            )
 
     def get_session(self) -> Session:
         """Return a new Session bound to the engine."""
@@ -126,7 +142,7 @@ class HashIndexService:
         self.memory_bank = memory_bank
         if db_path is None:
             db_path = Path("data") / memory_bank / "hash_index.db"
-        self._conn = _HashIndexConnection(db_path)
+        self._conn = _HashIndexConnection(db_path, memory_bank)
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------

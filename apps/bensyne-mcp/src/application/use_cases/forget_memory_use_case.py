@@ -14,7 +14,6 @@ from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.infrastructure.mcp.hash_index_service import HashIndexService
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.utils.result import ErrorWithDetails, Result
-from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
 
 if TYPE_CHECKING:
     from src.application.services.file_service import FileService
@@ -33,14 +32,12 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
         hash_index_service: HashIndexService,
         logger: structlog.stdlib.BoundLogger,
         file_service: FileService,
-        chunk_repository: FileChunkRepository,
         bank_type_checker: Callable[[str], str],
     ) -> None:
         super().__init__(logger)
         self.mnemosyne_client = mnemosyne_client
         self.hash_index_service = hash_index_service
         self.file_service = file_service
-        self.chunk_repository = chunk_repository
         self.bank_type_checker = bank_type_checker
 
     def validate_params(self, parameters: dict) -> Result[dict]:
@@ -131,7 +128,7 @@ class ForgetMemoryUseCase(BaseUseCase[dict, dict]):
 
     def _cleanup_chunks_and_files(self, memory_id: str) -> None:
         """Remove all file chunks referencing the memory and delete empty files."""
-        chunks_result = self.chunk_repository.get_chunks_by_memory_id(memory_id)
+        chunks_result = self.file_service.get_chunks_by_memory_id(memory_id)
         if not chunks_result.is_ok:
             return
 

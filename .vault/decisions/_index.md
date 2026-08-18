@@ -2,7 +2,7 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-17"
+updatedAt: "2026-08-18"
 tags: []
 ---
 
@@ -15,7 +15,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0001-namespace-registration-protocol]] — Memory Bank Registration Protocol
 - [[0002-namespace-parameter-enforcement]] — Memory Bank Parameter Enforcement
 - [[0003-in-memory-namespace-registry]] — In-Memory Memory Bank Registry
-- [[0048-dual-hash-wire-contract]] — Dual-Hash Wire Contract — snake_case Naming, chunk_hash + file_hash in metadata
+- [[0048-dual-hash-wire-contract]] — Dual-Hash Wire Contract — snake_case Naming, chunk_hash + file_hash in metadata (+ D29 source-type axis)
 
 ### bensyne-mcp
 

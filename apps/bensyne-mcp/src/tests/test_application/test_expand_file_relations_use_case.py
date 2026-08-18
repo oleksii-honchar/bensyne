@@ -19,7 +19,7 @@ from src.application.services.file_service import FileService
 from src.application.use_cases.expand_file_relations_use_case import (
     ExpandFileRelationsUseCase,
 )
-from src.domain.file_metadata_aggregate import FileMetadataAggregate
+from src.domain.file_metadata_aggregate import FileMetadata
 from src.domain.file_entity import File, FileStatus, SourceType
 from src.domain.file_chunk_entity import FileChunk, ContentType
 from src.domain.file_relation_entity import (
@@ -39,7 +39,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.AGENT_SESSION,
+    source_type: SourceType = SourceType.AGENT_SESSIONS,
     summary: str | None = None,
     keywords: list[str] | None = None,
     tags: list[str] | None = None,
@@ -115,8 +115,8 @@ def _a_aggregate(
     file: File,
     chunks: list[FileChunk] | None = None,
     relations: list[FileRelation] | None = None,
-) -> FileMetadataAggregate:
-    return FileMetadataAggregate.of(file, chunks=chunks or [], relations=relations or []).value
+) -> FileMetadata:
+    return FileMetadata.of(file, chunks=chunks or [], relations=relations or []).value
 
 
 # ---------------------------------------------------------------------------
@@ -1107,3 +1107,43 @@ class TestExpandFileRelationsAggregateDelegation:
 
         # Verify file_service.get_file was called (not file_repository.get_file_by_id)
         file_service.get_file.assert_called_once_with("f1")
+
+
+# ---------------------------------------------------------------------------
+# Direction semantics (one-way / outgoing expansion)
+# ---------------------------------------------------------------------------
+
+
+class TestExpandFileRelationsDirection:
+    def test_returns_empty_when_file_is_only_relation_target(
+        self,
+        use_case: ExpandFileRelationsUseCase,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        # The expanded file is the TARGET of a relation (hub -> f_note).
+        # The bidirectional repository returns that relation when queried
+        # by f_note, but expand must only surface outgoing (source) relations.
+        source = _a_file(id="f_note")
+        source_agg = _a_aggregate(
+            source,
+            chunks=[_a_chunk(id="c0", file_id="f_note", memory_id="m0", chunk_index=0)],
+        )
+
+        file_service.get_file.return_value = Result.ok(source_agg)
+        relation_repo.get_relations_by_file_id.return_value = Result.ok(
+            [
+                _a_relation(
+                    source_file_id="f_hub",
+                    target_file_id="f_note",
+                    relation_type=RelationType.BACKLINK,
+                )
+            ]
+        )
+        mnemosyne_client.get.return_value = {"content": "note body"}
+
+        result = use_case.execute({"file_id": "f_note", "memory_bank": "bank"})
+
+        assert result.is_ok is True
+        assert result.value["related_files"] == []

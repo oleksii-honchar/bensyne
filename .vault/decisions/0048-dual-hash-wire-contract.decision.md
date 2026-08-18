@@ -5,13 +5,14 @@ system: shared
 title: "Dual-Hash Wire Contract — snake_case Naming, chunk_hash + file_hash in metadata"
 status: accepted
 createdAt: "2026-08-17T11:32:38Z"
-updatedAt: "2026-08-17T11:32:38Z"
-tags: [deduplication, dual-hash, chunk-hash, file-hash, wire-contract, snake-case]
+updatedAt: "2026-08-18T07:55:43Z"
+tags: [deduplication, dual-hash, chunk-hash, file-hash, wire-contract, snake-case, source-type]
 supersedes: []
 superseded_by: []
 see_also:
   - concepts/0020-file-hash-deduplication.concept.md
   - concepts/0001-hash-index.concept.md
+  - concepts/0005-source-type-file-role.concept.md
   - specifications/0005-file-hash-deduplication.spec.md
   - decisions/0039-file-hash-deduplication-metadata.decision.md
 ---
@@ -31,6 +32,8 @@ The cornerstone delivery left a three-way hash divergence on the racochu → ben
 **D14 — Dedup index re-keyed to `chunk_hash`; dedup-hit still materializes.** `hash_index` (per-bank SQLite) PK column renamed `file_hash → chunk_hash`; the reader is snake_case `metadata["chunk_hash"]` only. One-time legacy migration at connection init: old-shape table dropped without row copy (file-hash values are a different value space — copying would be incorrect); cost is one-time dedup misses (at most one duplicate memory per re-ingested chunk, accepted). On a dedup hit, `rememberMemory` returns `{"status": "deduplicated", "memory_id": …}` **after** running materialization with the existing `memory_id` (idempotent upserts link the shared memory under the new file — fixes projection loss for identical chunk content across files).
 
 **D15 — Retrieval surfaces both hashes.** No migration: materialization sets `file_chunks.content_hash = context.chunk_hash` (V3 column). `fetchFile` — chunk entries += `chunk_hash` (null for legacy rows), `include_metadata` file block += `file_hash`; `recallMemory`/`searchFiles` — `file_enrichment` block += `file_hash` + `chunk_hash` (null-tolerant). Pure memories keep `file_enrichment: null` (D7).
+
+**D29 — Source-type value axis: real producers, strategy ≡ type, 1:1 across both app contracts.** The shipped source-type values were a generic location-based taxonomy (`file_system`/`git`/`database`/`external`/`remote`) — not real sources. The real source types are the PRODUCERS: `obsidian | agent-sessions | vault` (+ `unknown` = degrade-never-reject fallback marker). A watch source's `strategy` field IS its source type — renamed `strategy` → `source_type`, one name end-to-end (config → chunk → wire → DB); the chunking layer is a `source_type → chunker` router (`content-aware` ⇔ `vault`; `agent-sessions` stays plural — the value names what the folder contains). The value set is declared once in contract v1 and mirrored 1:1: bensyne `SourceType` enum (4 values) + bootstrap CHECK DDL, racochu `SOURCE_TYPES` + zod + chunk stamping; the DTO `SOURCE_TYPE_MAP` identity map was deleted (it mapped free-form source ids ⇒ most real chunks shipped no source_type). The `agent-sessions` fixture value change ⇒ shared parity sha re-pinned both apps. Extension policy: a new value is a package (chunker + mirrors + tests + migration). Human-ruled 2026-08-17; delivered 2026-08-18 (T16/T17).
 
 ## Alternatives Considered
 

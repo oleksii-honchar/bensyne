@@ -44,7 +44,7 @@ describe('[E2E] Obsidian Chunking — obsidian note → chunk → ingest → rec
     }
   });
 
-  it('should detect obsidian note, chunk with obsidian strategy, ingest, and verify via recall', async () => {
+  it('should detect obsidian note, chunk with the obsidian chunker, ingest, and verify via recall', async () => {
     const uniqueId = Date.now();
     const marker = `OBSIDIAN-E2E-${uniqueId}`;
 

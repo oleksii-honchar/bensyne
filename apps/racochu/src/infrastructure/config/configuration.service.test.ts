@@ -7,7 +7,6 @@ import * as path from 'path';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { Configuration } from './config-schemas';
 import { ConfigurationService } from './configuration.service';
-import { SOURCE_STRATEGIES } from './source-strategies';
 
 // Mock chokidar
 jest.mock('chokidar', () => ({
@@ -69,7 +68,6 @@ describe('ConfigurationService', () => {
           },
         ],
         chunking: {
-          strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
           maxSizes: {
             agentSessions: 400,
           },
@@ -89,7 +87,8 @@ describe('ConfigurationService', () => {
         const config = result.getValue();
         expect(config.watchSources).toHaveLength(1);
         expect(config.watchSources[0].id).toBe('test-source');
-        expect(config.chunking.strategy).toBe('content-aware');
+        expect(config.watchSources[0].sourceType).toBe('vault');
+        expect(config.chunking.maxSizes.agentSessions).toBe(400);
         expect(config.mcp.url).toBe('https://test.lan/mcp');
       }
     });
@@ -137,7 +136,7 @@ describe('ConfigurationService', () => {
       if (result.isOk()) {
         const config = result.getValue();
         expect(config.watchSources).toEqual([]);
-        expect(config.chunking.strategy).toBe('content-aware');
+        expect(config.chunking.hardCap).toBe(600);
         expect(config.mcp.url).toBe('https://lite-llm.lan/mcp/mnemosyne');
         expect(config.telemetry.enabled).toBe(true);
       }
@@ -205,8 +204,9 @@ describe('ConfigurationService', () => {
       await service.load();
 
       const config = service.getChunkingConfig();
-      expect(config.strategy).toBe('content-aware');
       expect(config.maxSizes.agentSessions).toBe(400);
+      expect(config.overlap).toBe(50);
+      expect(config.hardCap).toBe(600);
     });
   });
 
@@ -339,8 +339,8 @@ describe('ConfigurationService', () => {
       const content = await fs.readFile(configPath, 'utf-8');
       const parsed = yaml.load(content) as unknown as Configuration;
 
-      expect(parsed.chunking?.strategy).toBe('content-aware');
       expect(parsed.chunking?.maxSizes?.agentSessions).toBe(400);
+      expect(parsed.watchSources?.[0]?.sourceType).toBe('vault');
     });
 
     it('includes default MCP configuration', async () => {

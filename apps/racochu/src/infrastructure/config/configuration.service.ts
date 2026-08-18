@@ -17,7 +17,7 @@ import {
   TelemetryConfig,
   WatchSourceConfig,
 } from './config-schemas';
-import { SOURCE_STRATEGIES } from './source-strategies';
+import { SOURCE_TYPES } from './source-types';
 
 // Matches $VAR_NAME or $VAR_NAME patterns (alphanumeric + underscore, must start with letter/underscore)
 const ENV_VAR_PATTERN = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -55,11 +55,10 @@ export const DEFAULT_CONFIG: Configuration = {
       memoryBank: 'agent-sessions',
       exclude: ['archive/**', '**/archive/**', '.smart-env/**'],
       debounceMs: 5000,
-      strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+      sourceType: SOURCE_TYPES.VAULT,
     },
   ],
   chunking: {
-    strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
     maxSizes: {
       agentSessions: 400,
       obsidianNotes: 500,

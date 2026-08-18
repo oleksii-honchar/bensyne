@@ -10,7 +10,7 @@ import {
   FileDeletedEvent,
 } from '../domain/events/file-events';
 import { WatchSourceConfig, watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { FileHasherService } from '../infrastructure/services/file-hasher.service';
@@ -36,7 +36,7 @@ export type ProcessFileParams = z.infer<typeof processFileParamsSchema>;
 const defaultSourceConfig = (): WatchSourceConfig => ({
   id: 'default',
   path: '',
-  strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+  sourceType: SOURCE_TYPES.VAULT,
   memoryBank: 'default',
   description: '',
   exclude: [],

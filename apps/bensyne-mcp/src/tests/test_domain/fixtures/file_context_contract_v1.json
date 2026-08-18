@@ -12,7 +12,7 @@
     "section_header": "## Implementation Details",
     "start_line": 42,
     "end_line": 97,
-    "source_type": "agent_session",
+    "source_type": "agent-sessions",
     "file_role": "docs",
     "language": "markdown",
     "file_hash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
@@ -61,7 +61,7 @@
     "endLine": 97,
     "metadata": {
       "filePath": "/Users/dev/projects/agent-sessions/26/08/11/260811-0000-bensyne-file-materials/findings.md",
-      "sourceId": "agent_session",
+      "sourceType": "agent-sessions",
       "fileHash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
       "chunkHash": "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c",
       "session.id": "260811-0000",

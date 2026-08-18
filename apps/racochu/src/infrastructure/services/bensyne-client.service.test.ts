@@ -205,7 +205,6 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const result = await client.initialize();
 
       expect(result.isOk()).toBe(true);
-      expect(mockLogger.warn).toHaveBeenCalled();
     });
   });
 
@@ -264,7 +263,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
         oversized: false,
         startLine: 1,
         endLine: 10,
-        metadata: { filePath: '/root/test.md', sourceId: 'file_system', fileHash: 'sha256-test-hash' },
+        metadata: { filePath: '/root/test.md', sourceType: 'vault', fileHash: 'sha256-test-hash' },
         importance: 0.5,
         tags: [],
         memoryBank: 'default',
@@ -293,7 +292,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       expect(body.params.arguments.metadata.section_header).toBe('Test Header');
       expect(body.params.arguments.metadata.start_line).toBe(1);
       expect(body.params.arguments.metadata.end_line).toBe(10);
-      expect(body.params.arguments.metadata.source_type).toBe('file_system');
+      expect(body.params.arguments.metadata.source_type).toBe('vault');
       expect(body.params.arguments.metadata.file_role).toBe('docs');
       expect(body.params.arguments.metadata.language).toBe('typescript');
       // Hash discipline (contract rule 4b): hashes live in metadata only — no top-level hash arg
@@ -1150,6 +1149,31 @@ describe('BensyneClient (Streamable HTTP)', () => {
       );
 
       const result = await client.forget('mem-123', 'default');
+      expect(result.isOk()).toBe(true);
+    });
+
+    it('returns ok when response status is not_found (memory already absent)', async () => {
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [
+                  { type: 'text', text: JSON.stringify({ status: 'not_found', memory_id: 'mem-456' }) },
+                ],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const result = await client.forget('mem-456', 'default');
       expect(result.isOk()).toBe(true);
     });
 

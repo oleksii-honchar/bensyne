@@ -6,7 +6,7 @@ Test manually all the bensyne and racochu functionality - use mcp tools, do not 
 
 ## Enrichment Scenario
 
-Fixtures go to `tmp/general/` (content-aware strategy) — enrichment is strategy-agnostic.
+Fixtures go to `tmp/vault/` (vault sourceType) — enrichment is sourceType-agnostic.
 
 ### Test Objective
 
@@ -30,7 +30,7 @@ Verify end-to-end enrichment feature in racochu:
 
 #### Step 2: Create Test File with Enrichable Content
 
-- Create a file with clear semantic content that should be enriched in `tmp/general/e2e-enrichment-test.md` (relative to project root)
+- Create a file with clear semantic content that should be enriched in `tmp/vault/e2e-enrichment-test.md` (relative to project root)
 - File should have a title-worthy topic and identifiable keywords
 
 #### Step 3: Wait for Processing
@@ -49,5 +49,5 @@ Verify end-to-end enrichment feature in racochu:
 
 #### Step 6: Cleanup
 
-- Delete the test file from `tmp/general/`
+- Delete the test file from `tmp/vault/`
 - Verify memory was cleaned up

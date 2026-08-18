@@ -46,7 +46,7 @@ class TestFullValidV1Payload:
         assert context.section_header == "## Implementation Details"
         assert context.start_line == 42
         assert context.end_line == 97
-        assert context.source_type == "agent_session"
+        assert context.source_type == "agent-sessions"
         assert context.file_role == "docs"
         assert context.language == "markdown"
         assert context.file_hash == (
@@ -90,7 +90,7 @@ class TestFixtureParity:
         raw = (FIXTURES_DIR / "file_context_contract_v1.json").read_bytes()
 
         assert hashlib.sha256(raw).hexdigest() == (
-            "02c99bb5aac5b367d8a6271a43baff48b145d1c6def64dd8258e4c6958a52887"
+            "b0b6f7f967c3da353f9396414f92128a96315ddb798abe1c7587fc5b8ab22603"
         )
 
     def test_chunk_hash_is_sha256_of_exact_content_string(self):
@@ -334,7 +334,9 @@ class TestUnknownKeys:
 
 
 class TestSourceType:
-    """source_type defaults to unknown when absent or invalid."""
+    """source_type wire normalization (D29, spec §6.6): the 4 canonical
+    values are accepted verbatim; absent or invalid values degrade to
+    ``unknown`` (degrade-never-reject)."""
 
     def test_source_type_absent_defaults_to_unknown(self):
         context = parse_file_context({"file_path": "/x"})
@@ -348,12 +350,23 @@ class TestSourceType:
 
     @pytest.mark.parametrize(
         "source_type",
-        ["agent_session", "file_system", "git", "database", "external", "remote"],
+        ["obsidian", "agent-sessions", "vault", "unknown"],
     )
-    def test_valid_source_types_accepted(self, source_type):
+    def test_d29_source_types_accepted(self, source_type):
         context = parse_file_context({"file_path": "/x", "source_type": source_type})
         assert context is not None
         assert context.source_type == source_type
+
+    @pytest.mark.parametrize(
+        "source_type",
+        ["agent_session", "file_system", "git", "database", "external", "remote"],
+    )
+    def test_legacy_source_types_degrade_to_unknown(self, source_type):
+        # Pre-D29 location-based values are no longer real source types
+        # (spec §6.6) — they degrade to the fallback marker, never reject.
+        context = parse_file_context({"file_path": "/x", "source_type": source_type})
+        assert context is not None
+        assert context.source_type == "unknown"
 
 
 class TestFileRole:

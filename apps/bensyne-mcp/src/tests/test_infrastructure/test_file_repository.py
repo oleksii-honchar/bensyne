@@ -57,7 +57,10 @@ VALID_HASH = "a" * 64
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.FILE_SYSTEM,
+    # D28: bootstrap DDL freezes the D29 source_type CHECK set; only
+    # SourceType.UNKNOWN (the current enum member in that set) is persistable
+    # until Task 16 reshapes the enum.
+    source_type: SourceType = SourceType.UNKNOWN,
     hash: Optional[str] = None,
     file_type: Optional[str] = None,
     size: Optional[int] = None,
@@ -137,7 +140,7 @@ class TestSaveFile:
         file = _a_file(
             id="s4",
             path="/tmp/all_fields.py",
-            source_type=SourceType.AGENT_SESSION,
+            source_type=SourceType.UNKNOWN,
             hash=VALID_HASH,
             file_type="python",
             size=1024,
@@ -154,7 +157,7 @@ class TestSaveFile:
         f = find_result.value
         assert f is not None
         assert f.path == "/tmp/all_fields.py"
-        assert f.source_type == SourceType.AGENT_SESSION
+        assert f.source_type == SourceType.UNKNOWN
         assert f.hash == VALID_HASH
         assert f.file_type == "python"
         assert f.size == 1024
@@ -588,7 +591,7 @@ class TestRoundTrip:
         file = _a_file(
             id="rt4",
             path="/tmp/full.py",
-            source_type=SourceType.GIT,
+            source_type=SourceType.UNKNOWN,
             hash=VALID_HASH,
             file_type="python",
             size=4096,
@@ -606,7 +609,7 @@ class TestRoundTrip:
         assert f is not None
         assert f.id == "rt4"
         assert f.path == "/tmp/full.py"
-        assert f.source_type == SourceType.GIT
+        assert f.source_type == SourceType.UNKNOWN
         assert f.hash == VALID_HASH
         assert f.file_type == "python"
         assert f.size == 4096

@@ -12,14 +12,19 @@ if TYPE_CHECKING:
 
     from src.domain.config_models import AppConfig
     from src.infrastructure.bank.router import MemoryBankRouter
+    from src.infrastructure.di import Container
 
 
-def create_application(config: AppConfig, router: MemoryBankRouter) -> FastMCP:
+def create_application(
+    config: AppConfig, router: MemoryBankRouter, container: Container | None = None
+) -> FastMCP:
     """Create and wire the complete application.
 
     Args:
         config: Application configuration.
         router: Memory bank router for routing tool calls.
+        container: DI container for per-bank file-metadata dependencies (D25).
+            When omitted, handlers fall back to a per-call ProductionContainer.
 
     Returns:
         Fully configured FastMCP server instance.
@@ -27,7 +32,7 @@ def create_application(config: AppConfig, router: MemoryBankRouter) -> FastMCP:
     mcp = create_server(config)
 
     # Register MCP tools
-    register_tools(mcp, router)
+    register_tools(mcp, router, container)
 
     # Mount health check endpoints
     mount_health_routes(mcp, router)
@@ -49,12 +54,15 @@ def create_server(config: AppConfig) -> FastMCP:
     return _create_server()
 
 
-def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
+def register_tools(
+    mcp: FastMCP, router: MemoryBankRouter, container: Container | None = None
+) -> None:
     """Register all MCP tool handlers with the server.
 
     Args:
         mcp: FastMCP server instance.
         router: Memory bank router injected into all handlers.
+        container: DI container plumbed to file-path handlers (D25).
     """
     from src.infrastructure.mcp import handlers
 
@@ -86,17 +94,21 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         ]:
             if v is not None:
                 args[k] = v
-        return await handlers.handle_remember(router, args)
+        return await handlers.handle_remember(router, args, container)
 
     @mcp.tool(name="recallMemory")
     async def recall(query: str, memory_bank: str, limit: int = 5, enrich_limit: int = 5):
         return await handlers.handle_recall(
-            router, {"query": query, "memory_bank": memory_bank, "limit": limit, "enrich_limit": enrich_limit}
+            router,
+            {"query": query, "memory_bank": memory_bank, "limit": limit, "enrich_limit": enrich_limit},
+            container,
         )
 
     @mcp.tool(name="forgetMemory")
     async def forget(memory_id: str, memory_bank: str):
-        return await handlers.handle_forget(router, {"memory_id": memory_id, "memory_bank": memory_bank})
+        return await handlers.handle_forget(
+            router, {"memory_id": memory_id, "memory_bank": memory_bank}, None, container
+        )
 
     @mcp.tool(name="updateMemory")
     async def update(memory_id: str, memory_bank: str, content: str | None = None, importance: float | None = None):
@@ -137,7 +149,7 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
             args["source_type"] = source_type
         if file_role is not None:
             args["file_role"] = file_role
-        return await handlers.handle_search_files(router, args)
+        return await handlers.handle_search_files(router, args, container)
 
     @mcp.tool(name="expandFileRelations")
     async def expand_file_relations(
@@ -146,7 +158,7 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         args = {"file_id": file_id, "memory_bank": memory_bank, "summary_only": summary_only}
         if relation_types is not None:
             args["relation_types"] = relation_types
-        return await handlers.handle_expand_file_relations(router, args)
+        return await handlers.handle_expand_file_relations(router, args, container)
 
     @mcp.tool(name="fetchFile")
     async def fetch_file(
@@ -176,7 +188,7 @@ def register_tools(mcp: FastMCP, router: MemoryBankRouter) -> None:
         if center_chunk_index is not None:
             args["center_chunk_index"] = center_chunk_index
             args["adjacent_chunks"] = adjacent_chunks
-        return await handlers.handle_fetch_file(router, args)
+        return await handlers.handle_fetch_file(router, args, container)
 
 
 def mount_health_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:

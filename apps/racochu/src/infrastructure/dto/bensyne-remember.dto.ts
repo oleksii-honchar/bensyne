@@ -1,4 +1,5 @@
 import { ContentChunk, FileEdge } from '../../domain/content-chunk.entity';
+import { sourceTypeSchema } from '../config/source-types';
 
 /**
  * Unified chunk contract v1 — `metadata` payload of the rememberMemory call.
@@ -56,19 +57,6 @@ export interface MnemosyneRememberPayload {
 }
 
 /**
- * Maps racochu source identifiers (chunk metadata `sourceId`) to bensyne SourceType values.
- * Identity map — known ids pass through; unknown/missing ⇒ key omitted from the payload.
- */
-const SOURCE_TYPE_MAP: Record<string, string> = {
-  file_system: 'file_system',
-  agent_session: 'agent_session',
-  git: 'git',
-  database: 'database',
-  external: 'external',
-  remote: 'remote',
-};
-
-/**
  * DTO for transforming a Chunk domain entity into the Mnemosyne remember payload.
  * Encapsulates the mapping logic so BensyneClient stays focused on transport.
  */
@@ -80,11 +68,22 @@ export class BensyneRememberDto {
     const fileHash = metadata.fileHash;
     const chunkHash = metadata.chunkHash;
     const filePath = metadata.filePath ?? (chunk.breadcrumb || undefined);
-    const sourceType = metadata.sourceId ? SOURCE_TYPE_MAP[metadata.sourceId] : undefined;
+    // D29: the chunk's stamped sourceType (from the originating watch source) passes
+    // through zod-validated — the 4-value axis is exactly what bensyne SourceType
+    // accepts. Missing/off-axis ⇒ key omitted (bensyne degrades to `unknown`).
+    // `sourceId` (the watch-source id) is a consumed internal key, never a type source.
+    const sourceType = metadata.sourceType ? sourceTypeSchema.safeParse(metadata.sourceType).data : undefined;
 
     const extra: Record<string, string> = {};
     for (const [key, value] of Object.entries(metadata)) {
-      if (key === 'fileHash' || key === 'chunkHash' || key === 'filePath' || key === 'sourceId') continue;
+      if (
+        key === 'fileHash' ||
+        key === 'chunkHash' ||
+        key === 'filePath' ||
+        key === 'sourceId' ||
+        key === 'sourceType'
+      )
+        continue;
       extra[key] = value;
     }
 

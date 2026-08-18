@@ -115,18 +115,7 @@ export class EnhancementPipelineService {
 
     // Stage 3: Create enhanced chunk with memory bank
     const enhancedChunkResult = ContentChunk.of({
-      id: chunk.id,
-      text: chunk.text,
-      chunkIndex: chunk.chunkIndex,
-      totalChunks: chunk.totalChunks,
-      sectionHeader: chunk.sectionHeader,
-      breadcrumb: chunk.breadcrumb,
-      language: chunk.language,
-      fileRole: chunk.fileRole,
-      oversized: chunk.oversized,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      metadata: chunk.metadata,
+      ...chunk.toJson(),
       importance,
       tags,
       memoryBank,

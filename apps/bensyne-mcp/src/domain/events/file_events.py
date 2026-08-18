@@ -150,43 +150,6 @@ class FileIndexCompletedEvent(DomainEvent):
 
 
 @dataclass(frozen=True)
-class FileChunkAddedEvent(DomainEvent):
-    """Emitted when a chunk is added to a file aggregate."""
-
-    file_id: str
-    memory_id: str
-    chunk_index: int
-    timestamp: datetime = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.timestamp is None:
-            object.__setattr__(self, "timestamp", datetime.now())
-
-    @classmethod
-    def of(cls, file_id: str, memory_id: str, chunk_index: int) -> Result["FileChunkAddedEvent"]:
-        if not file_id or not memory_id:
-            return Result.ko(
-                [
-                    ErrorWithDetails(
-                        "INVALID_FILE_CHUNK_ADDED_EVENT",
-                        {
-                            "file_id": file_id,
-                            "memory_id": memory_id,
-                        },
-                    )
-                ]
-            )
-        return Result.ok(cls(file_id=file_id, memory_id=memory_id, chunk_index=chunk_index))
-
-    @property
-    def event_type(self) -> str:
-        return "file.chunk_added"
-
-    def get_name(self) -> str:
-        return "file.chunk_added"
-
-
-@dataclass(frozen=True)
 class FileChunkRemovedEvent(DomainEvent):
     """Emitted when a chunk is removed from a file aggregate."""
 
@@ -220,59 +183,6 @@ class FileChunkRemovedEvent(DomainEvent):
 
     def get_name(self) -> str:
         return "file.chunk_removed"
-
-
-@dataclass(frozen=True)
-class FileRelationCreatedEvent(DomainEvent):
-    """Emitted when a file relation is created via the aggregate.
-
-    Distinct from file_relation_events.FileRelationCreatedEvent which
-    is emitted at the entity level with relation_id.
-    """
-
-    source_file_id: str
-    target_file_id: str
-    relation_type: str
-    timestamp: datetime = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.timestamp is None:
-            object.__setattr__(self, "timestamp", datetime.now())
-
-    @classmethod
-    def of(
-        cls,
-        source_file_id: str,
-        target_file_id: str,
-        relation_type: str,
-    ) -> Result["FileRelationCreatedEvent"]:
-        if not source_file_id or not target_file_id or not relation_type:
-            return Result.ko(
-                [
-                    ErrorWithDetails(
-                        "INVALID_FILE_RELATION_CREATED_EVENT",
-                        {
-                            "source_file_id": source_file_id,
-                            "target_file_id": target_file_id,
-                            "relation_type": relation_type,
-                        },
-                    )
-                ]
-            )
-        return Result.ok(
-            cls(
-                source_file_id=source_file_id,
-                target_file_id=target_file_id,
-                relation_type=relation_type,
-            )
-        )
-
-    @property
-    def event_type(self) -> str:
-        return "file.relation_created"
-
-    def get_name(self) -> str:
-        return "file.relation_created"
 
 
 @dataclass(frozen=True)

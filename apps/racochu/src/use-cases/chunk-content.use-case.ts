@@ -7,7 +7,7 @@ import { StrategyRouter } from '../application/strategies/strategy-router.servic
 import { ContentChunk } from '../domain/content-chunk.entity';
 import { watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { BaseUseCase } from '../utils/base-use-case';
 import { ErrorWithDetails } from '../utils/error-with-details';
@@ -58,8 +58,8 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       `Chunking content; path="${params.filePath}", length=${params.content.length}, memoryBank="${params.memoryBank}"`,
     );
 
-    // Select chunking strategy based on sourceConfig (defaults to content-aware/Mastra)
-    const strategy: BaseChunkingStrategy = params.sourceConfig
+    // Select chunker based on sourceConfig (defaults to vault/Mastra — D29)
+    const chunker: BaseChunkingStrategy = params.sourceConfig
       ? this.strategyRouter.selectStrategy(params.sourceConfig)
       : this.strategyRouter.selectStrategy({
           id: params.sourceId,
@@ -67,17 +67,18 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
           memoryBank: params.memoryBank,
           exclude: [],
           debounceMs: 3000,
-          strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+          sourceType: SOURCE_TYPES.VAULT,
         });
 
-    // Guard: strategy must not be undefined
-    if (!strategy) {
+    // Guard: chunker must not be undefined (a router that degraded with no
+    // fallback binding available — e.g. a broken DI container)
+    if (!chunker) {
       this.logger.error(
-        `No chunking strategy selected for sourceId="${params.sourceId}", sourceConfig.strategy="${params.sourceConfig?.strategy}"`,
+        `No chunker selected for sourceId="${params.sourceId}", sourceConfig.sourceType="${params.sourceConfig?.sourceType}"`,
       );
       return Result.ko([
         new ErrorWithDetails(
-          `No chunking strategy selected for sourceId="${params.sourceId}"`,
+          `No chunker selected for sourceId="${params.sourceId}"`,
           'StrategySelectionError',
         ),
       ]);
@@ -89,10 +90,10 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       memoryBank: params.memoryBank,
       exclude: [],
       debounceMs: 3000,
-      strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+      sourceType: SOURCE_TYPES.VAULT,
     };
 
-    const chunksResult = await strategy.chunkFile(
+    const chunksResult = await chunker.chunkFile(
       params.content,
       params.filePath,
       params.sourceId,
@@ -133,13 +134,16 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       finalChunks = chunks;
     }
 
-    // Inject fileHash, hardwareId, and chunkHash into chunk metadata.
-    // chunkHash (sha256 of the chunk's exact text) is always computed; fileHash and
-    // hardwareId are injected when provided. chunkHash computation is non-fatal — on
-    // failure the key is omitted (mirrors the fileHash policy).
+    // Inject sourceType, fileHash, hardwareId, and chunkHash into chunk metadata.
+    // sourceType (D29) is stamped from the originating watch source — one name
+    // end-to-end: config → chunk → wire → DB. chunkHash (sha256 of the chunk's
+    // exact text) is always computed; fileHash and hardwareId are injected when
+    // provided. chunkHash computation is non-fatal — on failure the key is
+    // omitted (mirrors the fileHash policy).
     finalChunks = finalChunks.map(chunk => {
       const existingMetadata = chunk.metadata ?? {};
       const updatedMetadata: Record<string, string> = { ...existingMetadata };
+      updatedMetadata.sourceType = effectiveSourceConfig.sourceType;
       if (params.fileHash) {
         updatedMetadata.fileHash = params.fileHash;
       }

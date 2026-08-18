@@ -30,7 +30,7 @@ def mock_mnemosyne_instance() -> MagicMock:
     mock.forget.return_value = {"status": "deleted", "memory_id": "mem_123"}
     mock.update.return_value = {"status": "updated", "memory_id": "mem_123"}
     mock.sleep.return_value = {"status": "consolidated", "consolidated": 5}
-    mock.stats.return_value = {"working": 10, "episodic": 5}
+    mock.get_stats.return_value = {"working": 10, "episodic": 5}
     return mock
 
 
@@ -230,26 +230,71 @@ class TestMnemosyneClientSleep:
 
 
 # ---------------------------------------------------------------------------
+# get (callable contract for content composition)
+# ---------------------------------------------------------------------------
+
+
+class TestMnemosyneClientGet:
+    """get() returns the memory dict for an id, or None on missing/error.
+
+    Implements the callable contract used by
+    FileMetadata.compose_content/compose_fetch (memory_id -> memory dict).
+    """
+
+    def test_returns_what_underlying_get_returns(
+        self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock
+    ) -> None:
+        """get() returns exactly what the underlying instance.get returns."""
+        memory = {"id": "mem_1", "content": "hello"}
+        mock_mnemosyne_instance.get.return_value = memory
+
+        result = client.get("mem_1")
+
+        assert result == memory
+        mock_mnemosyne_instance.get.assert_called_once_with("mem_1")
+
+    def test_returns_none_when_underlying_returns_none(
+        self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock
+    ) -> None:
+        """get() returns None when the underlying instance.get returns None."""
+        mock_mnemosyne_instance.get.return_value = None
+
+        result = client.get("missing")
+
+        assert result is None
+
+    def test_returns_none_when_underlying_raises(
+        self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock
+    ) -> None:
+        """get() returns None when the underlying instance.get raises (no propagation)."""
+        mock_mnemosyne_instance.get.side_effect = RuntimeError("db down")
+
+        result = client.get("mem_1")
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
 # stats
 # ---------------------------------------------------------------------------
 
 
 class TestMnemosyneClientStats:
-    """stats() returns Result.ok on success, Result.ko on error."""
+    """get_stats() returns Result.ok on success, Result.ko on error."""
 
     def test_returns_result_ok_on_success(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """stats() returns Result.ok with the library's response."""
-        result = client.stats()
+        """get_stats() returns Result.ok with the library's response."""
+        result = client.get_stats()
 
         assert result.is_ok
         assert result.value == {"working": 10, "episodic": 5}
-        mock_mnemosyne_instance.stats.assert_called_once()
+        mock_mnemosyne_instance.get_stats.assert_called_once()
 
     def test_returns_result_ko_on_exception(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """stats() returns Result.ko with DATABASE_ERROR when library raises."""
-        mock_mnemosyne_instance.stats.side_effect = RuntimeError("stats unavailable")
+        """get_stats() returns Result.ko with DATABASE_ERROR when library raises."""
+        mock_mnemosyne_instance.get_stats.side_effect = RuntimeError("stats unavailable")
 
-        result = client.stats()
+        result = client.get_stats()
 
         assert result.is_ko
         errors = result.get_errors()

@@ -231,14 +231,13 @@ class TestRecallMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                result = await handle_recall(
-                    router,
-                    {"query": "test", "memory_bank": "test-ns", "limit": 5},
-                )
+            container = MagicMock()
+            container.recall_memory_use_case.return_value = mock_use_case
+            result = await handle_recall(
+                router,
+                {"query": "test", "memory_bank": "test-ns", "limit": 5},
+                container=container,
+            )
 
             assert result["memory_bank"] == "test-ns"
             assert len(result["results"]) == 1
@@ -259,14 +258,13 @@ class TestRecallMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                await handle_recall(
-                    router,
-                    {"query": "test", "memory_bank": "test-ns", "limit": 3},
-                )
+            container = MagicMock()
+            container.recall_memory_use_case.return_value = mock_use_case
+            await handle_recall(
+                router,
+                {"query": "test", "memory_bank": "test-ns", "limit": 3},
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["limit"] == 3
@@ -281,15 +279,14 @@ class TestRecallMemoryHandler:
         mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("QUERY_REQUIRED", {})])
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                with pytest.raises(ValidationError):
-                    await handle_recall(
-                        router,
-                        {"query": "test", "memory_bank": "test-ns"},
-                    )
+            container = MagicMock()
+            container.recall_memory_use_case.return_value = mock_use_case
+            with pytest.raises(ValidationError):
+                await handle_recall(
+                    router,
+                    {"query": "test", "memory_bank": "test-ns"},
+                    container=container,
+                )
 
         asyncio.run(run())
 
@@ -329,14 +326,13 @@ class TestRecallMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                result = await handle_recall(
-                    router,
-                    {"query": "search term", "memory_bank": "my-bank"},
-                )
+            container = MagicMock()
+            container.recall_memory_use_case.return_value = mock_use_case
+            result = await handle_recall(
+                router,
+                {"query": "search term", "memory_bank": "my-bank"},
+                container=container,
+            )
 
             assert isinstance(result["results"], list)
             assert len(result["results"]) == 2
@@ -357,14 +353,13 @@ class TestRecallMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                await handle_recall(
-                    router,
-                    {"query": "test", "memory_bank": "test-ns"},
-                )
+            container = MagicMock()
+            container.recall_memory_use_case.return_value = mock_use_case
+            await handle_recall(
+                router,
+                {"query": "test", "memory_bank": "test-ns"},
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             # Use case defaults to 10 when limit not provided
@@ -376,8 +371,8 @@ class TestRecallMemoryHandler:
 class TestHandleRecallEnrichmentWiring:
     """handle_recall wires FileEnrichmentService (same factory pattern as remember/forget)."""
 
-    def test_handler_constructs_file_enrichment_service(self, router: MemoryBankRouter) -> None:
-        """handle_recall must build a real FileEnrichmentService and inject it into the use case."""
+    def test_handler_passes_container_enrichment_service_to_use_case(self, router: MemoryBankRouter) -> None:
+        """handle_recall must obtain the FileEnrichmentService from the container and inject it into the use case."""
         from src.infrastructure.mcp.handlers import handle_recall
 
         mock_use_case = MagicMock()
@@ -387,32 +382,27 @@ class TestHandleRecallEnrichmentWiring:
                 "memory_bank": "test-ns",
             }
         )
+        mock_enrichment_service = MagicMock()
 
-        mock_uc_cls: list[MagicMock] = []
-        mock_enrichment_cls: list[MagicMock] = []
+        container = MagicMock()
+        container.file_enrichment_service.return_value = mock_enrichment_service
+        container.recall_memory_use_case.return_value = mock_use_case
 
         async def run() -> None:
-            with (
-                patch(
-                    "src.infrastructure.mcp.handlers.RecallMemoryUseCase",
-                    return_value=mock_use_case,
-                ) as uc_cls,
-                patch("src.infrastructure.mcp.handlers.FileEnrichmentService") as enrichment_cls,
-            ):
-                mock_uc_cls.append(uc_cls)
-                mock_enrichment_cls.append(enrichment_cls)
-                await handle_recall(router, {"query": "test", "memory_bank": "test-ns"})
+            await handle_recall(
+                router,
+                {"query": "test", "memory_bank": "test-ns"},
+                container=container,
+            )
 
         asyncio.run(run())
 
-        mock_uc_cls = mock_uc_cls[0]
-        mock_enrichment_cls = mock_enrichment_cls[0]
-        assert mock_uc_cls.call_count == 1
-        uc_kwargs = mock_uc_cls.call_args.kwargs
+        container.file_enrichment_service.assert_called_once()
+        container.recall_memory_use_case.assert_called_once()
+        uc_kwargs = container.recall_memory_use_case.call_args.kwargs
         assert "file_enrichment_service" in uc_kwargs
-        # The injected service must be the instance produced by FileEnrichmentService(...)
-        assert uc_kwargs["file_enrichment_service"] is mock_enrichment_cls.return_value
-        mock_enrichment_cls.assert_called_once()
+        # The injected service must be the instance the container's factory produced
+        assert uc_kwargs["file_enrichment_service"] is mock_enrichment_service
 
     def test_handler_passes_enrich_limit_to_use_case(self, router: MemoryBankRouter) -> None:
         """handle_recall should pass enrich_limit through to the use case params."""
@@ -426,15 +416,15 @@ class TestHandleRecallEnrichmentWiring:
             }
         )
 
+        container = MagicMock()
+        container.recall_memory_use_case.return_value = mock_use_case
+
         async def run() -> None:
-            with (
-                patch("src.infrastructure.mcp.handlers.RecallMemoryUseCase", return_value=mock_use_case),
-                patch("src.infrastructure.mcp.handlers.FileEnrichmentService"),
-            ):
-                await handle_recall(
-                    router,
-                    {"query": "test", "memory_bank": "test-ns", "enrich_limit": 2},
-                )
+            await handle_recall(
+                router,
+                {"query": "test", "memory_bank": "test-ns", "enrich_limit": 2},
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["enrich_limit"] == 2

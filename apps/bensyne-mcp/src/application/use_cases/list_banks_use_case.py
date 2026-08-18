@@ -40,12 +40,11 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
         for bank_name, client in self.router.instances.items():
             description = self.router.get_bank_description(bank_name)
 
-            stats = client.stats()
-            memory_count = 0
-            if isinstance(stats, dict):
-                working = stats.get("working_count") or stats.get("working") or 0
-                episodic = stats.get("episodic_count") or stats.get("episodic") or 0
-                memory_count = working + episodic
+            stats = client.get_stats()
+            if stats.is_ok and stats.value is not None:
+                memory_count = stats.value.get("total_memories", 0)
+            else:
+                memory_count = 0
 
             banks.append(
                 {

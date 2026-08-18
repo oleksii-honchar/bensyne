@@ -215,7 +215,7 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
             related_files = self._resolve_related_files(relations, file.id)
 
         return {
-            "file": self._file_to_dict(file),
+            "file": file.to_dict(),
             "matched_memories": [],
             "related_files_count": related_files_count,
             "related_files": related_files,
@@ -234,20 +234,6 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
             # Real value from the chunk row (None when the chunk has no header)
             "section_header": chunk.section_header,
             "relevance_score": memory.get("relevance_score", 0.0),
-        }
-
-    def _file_to_dict(self, file: File) -> dict:
-        """Convert a File entity to a dict for the result (real entity values)."""
-        return {
-            "id": file.id,
-            "path": file.path,
-            "source_type": file.source_type.value,
-            "file_role": file.file_role.value if file.file_role is not None else "",
-            "total_chunks": file.total_chunks,
-            "keywords": file.aggregated_keywords,
-            "tags": file.aggregated_tags,
-            "average_importance": file.average_importance,
-            "metadata": dict(file.metadata),
         }
 
     def _resolve_related_files(self, relations: list[FileRelation], source_file_id: str) -> list[dict]:

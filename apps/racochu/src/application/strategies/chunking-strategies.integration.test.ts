@@ -2,7 +2,7 @@
  * Integration tests for chunking strategies using real file content.
  *
  * These tests read real fixtures (copied from actual Obsidian notes and session.md files)
- * and process them through real strategy implementations (with MastraChunkingService mocked
+ * and process them through real chunker implementations (with MastraChunkingService mocked
  * only for the body-chunking step, since that calls external services).
  */
 import '@/utils/mastra-rag.test-utils';
@@ -13,7 +13,7 @@ import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
 import { cleanupTempDir, createTempDir, FIXTURES_DIR } from '../../e2e/e2e-utils';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
-import { SOURCE_STRATEGIES } from '../../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { SessionMetadataService } from '../../infrastructure/services/session-metadata.service';
 import { Result } from '../../utils/result';
@@ -94,7 +94,7 @@ const createObsidianSourceConfig = (): WatchSourceConfig => ({
   memoryBank: 'obsidian',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
-  strategy: SOURCE_STRATEGIES.OBSIDIAN,
+  sourceType: SOURCE_TYPES.OBSIDIAN,
 });
 
 const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
@@ -103,7 +103,7 @@ const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
   memoryBank: 'agent-sessions',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
-  strategy: SOURCE_STRATEGIES.AGENT_SESSIONS,
+  sourceType: SOURCE_TYPES.AGENT_SESSIONS,
 });
 
 const createContentAwareSourceConfig = (): WatchSourceConfig => ({
@@ -112,13 +112,13 @@ const createContentAwareSourceConfig = (): WatchSourceConfig => ({
   memoryBank: 'general',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
-  strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+  sourceType: SOURCE_TYPES.VAULT,
 });
 
 // --- Tests ---
 
 describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
-  let strategy: ObsidianChunkingStrategy;
+  let sut: ObsidianChunkingStrategy;
   let mockMastra: jest.Mocked<MastraChunkingService>;
   let mockLogger: BasePinoLogger;
 
@@ -126,16 +126,16 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
     jest.clearAllMocks();
     mockLogger = createMockLogger();
     mockMastra = createMockMastraChunkingService();
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
   });
 
   it('processes real VS Code.md — frontmatter chunk with 0.9 importance and correct tags', async () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const bodyChunk = createBodyChunk('VS Code note body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/obsidian/olho/Lists/IT Notes/IT Notes.items/VS Code.md',
       'obsidian-vault',
@@ -163,9 +163,9 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const bodyChunk = createBodyChunk('VS Code note body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/obsidian/olho/Lists/IT Notes/IT Notes.items/VS Code.md',
       'obsidian-vault',
@@ -191,9 +191,9 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const bodyChunk = createBodyChunk('VS Code note body content', { tags: ['existing-tag'] });
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/obsidian/olho/Lists/IT Notes/IT Notes.items/VS Code.md',
       'obsidian-vault',
@@ -220,9 +220,9 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const bodyChunk = createBodyChunk('VS Code note body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 
-    await strategy.chunkFile(
+    await sut.chunkFile(
       content,
       '/obsidian/olho/Lists/IT Notes/IT Notes.items/VS Code.md',
       'obsidian-vault',
@@ -242,9 +242,9 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
     const chunk1 = createBodyChunk('Body chunk 1', { chunkIndex: 0 });
     const chunk2 = createBodyChunk('Body chunk 2', { chunkIndex: 1 });
     mockMastra = createMockMastraChunkingService([chunk1, chunk2]);
-    strategy = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+    sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/obsidian/olho/Lists/IT Notes/IT Notes.items/VS Code.md',
       'obsidian-vault',
@@ -267,7 +267,7 @@ describe('ObsidianChunkingStrategy with real Obsidian notes', () => {
 });
 
 describe('AgentSessionChunkingStrategy with real session.md', () => {
-  let strategy: AgentSessionChunkingStrategy;
+  let sut: AgentSessionChunkingStrategy;
   let mockSessionMetadataService: {
     extract: jest.MockedFunction<(sessionPath: string) => Promise<MockResult<SessionMetadata>>>;
   };
@@ -291,7 +291,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
       extract: jest.fn().mockResolvedValue(okResult(realSessionMetadata)),
     };
 
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
@@ -302,13 +302,13 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const bodyChunk = createBodyChunk('Session body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
     );
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/agent-sessions/26/07/28/260728-1146-rag-content-chunker/session.md',
       'agent-sessions',
@@ -332,13 +332,13 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const bodyChunk = createBodyChunk('Session body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
     );
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/agent-sessions/26/07/28/260728-1146-rag-content-chunker/session.md',
       'agent-sessions',
@@ -368,13 +368,13 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const bodyChunk = createBodyChunk('Session body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
     );
 
-    await strategy.chunkFile(
+    await sut.chunkFile(
       content,
       '/agent-sessions/26/07/28/260728-1146-rag-content-chunker/session.md',
       'agent-sessions',
@@ -391,13 +391,13 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const bodyChunk = createBodyChunk('Session body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
     );
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/agent-sessions/26/07/28/260728-1146-rag-content-chunker/session.md',
       'agent-sessions',
@@ -412,13 +412,13 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const bodyChunk = createBodyChunk('Session body content');
     mockMastra = createMockMastraChunkingService([bodyChunk]);
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
       mockLogger,
     );
 
-    await strategy.chunkFile(
+    await sut.chunkFile(
       content,
       '/agent-sessions/26/07/28/260728-1146-rag-content-chunker/session.md',
       'agent-sessions',
@@ -459,14 +459,14 @@ describe('StrategyRouter with real content', () => {
     );
   });
 
-  it('routes obsidian strategy for Obsidian notes', async () => {
+  it('routes obsidian sut for Obsidian notes', async () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const sourceConfig = createObsidianSourceConfig();
 
-    const strategy = router.selectStrategy(sourceConfig);
-    expect(strategy).toBe(mockObsidianStrategy);
+    const sut = router.selectStrategy(sourceConfig);
+    expect(sut).toBe(mockObsidianStrategy);
 
-    const result = await strategy.chunkFile(content, '/obsidian/VS Code.md', 'obsidian-vault', sourceConfig);
+    const result = await sut.chunkFile(content, '/obsidian/VS Code.md', 'obsidian-vault', sourceConfig);
 
     expect(result.isOk()).toBe(true);
     expect(mockObsidianStrategy.chunkFile).toHaveBeenCalledWith(
@@ -477,14 +477,14 @@ describe('StrategyRouter with real content', () => {
     );
   });
 
-  it('routes agent-sessions strategy for session files', async () => {
+  it('routes agent-sessions sut for session files', async () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const sourceConfig = createAgentSessionsSourceConfig();
 
-    const strategy = router.selectStrategy(sourceConfig);
-    expect(strategy).toBe(mockAgentSessionStrategy);
+    const sut = router.selectStrategy(sourceConfig);
+    expect(sut).toBe(mockAgentSessionStrategy);
 
-    const result = await strategy.chunkFile(
+    const result = await sut.chunkFile(
       content,
       '/agent-sessions/session.md',
       'agent-sessions',
@@ -500,14 +500,14 @@ describe('StrategyRouter with real content', () => {
     );
   });
 
-  it('routes content-aware strategy for regular files', async () => {
+  it('routes content-aware sut for regular files', async () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'sample.md'), 'utf-8');
     const sourceConfig = createContentAwareSourceConfig();
 
-    const strategy = router.selectStrategy(sourceConfig);
-    expect(strategy).toBe(mockMastraStrategy);
+    const sut = router.selectStrategy(sourceConfig);
+    expect(sut).toBe(mockMastraStrategy);
 
-    const result = await strategy.chunkFile(content, '/general/sample.md', 'general', sourceConfig);
+    const result = await sut.chunkFile(content, '/general/sample.md', 'general', sourceConfig);
 
     expect(result.isOk()).toBe(true);
     expect(mockMastraStrategy.chunkFile).toHaveBeenCalledWith(
@@ -518,8 +518,8 @@ describe('StrategyRouter with real content', () => {
     );
   });
 
-  it('each strategy produces different output structure', async () => {
-    // Obsidian strategy produces enriched chunks with note metadata
+  it('each sut produces different output structure', async () => {
+    // Obsidian sut produces enriched chunks with note metadata
     const obsidianContent = await fs.readFile(path.join(FIXTURES_DIR, 'obsidian-vscode-note.md'), 'utf-8');
     const obsidianChunks = [
       createBodyChunk('obsidian frontmatter', {
@@ -543,7 +543,7 @@ describe('StrategyRouter with real content', () => {
     ];
     mockObsidianStrategy.chunkFile.mockResolvedValue(Result.ok(obsidianChunks));
 
-    // Agent-sessions strategy produces chunks with session metadata
+    // Agent-sessions sut produces chunks with session metadata
     const sessionContent = await fs.readFile(path.join(FIXTURES_DIR, 'real-session.md'), 'utf-8');
     const sessionChunks = [
       createBodyChunk('session frontmatter', {
@@ -559,7 +559,7 @@ describe('StrategyRouter with real content', () => {
     ];
     mockAgentSessionStrategy.chunkFile.mockResolvedValue(Result.ok(sessionChunks));
 
-    // Content-aware strategy produces unenriched chunks
+    // Content-aware sut produces unenriched chunks
     const sampleContent = await fs.readFile(path.join(FIXTURES_DIR, 'sample.md'), 'utf-8');
     const plainChunks = [
       createBodyChunk('plain body', {

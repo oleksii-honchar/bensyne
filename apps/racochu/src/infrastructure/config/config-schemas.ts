@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SOURCE_STRATEGIES } from './source-strategies';
+import { SOURCE_TYPES } from './source-types';
 
 export const watchSourceConfigSchema = z
   .object({
@@ -9,10 +9,12 @@ export const watchSourceConfigSchema = z
     description: z.string().optional(),
     exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
     debounceMs: z.number().positive().default(3000),
-    strategy: z
-      .enum(Object.values(SOURCE_STRATEGIES) as [string, ...string[]])
+    // D29: the field IS the source type (default vault, the content-aware
+    // successor). `unknown` is the wire-side fallback only.
+    sourceType: z
+      .enum(Object.values(SOURCE_TYPES) as [string, ...string[]])
       .optional()
-      .default(SOURCE_STRATEGIES.CONTENT_AWARE),
+      .default(SOURCE_TYPES.VAULT),
   })
   .transform(data => ({
     ...data,
@@ -95,7 +97,6 @@ export const enhancementConfigSchema = z
 
 export const chunkingConfigSchema = z
   .object({
-    strategy: z.string().optional(),
     maxSizes: z
       .object({
         agentSessions: z.number().optional(),
@@ -109,7 +110,6 @@ export const chunkingConfigSchema = z
     hardCap: z.number().optional(),
   })
   .transform(data => ({
-    strategy: data.strategy ?? 'content-aware',
     maxSizes: {
       agentSessions: data.maxSizes?.agentSessions ?? 400,
       obsidianNotes: data.maxSizes?.obsidianNotes ?? 500,
@@ -195,7 +195,6 @@ export const configurationSchema = z
   .transform(data => ({
     watchSources: data.watchSources ?? [],
     chunking: {
-      strategy: data.chunking?.strategy ?? 'content-aware',
       maxSizes: {
         agentSessions: data.chunking?.maxSizes?.agentSessions ?? 400,
         obsidianNotes: data.chunking?.maxSizes?.obsidianNotes ?? 500,

@@ -33,6 +33,7 @@ if _env_path.exists():
 from src.infrastructure.config.manager import ConfigManager
 
 from src.infrastructure.bank.router import MemoryBankRouter
+from src.infrastructure.di import ProductionContainer
 from src.app import create_application
 from src.middleware.health import mark_default_instance_ready
 from src.utils.logging import setup_logging
@@ -98,8 +99,11 @@ def main() -> None:
     # Step 3: Create MemoryBankRouter — creates default instance at boot
     router = MemoryBankRouter(config=config.instance_pool)
 
-    # Step 5: Create FastMCP server, register all tools with router injected
-    app = create_application(config, router)
+    # Step 5: Create DI container + FastMCP server, register all tools with
+    # router + container injected (per-bank file dependencies resolve via the
+    # container factories — D25)
+    container = ProductionContainer()
+    app = create_application(config, router, container)
 
     # Step 6: Call health.mark_default_instance_ready()
     mark_default_instance_ready()

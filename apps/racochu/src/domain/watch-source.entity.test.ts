@@ -1,4 +1,4 @@
-import { SOURCE_STRATEGIES } from '../infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { WatchSource, WatchSourceProps } from './watch-source.entity';
 import { aWatchSource } from './watch-source.entity.test-utils';
 
@@ -74,7 +74,7 @@ describe('WatchSource', () => {
       expect(json.exclude).toEqual(watchSource.exclude);
       expect(json.debounceMs).toBe(watchSource.debounceMs);
       expect(json.ignorePatterns).toEqual(watchSource.ignorePatterns);
-      expect(json.strategy).toBe(watchSource.strategy);
+      expect(json.sourceType).toBe(watchSource.sourceType);
     });
 
     it('returns independent copies of arrays', () => {
@@ -107,7 +107,7 @@ describe('WatchSource', () => {
       expect(recreated.exclude).toEqual(watchSource.exclude);
       expect(recreated.debounceMs).toBe(watchSource.debounceMs);
       expect(recreated.ignorePatterns).toEqual(watchSource.ignorePatterns);
-      expect(recreated.strategy).toBe(watchSource.strategy);
+      expect(recreated.sourceType).toBe(watchSource.sourceType);
     });
   });
 
@@ -120,7 +120,7 @@ describe('WatchSource', () => {
       const expectedExclude = ['**/archive/**'];
       const expectedDebounceMs = 5000;
       const expectedIgnorePatterns = ['**/.DS_Store', '**/Thumbs.db'];
-      const expectedStrategy = SOURCE_STRATEGIES.AGENT_SESSIONS;
+      const expectedSourceType = SOURCE_TYPES.AGENT_SESSIONS;
 
       // Act
       const watchSource = aWatchSource({
@@ -130,7 +130,7 @@ describe('WatchSource', () => {
         exclude: expectedExclude,
         debounceMs: expectedDebounceMs,
         ignorePatterns: expectedIgnorePatterns,
-        strategy: expectedStrategy,
+        sourceType: expectedSourceType,
       });
 
       // Assert
@@ -140,31 +140,32 @@ describe('WatchSource', () => {
       expect(watchSource.exclude).toEqual(expectedExclude);
       expect(watchSource.debounceMs).toBe(expectedDebounceMs);
       expect(watchSource.ignorePatterns).toEqual(expectedIgnorePatterns);
-      expect(watchSource.strategy).toBe(expectedStrategy);
+      expect(watchSource.sourceType).toBe(expectedSourceType);
     });
   });
 
-  describe('strategy field', () => {
-    it('defaults to content-aware when not provided', () => {
+  describe('sourceType field (D29: the field IS the source type)', () => {
+    it('defaults to vault when not provided (content-aware successor)', () => {
       // Arrange
       const watchSource = aWatchSource();
 
       // Assert
-      expect(watchSource.strategy).toBe(SOURCE_STRATEGIES.CONTENT_AWARE);
+      expect(watchSource.sourceType).toBe(SOURCE_TYPES.VAULT);
     });
 
-    it('accepts explicit strategy value', () => {
-      // Arrange
-      const watchSource = aWatchSource({ strategy: SOURCE_STRATEGIES.AGENT_SESSIONS });
+    it.each([SOURCE_TYPES.OBSIDIAN, SOURCE_TYPES.AGENT_SESSIONS, SOURCE_TYPES.VAULT])(
+      'accepts explicit D29 source type %s',
+      sourceType => {
+        const watchSource = aWatchSource({ sourceType });
 
-      // Assert
-      expect(watchSource.strategy).toBe(SOURCE_STRATEGIES.AGENT_SESSIONS);
-    });
+        expect(watchSource.sourceType).toBe(sourceType);
+      },
+    );
 
-    it('rejects empty strategy', () => {
+    it('rejects empty sourceType', () => {
       // Arrange
       const watchSource = aWatchSource();
-      const invalidProps = { ...watchSource.toJson(), strategy: '' as any };
+      const invalidProps = { ...watchSource.toJson(), sourceType: '' as never };
 
       // Act
       const result = WatchSource.of(invalidProps);
@@ -173,20 +174,27 @@ describe('WatchSource', () => {
       expect(result.isKo()).toBe(true);
     });
 
-    it('toJson includes strategy', () => {
+    it('rejects legacy non-D29 source type values (content-aware, file_system)', () => {
+      const watchSource = aWatchSource();
+
+      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'content-aware' as never }).isKo()).toBe(true);
+      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'file_system' as never }).isKo()).toBe(true);
+    });
+
+    it('toJson includes sourceType', () => {
       // Arrange
-      const watchSource = aWatchSource({ strategy: SOURCE_STRATEGIES.OBSIDIAN });
+      const watchSource = aWatchSource({ sourceType: SOURCE_TYPES.OBSIDIAN });
 
       // Act
       const json = watchSource.toJson();
 
       // Assert
-      expect(json.strategy).toBe(SOURCE_STRATEGIES.OBSIDIAN);
+      expect(json.sourceType).toBe(SOURCE_TYPES.OBSIDIAN);
     });
 
-    it('toJson round-trip preserves strategy', () => {
+    it('toJson round-trip preserves sourceType', () => {
       // Arrange
-      const watchSource = aWatchSource({ strategy: SOURCE_STRATEGIES.AGENT_SESSIONS });
+      const watchSource = aWatchSource({ sourceType: SOURCE_TYPES.AGENT_SESSIONS });
 
       // Act
       const json = watchSource.toJson();
@@ -194,7 +202,7 @@ describe('WatchSource', () => {
 
       // Assert
       expect(result.isOk()).toBe(true);
-      expect(result.getValue().strategy).toBe(SOURCE_STRATEGIES.AGENT_SESSIONS);
+      expect(result.getValue().sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
     });
   });
 

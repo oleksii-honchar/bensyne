@@ -4,7 +4,7 @@ Test manually all the bensyne and racochu functionality — use mcp tools, do no
 
 **MCP enforcement:** Use only Bensyne MCP tools available via `meta_search` / `meta_use` (e.g., `recallMemory`, `listMemoryBanks`). **Never curl the MCP server.**
 
-Fixtures go to `tmp/obsidian/` (obsidian strategy).
+Fixtures go to `tmp/obsidian/` (obsidian sourceType).
 
 ## Obsidian Frontmatter + Wikilink Scenario
 
@@ -17,7 +17,7 @@ Verify end-to-end Obsidian frontmatter preservation and wikilink graph feature i
 
 ### Prerequisites
 
-- racochu running with `strategy: obsidian` on the `tmp-obsidian` watch source
+- racochu running with `sourceType: obsidian` on the `tmp-obsidian` watch source
 - bensyne-dev MCP tools available
 - `tmp/obsidian/` directory writable
 
@@ -123,7 +123,7 @@ Some body content here.
 
 #### Step 9: Check Logs
 
-- Check logs at `~/.local/share/racochu/logs` to verify obsidian strategy was selected (look for "Strategy selected: strategy=obsidian" in debug logs)
+- Check logs at `~/.local/share/racochu/logs` to verify the obsidian chunker was selected (look for "Chunker selected: sourceType=\"obsidian\"" in debug logs)
 
 #### Step 10: Cleanup
 

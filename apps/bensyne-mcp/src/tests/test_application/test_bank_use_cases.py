@@ -105,13 +105,15 @@ class TestListBanksUseCase:
     def router(self) -> MagicMock:
         router = MagicMock()
         # Simulate active instances: "default" and "ns1"
+        # get_stats() returns a Result[dict] per the MnemosyneClient contract.
+        # The canonical memory count is "total_memories" in the ok value.
         mock_default = MagicMock()
         mock_default.memory_bank = "default"
-        mock_default.stats.return_value = {"working": 5, "episodic": 3}
+        mock_default.get_stats.return_value = Result.ok({"total_memories": 5})
 
         mock_ns1 = MagicMock()
         mock_ns1.memory_bank = "ns1"
-        mock_ns1.stats.return_value = {"working": 10, "episodic": 0}
+        mock_ns1.get_stats.return_value = Result.ok({"total_memories": 10})
 
         router.instances = {
             "default": mock_default,
@@ -176,15 +178,15 @@ class TestListBanksUseCase:
         assert ns2["status"] == "registered"
 
     def test_execute_active_banks_include_memory_count(self, use_case) -> None:
-        """Active banks should include memory_count from stats."""
+        """Active banks should surface memory_count from get_stats' total_memories."""
         result = use_case.execute({})
         banks = result.value["banks"]
 
         default_bank = next(b for b in banks if b["name"] == "default")
-        assert default_bank["memory_count"] == 8  # 5 working + 3 episodic
+        assert default_bank["memory_count"] == 5
 
         ns1_bank = next(b for b in banks if b["name"] == "ns1")
-        assert ns1_bank["memory_count"] == 10  # 10 working + 0 episodic
+        assert ns1_bank["memory_count"] == 10
 
     def test_execute_registered_only_banks_have_zero_memory_count(self, use_case) -> None:
         """Registered-only banks should have memory_count=0."""
@@ -224,3 +226,59 @@ class TestListBanksUseCase:
 
         ns1 = next(b for b in banks if b["name"] == "ns1")
         assert ns1["bank"] == "ns1"
+
+
+class TestListBanksStatsConsumption:
+    """Test that ListBanksUseCase consumes get_stats() as a Result[dict].
+
+    get_stats() returns Result[dict[str, Any]]; the canonical count is
+    "total_memories" in the ok value. The use case must unwrap the Result and
+    read total_memories, defaulting to 0 on ko or missing key.
+    """
+
+    @pytest.fixture
+    def logger(self) -> LoggerMock:
+        return LoggerMock()
+
+    def _build_use_case(self, get_stats_result, logger) -> ListBanksUseCase:
+        client = MagicMock()
+        client.memory_bank = "default"
+        client.get_stats.return_value = get_stats_result
+
+        router = MagicMock()
+        router.instances = {"default": client}
+        router.registry.list_banks.return_value = ["default"]
+        router.get_bank_description.return_value = "desc"
+        return ListBanksUseCase(router=router, logger=logger)
+
+    def test_memory_count_from_total_memories_when_ok(self, logger) -> None:
+        """Result.ok({'total_memories': 5}) → memory_count == 5."""
+        use_case = self._build_use_case(
+            Result.ok({"total_memories": 5, "mode": "beam"}), logger
+        )
+
+        result = use_case.execute({})
+
+        bank = result.value["banks"][0]
+        assert bank["memory_count"] == 5
+
+    def test_memory_count_zero_when_stats_is_ko(self, logger) -> None:
+        """Result.ko(...) → memory_count == 0."""
+        use_case = self._build_use_case(
+            Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": "boom"})]),
+            logger,
+        )
+
+        result = use_case.execute({})
+
+        bank = result.value["banks"][0]
+        assert bank["memory_count"] == 0
+
+    def test_memory_count_zero_when_total_memories_absent(self, logger) -> None:
+        """Result.ok without total_memories key → memory_count == 0."""
+        use_case = self._build_use_case(Result.ok({"mode": "beam", "banks": ["default"]}), logger)
+
+        result = use_case.execute({})
+
+        bank = result.value["banks"][0]
+        assert bank["memory_count"] == 0

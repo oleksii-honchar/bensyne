@@ -111,7 +111,7 @@ describe('ProcessFileUseCase', () => {
       const sourceId = 'agent-sessions';
       const memoryBank = 'agent-sessions';
       const fileContent = 'Test';
-      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank, strategy: 'agent-sessions' });
+      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank, sourceType: 'agent-sessions' });
       const chunks = [aContentChunk({ memoryBank })];
 
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);

@@ -1,49 +1,66 @@
 """FileContext — the wire contract for "remember this memory as part of a file."
 
-When a rememberMemory metadata payload carries a non-empty ``file_path``, that
-payload is the unified chunk contract v1. This module is bensyne's half of the
-contract: it parses and validates the payload into a frozen FileContext, which
-the materialization path (``FileService.materialize_file_context``) then
-projects into the file layer (SQLite: files / file_chunks / file_relations).
+What this is / when it fires:
+    When a ``rememberMemory`` metadata payload carries a non-empty
+    ``file_path``, that payload is the unified chunk contract v1. This module
+    is bensyne's half of the contract: it parses + validates the payload into
+    a frozen ``FileContext`` — the input declaration of ONE remember call —
+    which the materialization path (``FileService.materialize_file_context``)
+    then projects into the file layer (SQLite: ``files`` / ``file_chunks`` /
+    ``file_relations``). Absent/empty ``file_path`` ⇒ ``None``: a pure memory,
+    zero file-layer writes.
 
-FileContext is NOT the File entity (``domain/file_entity.py``). It is the
-input declaration of ONE remember call; File is the persisted row that
-survives across calls. They share only a small core (path, source_type,
-file_role, language, hash, summary) — full boundary table: spec §2.2.
+FileContext is NOT the File entity (``domain/file_entity.py``). It is
+chunk-scoped (one remember call: one chunk + its edges + its hashes); ``File``
+is the persisted, file-aggregated row that survives across calls (identity,
+lifecycle, re-aggregated keywords/tags/importance). They share only a small
+core (path, source_type, file_role, language, hash, summary) — full boundary
+table: spec §2.2.
 
 Flow:
     rememberMemory args
       → parse_file_context(metadata) → FileContext | None
-          (None = pure memory, zero file-layer writes — rule 1)
       → FileService.materialize_file_context(bank, context, memory_id)
-          → File / FileChunk / FileRelation rows
+          → upsert File (deterministic id) + the FileChunk row + FileRelation rows
+    Materialization is idempotent (a silent no-op on re-remember) and revives a
+    DELETED file (DELETED → INDEXED) when it is re-remembered.
 
 Where each field lands (which type owns what):
-    file_path                  → File.path (+ derived file id)
+    file_path                  → File.path (+ derive_file_id → File.id)
     source_type, file_role,
     language, summary          → same-named File fields
-    file_hash                  → File.hash (change ⇒ rebuild_projection)
+    file_hash                  → File.hash (the whole-file content hash —
+                                 canonical wire name, D12; surfaced on read,
+                                 D15; a change ⇒ rebuild_projection, D5)
     extra (str→str map)        → merged into File.metadata
-    tags                       → File.aggregated_tags (union — O5)
+    tags                       → File.aggregated_tags (union-merge, idempotent)
     chunk_index, start_line,
     end_line, section_header,
     chunk_hash, parent_unit    → FileChunk row (chunk-level facts, never File)
     edges                      → FileRelation rows (+ missing-target stubs)
-    contract_version,
-    total_chunks               → wire-only (validation, not stored)
+    contract_version           → wire-only (versioning: >1 ⇒ warn + best effort)
+    total_chunks               → the producer's claim only (validation);
+                                 File.total_chunks is re-aggregated from the
+                                 real chunk set on the write path, never copied
 
-Contract rules (full contract: materials/unified-chunk-contract.md;
-racochu mirrors this contract with zod + a shared JSON fixture):
+Contract rules (full contract: ``materials/unified-chunk-contract.md``; the
+racoohu side mirrors it — ``apps/racochu`` ``content-chunk.entity.ts`` zod
+schema + the shared JSON fixture ``unified-chunk-contract-v1.json``,
+byte-identical on both sides):
     Rule 1 (trigger): file_path absent/empty ⇒ None — plain memory,
                       zero file-layer writes.
-    Legacy keys:      camelCase aliases map to canonical (filePath→file_path,
-                      hash/fileHash→file_hash, ...); canonical wins.
+    Legacy keys:      camelCase aliases map to their canonical names
+                      (filePath→file_path, hash/fileHash→file_hash, …).
     Degrade, never reject: invalid source_type/file_role ⇒ unknown/None with
                       warn; malformed edges DROPPED with warn (the chunk still
                       materializes); unknown string keys captured into extra;
                       non-string unknowns ignored with warn.
     Versioning (rule 6): contract_version > 1 ⇒ warn + best-effort parse of
                       known keys.
+
+Provenance: spec §2.2 (FileContext vs File boundary), D12–D15 (wire naming +
+dual hash), D26 (materialization concept — canonical home: the vault
+``materialization`` concept node).
 """
 
 import logging

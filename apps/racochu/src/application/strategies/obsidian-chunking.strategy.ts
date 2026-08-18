@@ -117,7 +117,7 @@ export function buildWikilinkEdges(
 }
 
 /**
- * Obsidian-aware chunking strategy that:
+ * Obsidian-aware chunker that:
  * 1. Splits frontmatter from body using shared splitFrontmatter
  * 2. Extracts note metadata (aliases, tags, etc.) from frontmatter via js-yaml
  * 3. Creates frontmatter chunk with high importance (0.9) and obsidian-note tags
@@ -145,7 +145,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
 
     // 3. Resolve wikilinks to backlink edges against the watch-source root
     const sourceNoteName = path.basename(filePath).replace(/\.md$/i, '');
-    const edges = buildWikilinkEdges(wikilinks, sourceConfig.path, sourceNoteName);
+    const edges = buildWikilinkEdges(wikilinks, path.resolve(sourceConfig.path), sourceNoteName);
 
     // 4. Extract note metadata if frontmatter exists
     const noteMetadata = frontmatter ? extractNoteMetadata(frontmatter) : null;

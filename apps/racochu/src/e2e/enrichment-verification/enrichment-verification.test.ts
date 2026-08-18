@@ -1,6 +1,6 @@
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { ConfigurationService } from '@/infrastructure/config/configuration.service';
-import { SOURCE_STRATEGIES } from '@/infrastructure/config/source-strategies';
+import { SOURCE_TYPES } from '@/infrastructure/config/source-types';
 import { BensyneClient } from '@/infrastructure/services/bensyne-client.service';
 import { ChunkContentUseCase } from '@/use-cases/chunk-content.use-case';
 import { ProcessFileUseCase } from '@/use-cases/process-file.use-case';
@@ -34,7 +34,7 @@ describe('[E2E] Enrichment Verification — Full Flow', () => {
     id: TEST_SOURCE_ID,
     path: '',
     memoryBank: TEST_MEMORY_BANK,
-    strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
+    sourceType: SOURCE_TYPES.VAULT,
     description: 'E2E enrichment verification source',
     exclude: [],
     debounceMs: 3000,

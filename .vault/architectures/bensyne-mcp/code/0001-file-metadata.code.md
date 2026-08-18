@@ -4,7 +4,7 @@ title: "Bensyne — File Metadata Domain Model"
 c4_level: code
 system: bensyne-mcp
 createdAt: "2026-08-12T00:00:00Z"
-updatedAt: "2026-08-12T16:44:16Z"
+updatedAt: "2026-08-18T07:55:43Z"
 tags: [code, domain, file-metadata, aggregate]
 see_also:
   - architectures/bensyne-mcp/containers/0001-container.container.md
@@ -28,14 +28,14 @@ linked_elements:
 
 ```mermaid
 flowchart TB
-    subgraph AggregateRoot["◇ FileMetadataAggregate — Aggregate Root"]
+    subgraph AggregateRoot["◇ FileMetadata — Aggregate Root (renamed from FileMetadataAggregate, 2026-08-18)"]
         FMF_F["file: File"]
         FMF_C["chunks: List[FileChunk]"]
         FMF_R["relations: List[FileRelation]"]
 
-        FMF_AC["add_chunk(chunk) → Result[FileMetadataAggregate]\nEnforces uniqueness, emits FileChunkAddedEvent"]
-        FMF_RC["remove_chunk(memory_id) → Result[FileMetadataAggregate]\nEmits FileChunkRemovedEvent"]
-        FMF_AR["add_relation(relation) → Result[FileMetadataAggregate]\nEmits FileRelationCreatedEvent"]
+        FMF_AC["upsert_chunk(chunk) → Result[FileMetadata]\nIdempotent — silent no-op when equal; emits FileChunkCreatedEvent / FileChunkUpdatedEvent"]
+        FMF_RC["remove_chunk(memory_id) → Result[FileMetadata]\nEmits FileChunkRemovedEvent"]
+        FMF_AR["upsert_relation(relation) → Result[FileMetadata]\nIdempotent; canonical id fr_source_target_type; emits FileRelationCreatedEvent"]
         FMF_CC["compose_content(mnemosyne_client, summary_only) → Result[dict]\nComposes content from chunks, emits FileContentComposedEvent"]
         FMF_TD["to_dict(relation_type, content, summary_only, client) → Result[dict]\nSerializes aggregate for MCP output"]
     end
@@ -43,8 +43,8 @@ flowchart TB
     subgraph Entity_File["◇ File — Entity (frozen dataclass)"]
         F_I["id: str\nStable file identifier"]
         F_P["path: str\nFile path (absolute)"]
-        F_ST["source_type: SourceType\nagent_session · file_system · git\ndatabase · external · remote · unknown"]
-        F_H["hash: Optional[str]\nSHA-256 for deduplication"]
+        F_ST["source_type: SourceType\nobsidian · agent-sessions · vault · unknown (D29 — frozen in bootstrap CHECK)"]
+        F_H["file_hash: Optional[str]\nfile identity + re-ingest rebuild trigger (dedup is chunk-level: chunk_hash, DEC-0048)"]
         F_FT["file_type: Optional[str]\nconfig · code · docs (racochu-aligned)"]
         F_SZ["size: Optional[int]"]
         F_L["language: Optional[str]"]
@@ -66,12 +66,14 @@ flowchart TB
         FC_CH["content_hash: Optional[str]\nSHA-256 of chunk content"]
         FC_CT["content_type: ContentType\ntext · code · config · image · binary · unknown"]
         FC_IP["is_partial: bool\nOversized chunk truncated"]
+        FC_SH["section_header: Optional[str]"]
+        FC_PU["parent_unit_ref / parent_unit_summary: Optional[str]"]
         FC_CA["created_at: datetime"]
         FC_UA["updated_at: datetime"]
     end
 
     subgraph Entity_FileRelation["◇ FileRelation — Entity (frozen dataclass)"]
-        FR_ID["id: str\nsource+target+type backfill"]
+        FR_ID["id: str\ncanonical fr_source_target_type"]
         FR_SF["source_file_id: str"]
         FR_TF["target_file_id: str"]
         FR_RT["relation_type: RelationType\n9 types (parent_child, sibling, backlink,\nfolder_hierarchy, cross_reference,\nversion, override, dependency, recommendation)"]
@@ -87,7 +89,8 @@ flowchart TB
         EVT_FU["FileUpdatedEvent\nfile_id · changed_fields"]
         EVT_FD["FileDeletedEvent\nfile_id"]
         EVT_FIX["FileIndexCompletedEvent\nfile_id · chunk_count"]
-        EVT_FCA["FileChunkAddedEvent\nfile_id · memory_id · chunk_index"]
+        EVT_FCA["FileChunkCreatedEvent\nfile_id · memory_id · chunk_index"]
+        EVT_FCU["FileChunkUpdatedEvent\nfile_id · memory_id"]
         EVT_FCR["FileChunkRemovedEvent\nfile_id · memory_id"]
         EVT_FRC["FileRelationCreatedEvent\nsource_file_id · target_file_id · relation_type"]
         EVT_FCC["FileContentComposedEvent\nfile_id · chunks_composed"]
@@ -96,8 +99,9 @@ flowchart TB
     FMF_F -->|"contains"| Entity_File
     FMF_C -->|"contains (List)"| Entity_FileChunk
     FMF_R -->|"contains (List)"| Entity_FileRelation
-    FMF_AC -->|"validates & adds"| Entity_FileChunk
+    FMF_AC -->|"validates & adds (idempotent)"| Entity_FileChunk
     FMF_AC -->|"produces"| EVT_FCA
+    FMF_AC -->|"produces"| EVT_FCU
     FMF_RC -->|"validates & removes"| Entity_FileChunk
     FMF_RC -->|"produces"| EVT_FCR
     FMF_AR -->|"validates & adds"| Entity_FileRelation
@@ -116,7 +120,7 @@ flowchart TB
 
 ## Entity Schema Reference
 
-### FileMetadataAggregate (Aggregate Root)
+### FileMetadata (Aggregate Root — renamed from FileMetadataAggregate, 2026-08-18)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -125,10 +129,10 @@ flowchart TB
 | `relations` | `List[FileRelation]` | Collection of relation entities |
 
 **Operations:**
-- `of(file, chunks, relations) -> Result[FileMetadataAggregate]` — factory
-- `add_chunk(chunk) -> Result[FileMetadataAggregate]` — enforces memory_id uniqueness, emits `FileChunkAddedEvent`, delegates to `File.with_chunk()`
-- `remove_chunk(memory_id) -> Result[FileMetadataAggregate]` — emits `FileChunkRemovedEvent`, delegates to `File.without_chunk()`
-- `add_relation(relation) -> Result[FileMetadataAggregate]` — emits `FileRelationCreatedEvent`
+- `of(file, chunks, relations) -> Result[FileMetadata]` — factory
+- `upsert_chunk(chunk) -> Result[FileMetadata]` — idempotent (no chunk for `memory_id` → add; different `chunk_index` → replace; differing fields → in-place update; equal → silent no-op); emits `FileChunkCreatedEvent` / `FileChunkUpdatedEvent` per change, delegates to `File.with_chunk()`
+- `remove_chunk(memory_id) -> Result[FileMetadata]` — emits `FileChunkRemovedEvent`, delegates to `File.without_chunk()`
+- `upsert_relation(relation) -> Result[FileMetadata]` — idempotent; dedup key `(target_file_id, relation_type)` scoped to the aggregate's file as source; canonical id `fr_{source}_{target}_{type}`; emits `FileRelationCreatedEvent`
 - `compose_content(mnemosyne_client: Callable[[str], Optional[dict]], summary_only=False) -> Result[dict]` — composes summary + chunk content, emits `FileContentComposedEvent`
 - `to_dict(include_relation_type, include_content, summary_only, mnemosyne_client) -> Result[dict]` — builds MCP output dict
 
@@ -138,8 +142,8 @@ flowchart TB
 |-------|------|-------------|
 | `id` | `str` | Stable file identifier |
 | `path` | `str` | File path (absolute) |
-| `source_type` | `SourceType` | Enum: `agent_session` \| `file_system` \| `git` \| `database` \| `external` \| `remote` \| `unknown` |
-| `hash` | `Optional[str]` | SHA-256 for deduplication |
+| `source_type` | `SourceType` | Enum (D29): `obsidian` \| `agent-sessions` \| `vault` \| `unknown` — frozen in bootstrap CHECK |
+| `file_hash` | `Optional[str]` | file identity + re-ingest rebuild trigger (dedup is chunk-level: `chunk_hash`, DEC-0048) |
 | `file_type` | `Optional[str]` | config/code/docs (racochu-aligned) |
 | `size` | `Optional[int]` | File size in bytes (>= 0) |
 | `language` | `Optional[str]` | Programming language |
@@ -166,6 +170,9 @@ flowchart TB
 | `content_hash` | `Optional[str]` | SHA-256 of chunk content |
 | `content_type` | `ContentType` | Enum: `text` \| `code` \| `config` \| `image` \| `binary` \| `unknown` |
 | `is_partial` | `bool` | True if oversized chunk was truncated |
+| `section_header` | `Optional[str]` | Section header for this chunk (V6, on entity since 2026-08) |
+| `parent_unit_ref` | `Optional[str]` | Reference to the parent processing unit (V6) |
+| `parent_unit_summary` | `Optional[str]` | Summary of the parent processing unit (V6) |
 | `created_at` | `datetime` | Creation timestamp |
 | `updated_at` | `datetime` | Last update timestamp |
 
@@ -187,17 +194,12 @@ flowchart TB
 | `updated_at` | `datetime` | Last update timestamp |
 
 **Factory:** `FileRelation.of(properties) -> Result[FileRelation]` via `FileRelationSchema`
-**Operations:** `update_strength(strength)`, `update_description(description)`
+**Operations:** `update_metadata(strength, description, direction)` — single-call update (replaced per-field `update_strength`/`update_description`)
 
 ## Repository & Storage Notes
 
 - **Storage:** per-bank `file_metadata.db` via `FileMetadataConnectionManager` — SQLAlchemy Engine/Session, WAL mode, connection pool (default 5)
-- **Migrations:** custom runner (`file_metadata_migrations.py`), versions V1–V5:
-  - V1 — initial: files, file_chunks, file_relations + indexes
-  - V2 — files: file_type, size, language, status + FTS5 (trigram) virtual table `files_fts` + sync triggers
-  - V3 — file_chunks: id, content_hash, content_type, is_partial, updated_at + unique index + backfill
-  - V4 — file_relations: id, strength, direction, description, updated_at + unique index + backfill
-  - V5 — files: summary column
+- **Migrations:** **single bootstrap migration** (`file_metadata_migrations.py`; legacy V1–V6 collapsed, D28 — byte-identical final schema + schema-snapshot guard; no upgrade path, stale dev DB deleted manually). Final schema includes: files/file_chunks/file_relations + indexes, FTS5 (trigram) `files_fts` + sync triggers, chunk/relation unique indexes, files.summary, file_chunks `section_header`/`parent_unit_ref`/`parent_unit_summary` (V6), source_type CHECK with the D29 value set
 - **Repositories:** concrete SQLAlchemy ORM classes (no interfaces):
   - `FileRepository` — save (session.merge upsert), get_by_id, get_by_path, list, FTS5 search, delete
   - `FileChunkRepository` — save, get_chunks_by_file_id, get_chunk_by_memory_id, delete_chunk
@@ -207,9 +209,8 @@ flowchart TB
 ## Notes
 
 - All file domain entities are **frozen dataclasses** — immutable; updates produce new instances
-- `FileMetadataAggregate` is the **only boundary** for file metadata operations — chunk uniqueness enforced here
-- Content composition is **aggregate-owned** (`compose_content()` / `to_dict()`) — use cases delegate, not build dicts
+- `FileMetadata` (aggregate root) is the **sole write root** — load aggregate → domain mutation (invariants + events) → single `_persist` chokepoint in `FileService` (D17); idempotent upserts are silent no-ops on equal state
 - Content is **NOT stored** in FileChunk — it exists in mnemosyne (the Memory); FileChunk stores only metadata + content_hash
-- `section_header` exists as a DB column (V1) but is NOT on the FileChunk entity
-- FileService: create_file, update_file, delete_file, link_chunk, create_relation, get_file, upsert_file, find_files_by_memory, remove_chunk, get_chunks_count_by_file_id
-- File lifecycle: `pending → indexed → archived`; `deleted` is terminal
+- `section_header` / `parent_unit_ref` / `parent_unit_summary` are on the FileChunk entity (bootstrap schema)
+- FileService write surface: `materialize_file_context`, `update_file`, `remove_chunk`, `delete_file`, `rebuild_projection` (+ read passthroughs) — dead CRUD universe deleted (D17/D18); per-bank dependencies via DI container factories (D25)
+- File lifecycle: `pending → indexed → archived`; `deleted` is a **revivable** tombstone — re-materialization resurrects it (DELETED → INDEXED, fresh rows)

@@ -65,12 +65,13 @@ def mock_mnemosyne_client() -> MagicMock:
         )
     )
 
-    # stats: used directly by handlers → returns Result (handler checks .is_ok)
-    client.stats = MagicMock(
+    # get_stats: used directly by handlers → returns Result (handler checks .is_ok)
+    # The canonical count is "total_memories" in the ok value.
+    client.get_stats = MagicMock(
         return_value=Result.ok(
             {
-                "working_count": 1,
-                "episodic_count": 0,
+                "total_memories": 1,
+                "mode": "beam",
             }
         )
     )
@@ -425,7 +426,7 @@ class TestBankRegistrationAndListing:
         mock_router.instances = {
             "default": MagicMock(
                 memory_bank="default",
-                stats=MagicMock(return_value={"working_count": 5, "episodic_count": 2}),
+                get_stats=MagicMock(return_value=Result.ok({"total_memories": 7})),
             )
         }
         mock_router.get_bank_description.return_value = "Default bank"
@@ -438,7 +439,7 @@ class TestBankRegistrationAndListing:
         # Default should be active
         default_bank = [b for b in result["banks"] if b["name"] == "default"][0]
         assert default_bank["status"] == "active"
-        assert default_bank["memory_count"] == 7  # working + episodic
+        assert default_bank["memory_count"] == 7  # total_memories
 
     async def test_register_bank_use_case_validates_name(
         self,

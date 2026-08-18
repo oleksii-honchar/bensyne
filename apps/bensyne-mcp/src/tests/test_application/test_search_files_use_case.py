@@ -38,7 +38,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.AGENT_SESSION,
+    source_type: SourceType = SourceType.AGENT_SESSIONS,
     file_role: FileRole | None = None,
     summary: str | None = None,
     keywords: list[str] | None = None,
@@ -349,13 +349,13 @@ class TestSearchFilesUseCaseFileMemories:
         }
         assert legacy_keys <= set(r.keys())
 
-    def test_file_block_has_stable_key_set(
+    def test_file_dict_has_stable_key_set(
         self,
         use_case: SearchFilesUseCase,
         mnemosyne_client: MagicMock,
         file_service: MagicMock,
     ) -> None:
-        """File block key set must be a superset of the legacy contract."""
+        """File dict key set must be a superset of the legacy contract."""
         file = _a_file(id="f1", path="/tmp/test.txt")
         chunk = _a_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
 
@@ -581,9 +581,9 @@ class TestSearchFilesUseCaseFilters:
         mnemosyne_client: MagicMock,
         file_service: MagicMock,
     ) -> None:
-        """source_type=agent_session ⇒ only agent_session files in phase-2 output."""
-        session_file = _a_file(id="f1", path="/tmp/session.md", source_type=SourceType.AGENT_SESSION)
-        git_file = _a_file(id="f2", path="/repo/README.md", source_type=SourceType.GIT)
+        """source_type=agent-sessions ⇒ only agent-sessions files in phase-2 output."""
+        session_file = _a_file(id="f1", path="/tmp/session.md", source_type=SourceType.AGENT_SESSIONS)
+        other_file = _a_file(id="f2", path="/repo/README.md", source_type=SourceType.VAULT)
         chunk1 = _a_chunk(id="c1", file_id="f1", memory_id="mem_1")
         chunk2 = _a_chunk(id="c2", file_id="f2", memory_id="mem_2")
 
@@ -594,7 +594,7 @@ class TestSearchFilesUseCaseFilters:
         file_service.get_chunk_by_memory_id.side_effect = lambda mid: Result.ok({"mem_1": chunk1, "mem_2": chunk2}.get(mid))
 
         def file_by_id(file_id: str) -> Result[File]:
-            return Result.ok(session_file if file_id == "f1" else git_file)
+            return Result.ok(session_file if file_id == "f1" else other_file)
 
         file_service.get_file_by_id.side_effect = file_by_id
         file_service.get_relations_by_file_id.return_value = Result.ok([])
@@ -604,7 +604,7 @@ class TestSearchFilesUseCaseFilters:
             {
                 "query": "search term",
                 "memory_bank": "my_bank",
-                "source_type": "agent_session",
+                "source_type": "agent-sessions",
             }
         )
 
@@ -612,7 +612,7 @@ class TestSearchFilesUseCaseFilters:
         file_results = [r for r in result.value["results"] if r["file"] is not None]
         assert len(file_results) == 1
         assert file_results[0]["file"]["id"] == "f1"
-        assert file_results[0]["file"]["source_type"] == "agent_session"
+        assert file_results[0]["file"]["source_type"] == "agent-sessions"
 
     def test_file_role_filter_keeps_only_matching_files(
         self,
@@ -660,7 +660,7 @@ class TestSearchFilesUseCaseFilters:
         file_service: MagicMock,
     ) -> None:
         """Filters apply to phase-2 grouping only — pure memories always pass through."""
-        git_file = _a_file(id="f1", path="/repo/README.md", source_type=SourceType.GIT)
+        vault_file = _a_file(id="f1", path="/vault/README.md", source_type=SourceType.VAULT)
         chunk = _a_chunk(file_id="f1", memory_id="mem_1")
 
         mnemosyne_client.recall.return_value = [
@@ -668,7 +668,7 @@ class TestSearchFilesUseCaseFilters:
             {"id": "mem_2", "content": "Standalone memory", "importance": 0.5, "relevance_score": 0.6},
         ]
         file_service.get_chunk_by_memory_id.side_effect = lambda mid: Result.ok(chunk if mid == "mem_1" else None)
-        file_service.get_file_by_id.side_effect = lambda fid: Result.ok(git_file)
+        file_service.get_file_by_id.side_effect = lambda fid: Result.ok(vault_file)
         file_service.get_relations_by_file_id.return_value = Result.ok([])
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
 
@@ -676,14 +676,14 @@ class TestSearchFilesUseCaseFilters:
             {
                 "query": "search term",
                 "memory_bank": "my_bank",
-                "source_type": "agent_session",
+                "source_type": "agent-sessions",
             }
         )
 
         assert result.is_ok is True
         results = result.value["results"]
-        # Pure memory survives the filter; git file's memory is demoted to non-file
-        # (never dropped). Both rows end up with file=None.
+        # Pure memory survives the filter; the non-matching (vault) file's memory is
+        # demoted to non-file (never dropped). Both rows end up with file=None.
         non_file = [r for r in results if r["file"] is None]
         file_results = [r for r in results if r["file"] is not None]
         assert len(non_file) == 2

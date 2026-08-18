@@ -71,15 +71,15 @@ describe('MastraChunkingService', () => {
 
   describe('determineStrategy', () => {
     describe('markdown files', () => {
-      it('should return markdown strategy for .md files', () => {
+      it('should return markdown chunker for .md files', () => {
         expect(service['determineStrategy']('README.md')).toBe('markdown');
       });
 
-      it('should return markdown strategy for .mdx files', () => {
+      it('should return markdown chunker for .mdx files', () => {
         expect(service['determineStrategy']('page.mdx')).toBe('markdown');
       });
 
-      it('should return markdown strategy for .markdown files', () => {
+      it('should return markdown chunker for .markdown files', () => {
         expect(service['determineStrategy']('notes.markdown')).toBe('markdown');
       });
     });
@@ -114,58 +114,58 @@ describe('MastraChunkingService', () => {
         ['.lua'],
         ['.dart'],
         ['.groovy'],
-      ])('should return recursive strategy for %s files', ext => {
+      ])('should return recursive chunker for %s files', ext => {
         expect(service['determineStrategy'](`file${ext}`)).toBe('recursive');
       });
     });
 
     describe('config files - json', () => {
       it.each([['.json'], ['.yaml'], ['.yml'], ['.toml'], ['.xml'], ['.ini'], ['.cfg'], ['.conf']])(
-        'should return json strategy for %s files',
+        'should return json chunker for %s files',
         ext => {
           expect(service['determineStrategy'](`config${ext}`)).toBe('json');
         },
       );
 
-      it('should return json strategy for .env files', () => {
+      it('should return json chunker for .env files', () => {
         expect(service['determineStrategy']('.env')).toBe('json');
       });
 
-      it('should return json strategy for .env.local files', () => {
+      it('should return json chunker for .env.local files', () => {
         expect(service['determineStrategy']('.env.local')).toBe('json');
       });
     });
 
     describe('text files - sentence', () => {
-      it('should return sentence strategy for .txt files', () => {
+      it('should return sentence chunker for .txt files', () => {
         expect(service['determineStrategy']('notes.txt')).toBe('sentence');
       });
 
-      it('should return sentence strategy for .text files', () => {
+      it('should return sentence chunker for .text files', () => {
         expect(service['determineStrategy']('doc.text')).toBe('sentence');
       });
 
-      it('should return sentence strategy for .log files', () => {
+      it('should return sentence chunker for .log files', () => {
         expect(service['determineStrategy']('app.log')).toBe('sentence');
       });
     });
 
     describe('html files', () => {
-      it('should return markdown strategy for .html files', () => {
+      it('should return markdown chunker for .html files', () => {
         expect(service['determineStrategy']('page.html')).toBe('markdown');
       });
 
-      it('should return markdown strategy for .htm files', () => {
+      it('should return markdown chunker for .htm files', () => {
         expect(service['determineStrategy']('page.htm')).toBe('markdown');
       });
     });
 
     describe('fallback', () => {
-      it('should return sentence strategy for unknown extensions', () => {
+      it('should return sentence chunker for unknown extensions', () => {
         expect(service['determineStrategy']('file.unknown')).toBe('sentence');
       });
 
-      it('should return sentence strategy for files without extension', () => {
+      it('should return sentence chunker for files without extension', () => {
         expect(service['determineStrategy']('Dockerfile')).toBe('sentence');
       });
     });
@@ -306,7 +306,7 @@ describe('MastraChunkingService', () => {
       );
     });
 
-    it('should use code maxCharacters (400) for code files with recursive strategy', async () => {
+    it('should use code maxCharacters (400) for code files with the recursive chunker', async () => {
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
@@ -433,7 +433,7 @@ describe('MastraChunkingService', () => {
       expect(MDocument.fromText).toHaveBeenCalled();
     });
 
-    it('should call chunkMarkdown for markdown strategy', async () => {
+    it('should call chunkMarkdown for the markdown chunker', async () => {
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
@@ -447,7 +447,7 @@ describe('MastraChunkingService', () => {
       expect(mockDoc.chunkMarkdown).toHaveBeenCalled();
     });
 
-    it('should call chunkRecursive for recursive strategy', async () => {
+    it('should call chunkRecursive for the recursive chunker', async () => {
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
@@ -461,7 +461,7 @@ describe('MastraChunkingService', () => {
       expect(mockDoc.chunkRecursive).toHaveBeenCalled();
     });
 
-    it('should call chunkJSON for json strategy', async () => {
+    it('should call chunkJSON for the json chunker', async () => {
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
@@ -475,7 +475,7 @@ describe('MastraChunkingService', () => {
       expect(mockDoc.chunkJSON).toHaveBeenCalled();
     });
 
-    it('should call chunkSentence for sentence strategy', async () => {
+    it('should call chunkSentence for the sentence chunker', async () => {
       const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),

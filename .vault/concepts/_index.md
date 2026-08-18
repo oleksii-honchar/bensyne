@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-17"
+updatedAt: "2026-08-18"
 tags: []
 ---
 
@@ -14,14 +14,14 @@ Domain concepts and models. Grouped by `system` frontmatter.
 
 - [[0020-file-hash-deduplication]] — Dual-Hash Deduplication
 - [[0022-bensyne-bundle-cornerstone]] — Bensyne Bundle Cornerstone
+- [[0005-source-type-file-role]] — Source Type Taxonomy and File Type Classification
 
 ### bensyne-mcp
 
 - [[0001-hash-index]] — HashIndex
 - [[0002-memory-domain]] — Memory Domain Model
 - [[0003-memory-bank-aggregate]] — MemoryBank Aggregate
-- [[0004-file-metadata-aggregate]] — FileMetadataAggregate
-- [[0005-source-type-file-role]] — Source Type Taxonomy and File Type Classification
+- [[0004-file-metadata-aggregate]] — FileMetadata
 - [[0006-file-chunk-relation]] — FileChunk and FileRelation Entities
 - [[0007-file-metadata-layer]] — File Metadata Layer Architecture Overview
 
@@ -40,3 +40,4 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0018-obsidian-note-chunking]] — Obsidian Note Chunking
 - [[0019-session-metadata-service]] — Session Metadata Service
 - [[0021-llm-enrichment]] — LLM Enrichment
+- [[0023-materialization]] — Materialization

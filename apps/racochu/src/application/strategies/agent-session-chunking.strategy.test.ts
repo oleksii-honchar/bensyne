@@ -93,7 +93,7 @@ describe('splitFrontmatter', () => {
 });
 
 describe('AgentSessionChunkingStrategy', () => {
-  let strategy: AgentSessionChunkingStrategy;
+  let sut: AgentSessionChunkingStrategy;
   let mockSessionMetadataService: ReturnType<typeof aSessionMetadataService>;
   let mockMastraChunkingService: ReturnType<typeof aMastraChunkingService>;
   let mockLogger: BasePinoLogger;
@@ -103,7 +103,7 @@ describe('AgentSessionChunkingStrategy', () => {
     mockSessionMetadataService = aSessionMetadataService();
     mockMastraChunkingService = aMastraChunkingService();
     mockLogger = aLogger();
-    strategy = new AgentSessionChunkingStrategy(
+    sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastraChunkingService as unknown as MastraChunkingService,
       mockLogger,
@@ -112,7 +112,7 @@ describe('AgentSessionChunkingStrategy', () => {
 
   describe('implements ChunkingStrategy', () => {
     it('has chunkFile method with correct signature', () => {
-      expect(typeof strategy.chunkFile).toBe('function');
+      expect(typeof sut.chunkFile).toBe('function');
     });
   });
 
@@ -121,13 +121,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -136,7 +136,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -158,13 +158,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -173,7 +173,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -185,13 +185,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -200,7 +200,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -215,13 +215,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -230,7 +230,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -257,13 +257,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -272,7 +272,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -285,13 +285,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITHOUT_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -300,7 +300,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -314,13 +314,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITHOUT_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -329,7 +329,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -347,13 +347,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       const emptyMastra = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         emptyMetaService as unknown as SessionMetadataService,
         emptyMastra as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -362,7 +362,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -388,14 +388,14 @@ describe('AgentSessionChunkingStrategy', () => {
         const bodyChunk = aBodyChunk();
         const mastra = aMastraChunkingService([bodyChunk]);
 
-        strategy = new AgentSessionChunkingStrategy(
+        sut = new AgentSessionChunkingStrategy(
           mockSessionMetadataService as unknown as SessionMetadataService,
           mastra as unknown as MastraChunkingService,
           mockLogger,
         );
 
         const filePath = path.join(subDir, 'file.md');
-        await strategy.chunkFile(
+        await sut.chunkFile(
           WITH_FRONTMATTER,
           filePath,
           'test-source',
@@ -404,7 +404,7 @@ describe('AgentSessionChunkingStrategy', () => {
             path: '/test/path',
             memoryBank: 'test-source',
             exclude: ['**/node_modules/**'],
-            strategy: 'agent-sessions',
+            sourceType: 'agent-sessions',
           }),
         );
 
@@ -423,14 +423,14 @@ describe('AgentSessionChunkingStrategy', () => {
         const bodyChunk = aBodyChunk();
         const mastra = aMastraChunkingService([bodyChunk]);
 
-        strategy = new AgentSessionChunkingStrategy(
+        sut = new AgentSessionChunkingStrategy(
           mockSessionMetadataService as unknown as SessionMetadataService,
           mastra as unknown as MastraChunkingService,
           mockLogger,
         );
 
         const filePath = path.join(testDir, 'file.md');
-        await strategy.chunkFile(
+        await sut.chunkFile(
           WITH_FRONTMATTER,
           filePath,
           'test-source',
@@ -439,7 +439,7 @@ describe('AgentSessionChunkingStrategy', () => {
             path: '/test/path',
             memoryBank: 'test-source',
             exclude: ['**/node_modules/**'],
-            strategy: 'agent-sessions',
+            sourceType: 'agent-sessions',
           }),
         );
 
@@ -455,13 +455,13 @@ describe('AgentSessionChunkingStrategy', () => {
     it('returns empty array for empty content', async () => {
       const emptyMastra = aMastraChunkingService([]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         emptyMastra as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         '',
         '/test/path/file.md',
         'test-source',
@@ -470,7 +470,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -484,13 +484,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -499,7 +499,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -511,13 +511,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const chunk2 = aBodyChunk({ chunkIndex: 1 });
       const multiMastra = aMastraChunkingService([chunk1, chunk2]);
 
-      strategy = new AgentSessionChunkingStrategy(
+      sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         multiMastra as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/file.md',
         'test-source',
@@ -526,7 +526,7 @@ describe('AgentSessionChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'agent-sessions',
+          sourceType: 'agent-sessions',
         }),
       );
 
@@ -573,7 +573,7 @@ describe('AgentSessionChunkingStrategy', () => {
       path: '/test/path',
       memoryBank: 'test-source',
       exclude: ['**/node_modules/**'],
-      strategy: 'agent-sessions',
+      sourceType: 'agent-sessions',
     });
 
     afterEach(async () => {
@@ -584,10 +584,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('emits parent_child edge to session.md and sibling edges for findings/findings.md chunk', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
@@ -627,10 +627,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('does NOT emit parent_child edge when chunking session.md itself, but emits sibling edges', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'session.md');
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         'Session content',
         filePath,
         'test-source',
@@ -668,10 +668,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('emits no edges for absent companions', async () => {
       testRoot = await createSessionRoot(['session.md', 'findings/findings.md']);
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
@@ -696,13 +696,13 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('produces chunk with empty edges when session root is unreadable (fs error)', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
       // Simulate fs failure on readdir
       (fsPromises.readdir as jest.Mock).mockRejectedValueOnce(new Error('EACCES'));
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
@@ -723,12 +723,12 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('makes exactly ONE readdir call per process-file run', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
       (fsPromises.readdir as jest.Mock).mockClear();
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
@@ -744,18 +744,18 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('makes exactly ONE readdir call per process-file run (two runs = two calls)', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
       (fsPromises.readdir as jest.Mock).mockClear();
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
         sourceConfig,
       );
-      await strategy.chunkFile(
+      await sut.chunkFile(
         'More findings',
         filePath,
         'test-source',
@@ -770,10 +770,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('edge target_path values are absolute paths starting with the session root', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         'Findings content',
         filePath,
         'test-source',
@@ -794,10 +794,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('preserves existing session-frontmatter metadata behavior alongside edges', async () => {
       testRoot = await createSessionRoot();
-      const strategy = createStrategyWithMastra();
+      const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         filePath,
         'test-source',

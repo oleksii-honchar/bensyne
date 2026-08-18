@@ -142,6 +142,42 @@ class FileRelationRepository:
             self._conn_manager.close_session(session)
 
     # ------------------------------------------------------------------
+    # get_by_pair
+    # ------------------------------------------------------------------
+
+    def get_by_pair(
+        self,
+        source_file_id: str,
+        target_file_id: str,
+        relation_type: RelationType,
+    ) -> Result[FileRelation | None]:
+        """Find the stored relation for an exact (source, target, type) pair.
+
+        Matches on the pair regardless of the row's id, so the persistence
+        contract (spec §6.2) can locate legacy fr_{source}_{target} rows and
+        converge them to the canonical fr_{source}_{target}_{type} id at
+        persist time. Absent pair returns Result.ok(None) — no exception.
+        """
+        session = self._conn_manager.get_session()
+        try:
+            orm = (
+                session.query(FileRelationORM)
+                .filter(
+                    FileRelationORM.source_file_id == source_file_id,
+                    FileRelationORM.target_file_id == target_file_id,
+                    FileRelationORM.relation_type == relation_type.value,
+                )
+                .first()
+            )
+            if orm is None:
+                return Result.ok(None)
+            return Result.ok(_orm_to_relation(orm))
+        except Exception as e:
+            return Result.ko([ErrorWithDetails("RELATION_GET_BY_PAIR_ERROR", {"error": str(e)})])
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
     # delete_relation
     # ------------------------------------------------------------------
 

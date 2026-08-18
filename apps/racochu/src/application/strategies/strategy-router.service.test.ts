@@ -1,19 +1,30 @@
 import '@/utils/mastra-rag.test-utils';
 
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
-import { SOURCE_STRATEGIES } from '@/infrastructure/config/source-strategies';
+import { SOURCE_TYPES, SOURCE_TYPE_UNKNOWN, WireSourceType } from '@/infrastructure/config/source-types';
 import { aLogger } from '@/infrastructure/logging/logger.test-utils';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { BaseChunkingStrategy } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
 import { StrategyRouter } from './strategy-router.service';
 
-describe('StrategyRouter', () => {
+describe('StrategyRouter (D29: source_type → chunker)', () => {
   let router: StrategyRouter;
   let mockAgentSessionStrategy: jest.Mocked<AgentSessionChunkingStrategy>;
   let mockObsidianStrategy: jest.Mocked<ObsidianChunkingStrategy>;
   let mockMastraStrategy: jest.Mocked<MastraChunkingService>;
   let mockLogger: ReturnType<typeof aLogger>;
+
+  const aSourceConfig = (sourceType: string): WatchSourceConfig =>
+    ({
+      id: 'test',
+      path: '/test',
+      memoryBank: 'test',
+      exclude: [],
+      debounceMs: 3000,
+      sourceType,
+    }) as unknown as WatchSourceConfig;
 
   beforeEach(() => {
     mockAgentSessionStrategy = {
@@ -38,137 +49,80 @@ describe('StrategyRouter', () => {
     );
   });
 
-  describe('selectStrategy', () => {
-    it('should return AgentSessionChunkingStrategy for agent-sessions strategy', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.AGENT_SESSIONS,
-      };
+  describe('resolveSourceType (degrade-never-reject, mirrors bensyne _coerce_source_type)', () => {
+    it.each(['obsidian', 'agent-sessions', 'vault', 'unknown'])(
+      'resolves %s to itself (the 4-value axis)',
+      sourceType => {
+        expect(router.resolveSourceType(sourceType)).toBe(sourceType);
+      },
+    );
 
-      const result = router.selectStrategy(sourceConfig);
+    it.each(['file_system', 'agent_session', 'git', 'database', 'external', 'remote', 'content-aware', 'garbage'])(
+      'resolves legacy/unknown value %s to unknown (never throws)',
+      sourceType => {
+        expect(router.resolveSourceType(sourceType)).toBe(SOURCE_TYPE_UNKNOWN);
+      },
+    );
 
-      expect(result).toBe(mockAgentSessionStrategy);
+    it('resolves undefined input to unknown (never throws)', () => {
+      expect(router.resolveSourceType(undefined)).toBe(SOURCE_TYPE_UNKNOWN);
     });
+  });
 
-    it('should return ObsidianChunkingStrategy for obsidian strategy', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.OBSIDIAN,
-      };
-
-      const result = router.selectStrategy(sourceConfig);
+  describe('selectStrategy — source_type → chunker dispatch', () => {
+    it('dispatches obsidian to ObsidianChunkingStrategy', () => {
+      const result = router.selectStrategy(aSourceConfig(SOURCE_TYPES.OBSIDIAN));
 
       expect(result).toBe(mockObsidianStrategy);
     });
 
-    it('should return MastraChunkingService for content-aware strategy', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
-      };
+    it('dispatches agent-sessions to AgentSessionChunkingStrategy', () => {
+      const result = router.selectStrategy(aSourceConfig(SOURCE_TYPES.AGENT_SESSIONS));
 
-      const result = router.selectStrategy(sourceConfig);
+      expect(result).toBe(mockAgentSessionStrategy);
+    });
+
+    it('dispatches vault to MastraChunkingService (content-aware path, re-keyed)', () => {
+      const result = router.selectStrategy(aSourceConfig(SOURCE_TYPES.VAULT));
 
       expect(result).toBe(mockMastraStrategy);
     });
 
-    it('should return MastraChunkingService as default for unknown strategy', () => {
-      // Simulate an unknown strategy value by casting
-      const sourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: 'unknown-strategy' as unknown as WatchSourceConfig['strategy'],
-      };
+    it('resolves an unknown source_type to unknown and falls back to MastraChunkingService without throwing', () => {
+      let result: BaseChunkingStrategy | undefined;
 
-      const result = router.selectStrategy(sourceConfig);
+      expect(() => {
+        result = router.selectStrategy(aSourceConfig('never-heard-of-it'));
+      }).not.toThrow();
 
       expect(result).toBe(mockMastraStrategy);
     });
 
-    it('should return MastraChunkingService when strategy is content-aware (default)', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
-      };
-
-      const result = router.selectStrategy(sourceConfig);
-
-      expect(result).toBe(mockMastraStrategy);
-    });
-
-    it('should throw error when strategy resolves to undefined', () => {
-      const routerWithUndefinedStrategy = new StrategyRouter(
+    it('never throws when a chunker binding is missing — degrades to the Mastra fallback', () => {
+      const brokenRouter = new StrategyRouter(
         mockAgentSessionStrategy,
         undefined as unknown as ObsidianChunkingStrategy,
-        undefined as unknown as MastraChunkingService,
+        mockMastraStrategy,
         mockLogger,
       );
 
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.OBSIDIAN,
-      };
+      expect(() => brokenRouter.selectStrategy(aSourceConfig(SOURCE_TYPES.OBSIDIAN))).not.toThrow();
+      expect(brokenRouter.selectStrategy(aSourceConfig(SOURCE_TYPES.OBSIDIAN))).toBe(mockMastraStrategy);
+    });
+  });
 
-      expect(() => routerWithUndefinedStrategy.selectStrategy(sourceConfig)).toThrow(
-        'No chunking strategy available for strategy="obsidian", sourceId="test"',
-      );
+  describe('selectStrategy typing (return is a resolvable 4-value axis member)', () => {
+    it('selectStrategy output type stays BaseChunkingStrategy', () => {
+      const result: BaseChunkingStrategy = router.selectStrategy(aSourceConfig(SOURCE_TYPES.OBSIDIAN));
+
+      expect(result).toBe(mockObsidianStrategy);
     });
 
-    it('should log strategy resolution', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.OBSIDIAN,
-      };
+    it('resolves the typed sourceType of a valid config verbatim', () => {
+      const config = aSourceConfig(SOURCE_TYPES.AGENT_SESSIONS);
+      const resolved: WireSourceType = router.resolveSourceType(config.sourceType);
 
-      router.selectStrategy(sourceConfig);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Strategy selected: strategy="obsidian", sourceId="test"'),
-      );
-    });
-
-    it('should log strategy resolution for fallback (content-aware)', () => {
-      const sourceConfig: WatchSourceConfig = {
-        id: 'test',
-        path: '/test',
-        memoryBank: 'test',
-        exclude: [],
-        debounceMs: 3000,
-        strategy: SOURCE_STRATEGIES.CONTENT_AWARE,
-      };
-
-      router.selectStrategy(sourceConfig);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('Strategy selected: strategy="content-aware", sourceId="test"'),
-      );
+      expect(resolved).toBe(SOURCE_TYPES.AGENT_SESSIONS);
     });
   });
 });

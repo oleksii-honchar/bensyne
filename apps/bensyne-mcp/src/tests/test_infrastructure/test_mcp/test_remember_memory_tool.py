@@ -225,14 +225,13 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                result = await handle_remember(
-                    router,
-                    {"content": "test memory", "memory_bank": "test-ns"},
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            result = await handle_remember(
+                router,
+                {"content": "test memory", "memory_bank": "test-ns"},
+                container=container,
+            )
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_abc123"
@@ -254,18 +253,17 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                await handle_remember(
-                    router,
-                    {
-                        "content": "test",
-                        "memory_bank": "test-ns",
-                        "importance": 0.8,
-                    },
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                    "importance": 0.8,
+                },
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["importance"] == 0.8
@@ -286,18 +284,17 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                await handle_remember(
-                    router,
-                    {
-                        "content": "test",
-                        "memory_bank": "test-ns",
-                        "source": "user",
-                    },
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                    "source": "user",
+                },
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["source"] == "user"
@@ -318,18 +315,17 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                await handle_remember(
-                    router,
-                    {
-                        "content": "test",
-                        "memory_bank": "test-ns",
-                        "scope": "project",
-                    },
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                    "scope": "project",
+                },
+                container=container,
+            )
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["scope"] == "project"
@@ -344,15 +340,14 @@ class TestRememberMemoryHandler:
         mock_use_case.execute.return_value = Result.ko([ErrorWithDetails("CONTENT_REQUIRED", {})])
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                with pytest.raises(ValidationError):
-                    await handle_remember(
-                        router,
-                        {"content": "test", "memory_bank": "test-ns"},
-                    )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            with pytest.raises(ValidationError):
+                await handle_remember(
+                    router,
+                    {"content": "test", "memory_bank": "test-ns"},
+                    container=container,
+                )
 
         asyncio.run(run())
 
@@ -390,14 +385,13 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                result = await handle_remember(
-                    router,
-                    {"content": "test memory", "memory_bank": "my-bank"},
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            result = await handle_remember(
+                router,
+                {"content": "test memory", "memory_bank": "my-bank"},
+                container=container,
+            )
 
             assert result["status"] == "stored"
             assert result["memory_id"] == "mem_xyz789"
@@ -419,18 +413,17 @@ class TestRememberMemoryHandler:
         )
 
         async def run() -> None:
-            with patch(
-                "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-                return_value=mock_use_case,
-            ):
-                result = await handle_remember(
-                    router,
-                    {
-                        "content": "test",
-                        "memory_bank": "test-ns",
-                        "metadata": {"chunk_hash": "sha256_abc"},
-                    },
-                )
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            result = await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                    "metadata": {"chunk_hash": "sha256_abc"},
+                },
+                container=container,
+            )
 
             assert result["status"] == "deduplicated"
             assert result["memory_id"] == "mem_existing"

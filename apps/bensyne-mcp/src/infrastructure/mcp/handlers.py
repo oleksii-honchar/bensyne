@@ -3,32 +3,28 @@
 Delegates to application-layer use cases instead of calling the
 router/client directly. Each handler:
 1. Extracts memory_bank from arguments
-2. Instantiates the appropriate use case with dependencies
+2. Resolves per-bank dependencies from the DI container (D25)
 3. Calls use_case.execute(arguments)
 4. Returns Result.value on success
 5. Raises ValidationError on Result.ko
+
+File-path dependencies (per-bank file metadata bundle, FileService, hash
+index service, bank type checker) and file-path use cases are constructed
+exclusively by the DI container factories — handlers never call their
+constructors directly.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
-from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
-from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
-from src.application.use_cases.expand_file_relations_use_case import (
-    ExpandFileRelationsUseCase,
-)
-from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
-from src.application.use_cases.search_files_use_case import SearchFilesUseCase
 from src.application.use_cases.sleep_use_case import SleepUseCase
-from src.application.services.file_enrichment_service import FileEnrichmentService
-from src.application.services.file_service import FileService
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
 from src.domain.exceptions import ValidationError
-from src.infrastructure.mcp.hash_index_service import HashIndexService
+from src.infrastructure.di import Container, ProductionContainer
 from src.infrastructure.mcp.validation import require_memory_bank
 from src.utils.logging import log_tool_call
 from src.utils.structured_logging import get_logger
@@ -37,6 +33,11 @@ if TYPE_CHECKING:
     from src.infrastructure.bank.router import MemoryBankRouter
 
 logger = get_logger(__name__)
+
+
+def _resolve_container(container: Container | None) -> Container:
+    """Return the given container, or a fresh ProductionContainer (unit-test path)."""
+    return container if container is not None else ProductionContainer()
 
 
 def _raise_on_ko(result, handler_name: str) -> dict:
@@ -51,7 +52,9 @@ def _raise_on_ko(result, handler_name: str) -> dict:
 
 
 @log_tool_call("rememberMemory")
-async def handle_remember(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_remember(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
     """Store a durable memory in the specified memory bank."""
     memory_bank = require_memory_bank(arguments)
     content = arguments.get("content")
@@ -65,53 +68,31 @@ async def handle_remember(router: MemoryBankRouter, arguments: dict) -> dict:
     instance = await router.get_instance(memory_bank)
     logger.debug("[rememberMemory] Got instance", memory_bank=instance.memory_bank)
 
-    # Create hash index service for this memory bank
-    hash_index_service = HashIndexService(memory_bank)
-
-    # Create per-bank file metadata repositories (materialization target)
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_relation_repository import (
-        FileRelationRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
-    relation_repo = FileRelationRepository(conn_manager)
-
-    file_service = FileService(
-        file_repository=file_repo,
-        chunk_repository=chunk_repo,
-        relation_repository=relation_repo,
-        logger=logger,
-    )
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
+    hash_index_service = container.hash_index_service(memory_bank=memory_bank)
 
     # Build parameters for the use case — enrich with memory_bank.
     # The chunk hash lives in metadata.chunk_hash; the use case reads it directly.
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = RememberMemoryUseCase(
+    use_case = container.remember_memory_use_case(
         memory_repository=instance,
         hash_index_service=hash_index_service,
         file_service=file_service,
-        logger=logger,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "rememberMemory")
 
 
 @log_tool_call("recallMemory")
-async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_recall(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
     """Search for relevant memories in the specified memory bank."""
     memory_bank = require_memory_bank(arguments)
     query = arguments.get("query")
@@ -121,41 +102,19 @@ async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
 
     instance = await router.get_instance(memory_bank)
 
-    # Create per-bank file metadata repositories (enrichment source)
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_relation_repository import (
-        FileRelationRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
-    relation_repo = FileRelationRepository(conn_manager)
-
-    file_service = FileService(
-        file_repository=file_repo,
-        chunk_repository=chunk_repo,
-        relation_repository=relation_repo,
-        logger=logger,
-    )
-    file_enrichment_service = FileEnrichmentService(file_service=file_service, logger=logger)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
+    file_enrichment_service = container.file_enrichment_service(file_service=file_service)
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = RecallMemoryUseCase(
+    use_case = container.recall_memory_use_case(
         mnemosyne_client=instance,
         file_enrichment_service=file_enrichment_service,
-        logger=logger,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "recallMemory")
@@ -163,7 +122,10 @@ async def handle_recall(router: MemoryBankRouter, arguments: dict) -> dict:
 
 @log_tool_call("forgetMemory")
 async def handle_forget(
-    router: MemoryBankRouter, arguments: dict, bank_type_checker: Callable[[str], str] | None = None
+    router: MemoryBankRouter,
+    arguments: dict,
+    bank_type_checker: Callable[[str], str] | None = None,
+    container: Container | None = None,
 ) -> dict:
     """Delete a memory from the specified memory bank.
 
@@ -177,67 +139,25 @@ async def handle_forget(
         raise ValidationError("memory_id is required")
 
     instance = await router.get_instance(memory_bank)
-    hash_index_service = HashIndexService(memory_bank)
 
-    # Create per-bank file metadata repositories for chunk cleanup
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_relation_repository import (
-        FileRelationRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
+    hash_index_service = container.hash_index_service(memory_bank=memory_bank)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
-    relation_repo = FileRelationRepository(conn_manager)
-
-    file_service = FileService(
-        file_repository=file_repo,
-        chunk_repository=chunk_repo,
-        relation_repository=relation_repo,
-        logger=logger,
-    )
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
 
     # Bank type checker: determine if this bank is "pure_memories"
     if bank_type_checker is None:
-
-        def _bank_type_checker(bank_name: str) -> str:
-            """Return the bank type for a given bank name.
-
-            A bank is "file_metadata" if it has file metadata stored (SQLite DB exists),
-            otherwise it's "pure_memories".
-
-            Path resolution mirrors MnemosyneClient:
-            - default bank: data_dir/file_metadata.db
-            - custom bank: data_dir/banks/bank_name/file_metadata.db
-            """
-            if bank_name == "default":
-                db_path = Path(router.config.data_dir) / "file_metadata.db"
-            else:
-                db_path = Path(router.config.data_dir) / "banks" / bank_name / "file_metadata.db"
-            if db_path.exists():
-                return "file_metadata"
-            return "pure_memories"
-
-        bank_type_checker = _bank_type_checker
+        bank_type_checker = container.bank_type_checker(data_dir=Path(router.config.data_dir))
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = ForgetMemoryUseCase(
+    use_case = container.forget_memory_use_case(
         mnemosyne_client=instance,
         hash_index_service=hash_index_service,
-        logger=logger,
         file_service=file_service,
-        chunk_repository=chunk_repo,
         bank_type_checker=bank_type_checker,
     )
     result = use_case.execute(params)
@@ -290,7 +210,7 @@ async def handle_stats(router: MemoryBankRouter, arguments: dict) -> dict:
     memory_bank = require_memory_bank(arguments)
 
     instance = await router.get_instance(memory_bank)
-    stats_result = instance.stats()
+    stats_result = instance.get_stats()
 
     if stats_result.is_ok:
         stats = stats_result.value
@@ -329,7 +249,9 @@ async def handle_register_bank(router: MemoryBankRouter, arguments: dict) -> dic
 
 
 @log_tool_call("searchFiles")
-async def handle_search_files(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_search_files(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
     """Search files using semantic recall with file metadata enrichment.
 
     Two-phase search: Phase 1 — query memories via mnemosyne,
@@ -344,47 +266,27 @@ async def handle_search_files(router: MemoryBankRouter, arguments: dict) -> dict
     # Get MnemosyneClient from router
     instance = await router.get_instance(memory_bank)
 
-    # Create per-bank file metadata repositories
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_relation_repository import (
-        FileRelationRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
-    relation_repo = FileRelationRepository(conn_manager)
-
-    file_service = FileService(
-        file_repository=file_repo,
-        chunk_repository=chunk_repo,
-        relation_repository=relation_repo,
-        logger=logger,
-    )
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = SearchFilesUseCase(
+    use_case = container.search_files_use_case(
         mnemosyne_client=instance,
         file_service=file_service,
-        logger=logger,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "searchFiles")
 
 
 @log_tool_call("expandFileRelations")
-async def handle_expand_file_relations(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_expand_file_relations(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
     """Expand file relations to get content from related files.
 
     Retrieves related files via file_relations and composes content
@@ -399,48 +301,26 @@ async def handle_expand_file_relations(router: MemoryBankRouter, arguments: dict
     # Get MnemosyneClient from router
     instance = await router.get_instance(memory_bank)
 
-    # Create per-bank file metadata repositories
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_relation_repository import (
-        FileRelationRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
-    relation_repo = FileRelationRepository(conn_manager)
-
-    file_service = FileService(
-        file_repository=file_repo,
-        chunk_repository=chunk_repo,
-        relation_repository=relation_repo,
-        logger=logger,
-    )
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = ExpandFileRelationsUseCase(
-        mnemosyne_client=instance,
-        file_service=file_service,
-        relation_repository=relation_repo,
-        logger=logger,
+    use_case = container.expand_file_relations_use_case(
+        mnemosyne_client=instance.get,
+        bundle=bundle,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "expandFileRelations")
 
 
 @log_tool_call("fetchFile")
-async def handle_fetch_file(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_fetch_file(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
     """Fetch and reconstruct file content from its memory chunks.
 
     Default mode: looks up file by ID, retrieves all chunks ordered by chunk_index,
@@ -459,30 +339,18 @@ async def handle_fetch_file(router: MemoryBankRouter, arguments: dict) -> dict:
     # Get MnemosyneClient from router
     instance = await router.get_instance(memory_bank)
 
-    # Create per-bank file metadata repositories
-    from pathlib import Path
-
-    from src.infrastructure.storage.sqlite.file_chunk_repository import (
-        FileChunkRepository,
-    )
-    from src.infrastructure.storage.sqlite.file_metadata_connection import (
-        FileMetadataConnectionManager,
-    )
-    from src.infrastructure.storage.sqlite.file_repository import FileRepository
-
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
     bank_dir = Path(router.config.data_dir) / memory_bank
-    conn_manager = FileMetadataConnectionManager(bank_dir=bank_dir)
-    file_repo = FileRepository(conn_manager)
-    chunk_repo = FileChunkRepository(conn_manager)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
 
-    use_case = FetchFileUseCase(
+    use_case = container.fetch_file_use_case(
         mnemosyne_client=instance,
-        chunk_repository=chunk_repo,
-        file_repository=file_repo,
-        logger=logger,
+        file_service=file_service,
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "fetchFile")

@@ -176,6 +176,42 @@ describe('EnhancementPipelineService', () => {
       });
     });
 
+    describe('D40 — edge preservation (regression)', () => {
+      it('should preserve typed edges (FileEdge[]) across enhancement and still apply importance/tags/memoryBank', async () => {
+        const inputEdges = [
+          {
+            target_path: '/vault/linked-note.md',
+            relation_type: 'backlink',
+            strength: 0.9,
+            description: 'wikilink',
+          },
+          { target_path: '/vault/companion.md', relation_type: 'sibling' },
+        ];
+        const chunk = aContentChunk({ edges: inputEdges });
+        // The entity normalizes edges through zod (strength defaults to 1 when
+        // omitted). Assert against the entity's parsed edges, not the raw literal.
+        const expectedEdges = chunk.edges;
+        expect(expectedEdges).toBeDefined();
+
+        const result = await service.enhance(
+          [chunk],
+          'test-source',
+          'my-memoryBank',
+          DEFAULT_CONFIG.enhancement,
+        );
+
+        expect(result.isOk()).toBe(true);
+        const enhanced = result.getValue();
+        // Every returned chunk carries the same typed edges as the input.
+        expect(enhanced).toHaveLength(1);
+        expect(enhanced[0].edges).toEqual(expectedEdges);
+        // ...and the enhancement stages still applied their overrides.
+        expect(enhanced[0].importance).toBe(0.75);
+        expect(enhanced[0].tags).toEqual(['tag1', 'tag2']);
+        expect(enhanced[0].memoryBank).toBe('my-memoryBank');
+      });
+    });
+
     describe('empty input', () => {
       it('should return Result.ok with empty array when input is empty', async () => {
         const result = await service.enhance([], 'test-source', 'my-memoryBank', DEFAULT_CONFIG.enhancement);

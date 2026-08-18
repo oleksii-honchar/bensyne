@@ -205,7 +205,7 @@ Custom-key: custom-value`;
 });
 
 describe('ObsidianChunkingStrategy', () => {
-  let strategy: ObsidianChunkingStrategy;
+  let sut: ObsidianChunkingStrategy;
   let mockMastraChunkingService: ReturnType<typeof aMastraChunkingService>;
   let mockLogger: BasePinoLogger;
 
@@ -213,7 +213,7 @@ describe('ObsidianChunkingStrategy', () => {
     jest.clearAllMocks();
     mockMastraChunkingService = aMastraChunkingService();
     mockLogger = aLogger();
-    strategy = new ObsidianChunkingStrategy(
+    sut = new ObsidianChunkingStrategy(
       mockMastraChunkingService as unknown as MastraChunkingService,
       mockLogger,
     );
@@ -221,7 +221,7 @@ describe('ObsidianChunkingStrategy', () => {
 
   describe('implements ChunkingStrategy', () => {
     it('has chunkFile method with correct signature', () => {
-      expect(typeof strategy.chunkFile).toBe('function');
+      expect(typeof sut.chunkFile).toBe('function');
     });
   });
 
@@ -229,12 +229,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('creates frontmatter chunk with importance 0.9, correct tags and sectionHeader', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -243,7 +243,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -265,12 +265,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('wraps frontmatter chunk text in --- delimiters', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -279,7 +279,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -290,12 +290,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('passes body content (not full content) to MastraChunkingService', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -304,7 +304,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -319,12 +319,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('enriches all chunks with note metadata', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -333,7 +333,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -371,12 +371,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('merges note tags into chunk tags', async () => {
       const bodyChunk = aBodyChunk({ tags: ['existing-tag'] });
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -385,7 +385,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -405,12 +405,12 @@ describe('ObsidianChunkingStrategy', () => {
       const chunk1 = aBodyChunk({ chunkIndex: 0 });
       const chunk2 = aBodyChunk({ chunkIndex: 1 });
       mockMastraChunkingService = aMastraChunkingService([chunk1, chunk2]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -419,7 +419,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -440,12 +440,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('skips frontmatter chunk and returns only body chunks', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITHOUT_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -454,7 +454,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -467,12 +467,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('passes full content to Mastra when no frontmatter', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITHOUT_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -481,7 +481,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -495,12 +495,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('does not enrich chunks with note metadata when no frontmatter', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITHOUT_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -509,7 +509,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -526,12 +526,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('treats ---\\n--- as no frontmatter (regex requires content between delimiters)', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         EMPTY_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -540,7 +540,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -556,12 +556,12 @@ describe('ObsidianChunkingStrategy', () => {
     it('delegates body chunking to MastraChunkingService', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      await strategy.chunkFile(
+      await sut.chunkFile(
         WITH_FRONTMATTER,
         '/test/path/note.md',
         'test-source',
@@ -570,7 +570,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -581,12 +581,12 @@ describe('ObsidianChunkingStrategy', () => {
   describe('empty content', () => {
     it('returns empty array for empty content', async () => {
       mockMastraChunkingService = aMastraChunkingService([]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         '',
         '/test/path/note.md',
         'test-source',
@@ -595,7 +595,7 @@ describe('ObsidianChunkingStrategy', () => {
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -624,12 +624,12 @@ Plain text with no wikilinks here.`;
     it('attaches note.wikilinks to frontmatter chunk when wikilinks present', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithWikilinks,
         '/test/path/note.md',
         'test-source',
@@ -638,7 +638,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -657,12 +657,12 @@ Plain text with no wikilinks here.`;
     it('attaches note.wikilinks to body chunks when wikilinks present', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithWikilinks,
         '/test/path/note.md',
         'test-source',
@@ -671,7 +671,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -688,12 +688,12 @@ Plain text with no wikilinks here.`;
     it('deduplicates wikilinks', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithWikilinks,
         '/test/path/note.md',
         'test-source',
@@ -702,7 +702,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -717,12 +717,12 @@ Plain text with no wikilinks here.`;
     it('attaches wikilinks to body chunks when no frontmatter', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithWikilinksNoFrontmatter,
         '/test/path/note.md',
         'test-source',
@@ -731,7 +731,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -748,12 +748,12 @@ Plain text with no wikilinks here.`;
     it('omits note.wikilinks key when no wikilinks present', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithoutWikilinks,
         '/test/path/note.md',
         'test-source',
@@ -762,7 +762,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -777,12 +777,12 @@ Plain text with no wikilinks here.`;
     it('no regression: frontmatter enrichment and tag merging still work with wikilinks', async () => {
       const bodyChunk = aBodyChunk({ tags: ['existing-tag'] });
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithWikilinks,
         '/test/path/note.md',
         'test-source',
@@ -791,7 +791,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -813,12 +813,12 @@ Plain text with no wikilinks here.`;
     it('wikilinks attached to all chunks using obsidian-with-wikilinks fixture', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_WIKILINKS,
         '/test/path/note.md',
         'test-source',
@@ -827,7 +827,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -861,12 +861,12 @@ Plain text with no wikilinks here.`;
     it('wikilinks deduped — duplicate link in fixture produces single entry', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_WIKILINKS,
         '/test/path/note.md',
         'test-source',
@@ -875,7 +875,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -893,12 +893,12 @@ Plain text with no wikilinks here.`;
       const contentWithoutFmWithLinks = `This note links to [[Note A]] and [[Note B]].`;
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithoutFmWithLinks,
         '/test/path/note.md',
         'test-source',
@@ -907,7 +907,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -930,12 +930,12 @@ tags:
 Plain text with no wikilinks here.`;
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         contentWithoutLinks,
         '/test/path/note.md',
         'test-source',
@@ -944,7 +944,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -963,17 +963,17 @@ Plain text with no wikilinks here.`;
       path: VAULT_ROOT,
       memoryBank: 'test-source',
       exclude: ['**/node_modules/**'],
-      strategy: 'obsidian',
+      sourceType: 'obsidian',
     });
 
     function chunkWith(content: string, filePath = '/vault/note-a.md') {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
-      return strategy.chunkFile(content, filePath, 'test-source', vaultConfig);
+      return sut.chunkFile(content, filePath, 'test-source', vaultConfig);
     }
 
     it('resolves [[Note B]] to <root>/Note B.md backlink edge (exact object)', async () => {
@@ -1094,12 +1094,12 @@ Plain text with no wikilinks here.`;
     it('obsidian-with-wikilinks fixture: all chunks get note.base and note.properties.*', async () => {
       const bodyChunk = aBodyChunk();
       mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
-      strategy = new ObsidianChunkingStrategy(
+      sut = new ObsidianChunkingStrategy(
         mockMastraChunkingService as unknown as MastraChunkingService,
         mockLogger,
       );
 
-      const result = await strategy.chunkFile(
+      const result = await sut.chunkFile(
         WITH_WIKILINKS,
         '/test/path/note.md',
         'test-source',
@@ -1108,7 +1108,7 @@ Plain text with no wikilinks here.`;
           path: '/test/path',
           memoryBank: 'test-source',
           exclude: ['**/node_modules/**'],
-          strategy: 'obsidian',
+          sourceType: 'obsidian',
         }),
       );
 
@@ -1127,6 +1127,61 @@ Plain text with no wikilinks here.`;
       expect(chunks[1].metadata?.['note.properties.notion-id']).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
       expect(chunks[1].metadata?.['note.properties.kind']).toBe('note');
       expect(chunks[1].metadata?.['note.properties.project']).toBe('acme-platform');
+    });
+  });
+
+  // --- D34 regression: relative watch-source root must yield absolute edge targets ---
+
+  describe('wikilink edge paths with relative sourceConfig.path (D34)', () => {
+    const REL_VAULT = './vault-root';
+
+    const relVaultConfig = aWatchSourceConfig({
+      id: 'test-source',
+      path: REL_VAULT,
+      memoryBank: 'test-source',
+      exclude: ['**/node_modules/**'],
+      sourceType: 'obsidian',
+    });
+
+    it('resolves every edge target_path to an absolute path joined under the resolved vault root', async () => {
+      const bodyChunk = aBodyChunk();
+      mockMastraChunkingService = aMastraChunkingService([bodyChunk]);
+      sut = new ObsidianChunkingStrategy(
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+
+      const result = await sut.chunkFile(
+        'This hub note links to [[note-a]] and [[note-b]].',
+        path.join(REL_VAULT, 'hub.md'),
+        'test-source',
+        relVaultConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const resolvedRoot = path.resolve(REL_VAULT);
+      const chunks = result.getValue();
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      for (const chunk of chunks) {
+        for (const edge of chunk.edges ?? []) {
+          expect(path.isAbsolute(edge.target_path)).toBe(true);
+        }
+        expect(chunk.edges).toEqual([
+          {
+            target_path: path.join(resolvedRoot, 'note-a.md'),
+            relation_type: 'backlink',
+            strength: 1,
+            description: 'wikilink from hub to note-a',
+          },
+          {
+            target_path: path.join(resolvedRoot, 'note-b.md'),
+            relation_type: 'backlink',
+            strength: 1,
+            description: 'wikilink from hub to note-b',
+          },
+        ]);
+      }
     });
   });
 });

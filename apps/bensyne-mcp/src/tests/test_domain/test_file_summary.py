@@ -23,7 +23,7 @@ NOW = datetime(2026, 1, 1, 0, 0, 0)
 def _file_data(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.FILE_SYSTEM,
+    source_type: SourceType = SourceType.VAULT,
     summary: str | None = None,
     status: FileStatus = FileStatus.PENDING,
 ) -> dict:
@@ -209,10 +209,10 @@ class TestFileSummaryFrozen:
 
 
 class TestFileSummaryInAggregate:
-    """Summary persists through FileMetadataAggregate operations."""
+    """Summary persists through FileMetadata operations."""
 
-    def test_aggregate_preserves_summary_on_add_chunk(self):
-        from src.domain.file_metadata_aggregate import FileMetadataAggregate
+    def test_aggregate_preserves_summary_on_upsert_chunk(self):
+        from src.domain.file_metadata_aggregate import FileMetadata
         from src.domain.file_chunk_entity import FileChunk
 
         file = File.of(
@@ -220,10 +220,10 @@ class TestFileSummaryInAggregate:
                 **_file_data(summary="Aggregate summary"),
             }
         ).value
-        agg = FileMetadataAggregate.of(file).value
+        agg = FileMetadata.of(file).value
         assert agg.file.summary == "Aggregate summary"
 
-        # Adding a chunk should not affect summary
+        # Upserting a chunk should not affect summary
         chunk = FileChunk.of(
             {
                 "id": "c1",
@@ -232,12 +232,12 @@ class TestFileSummaryInAggregate:
                 "chunk_index": 0,
             }
         ).value
-        add_result = agg.add_chunk(chunk)
-        assert add_result.is_ok is True
-        assert add_result.value.file.summary == "Aggregate summary"
+        upsert_result = agg.upsert_chunk(chunk)
+        assert upsert_result.is_ok is True
+        assert upsert_result.value.file.summary == "Aggregate summary"
 
-    def test_aggregate_preserves_summary_on_add_relation(self):
-        from src.domain.file_metadata_aggregate import FileMetadataAggregate
+    def test_aggregate_preserves_summary_on_upsert_relation(self):
+        from src.domain.file_metadata_aggregate import FileMetadata
         from src.domain.file_relation_entity import FileRelation, RelationType
 
         file = File.of(
@@ -245,7 +245,7 @@ class TestFileSummaryInAggregate:
                 **_file_data(summary="Aggregate summary"),
             }
         ).value
-        agg = FileMetadataAggregate.of(file).value
+        agg = FileMetadata.of(file).value
 
         relation = FileRelation.of(
             {
@@ -255,6 +255,6 @@ class TestFileSummaryInAggregate:
                 "relation_type": RelationType.SIBLING,
             }
         ).value
-        add_result = agg.add_relation(relation)
-        assert add_result.is_ok is True
-        assert add_result.value.file.summary == "Aggregate summary"
+        upsert_result = agg.upsert_relation(relation)
+        assert upsert_result.is_ok is True
+        assert upsert_result.value.file.summary == "Aggregate summary"

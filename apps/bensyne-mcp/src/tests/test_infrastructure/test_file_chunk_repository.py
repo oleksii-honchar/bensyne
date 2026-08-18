@@ -64,7 +64,10 @@ def file_repo(manager: FileMetadataConnectionManager) -> FileRepository:
 def _a_file(
     id: str = "f1",
     path: str = "/tmp/test.txt",
-    source_type: SourceType = SourceType.FILE_SYSTEM,
+    # D28: bootstrap DDL freezes the D29 source_type CHECK set; only
+    # SourceType.UNKNOWN (the current enum member in that set) is persistable
+    # until Task 16 reshapes the enum.
+    source_type: SourceType = SourceType.UNKNOWN,
     status: FileStatus = FileStatus.PENDING,
     created_at: Optional[datetime] = None,
 ) -> File:
@@ -363,6 +366,33 @@ class TestGetChunkByMemoryId:
         assert result.is_ok is True
         assert result.value is not None
         assert result.value.id == "mc3"
+
+    def test_get_chunk_by_memory_id_tie_breaks_on_chunk_index_then_file_id(
+        self, repo: FileChunkRepository, file_repo: FileRepository
+    ) -> None:
+        """A memory shared by two files resolves deterministically.
+
+        Two rows share the same memory_id (one per file). The row with the
+        higher chunk_index is INSERTED FIRST, so a raw `.first()` (no ORDER BY)
+        returns it. The query must instead be stable on (chunk_index, file_id):
+        the lower chunk_index wins, breaking ties on file_id.
+        """
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+
+        # The "wrong" row (higher chunk_index) is inserted first.
+        wrong = _a_chunk(id="tb_wrong", file_id="f1", memory_id="shared_mem", chunk_index=3)
+        right = _a_chunk(id="tb_right", file_id="f2", memory_id="shared_mem", chunk_index=1)
+        repo.save_chunk(wrong)
+        repo.save_chunk(right)
+
+        result = repo.get_chunk_by_memory_id("shared_mem")
+        assert result.is_ok is True
+        assert result.value is not None
+        assert result.value.id == "tb_right", (
+            f"expected the lower-chunk_index row (tb_right) to win the tie-break, "
+            f"got {result.value.id}"
+        )
 
 
 # ---------------------------------------------------------------------------

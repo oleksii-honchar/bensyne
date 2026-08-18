@@ -5,8 +5,8 @@ description: |
   Use when user asks to run agent runbooks, points to src/e2e/agent-runbooks, or mentions "agent runbook" or "agentic test".
   Also trigger on: "run the obsidian runbook", "run the enrichment runbook", "agent-based testing", "interactive e2e test".
   DO NOT trigger on "run all tests", "run e2e tests", or "test:e2e" — those are npm test commands (npm run test / npm run test:e2e).
-version: '1.1'
-updatedAt: '2026-08-08T21:00:00+03:00'
+version: '1.2'
+updatedAt: '2026-08-18T18:00:00+03:00'
 author: 'racochu'
 status: 'production-ready'
 tags: ['agentic-testing', 'agent-runbooks', 'mcp', 'racochu', 'interactive']
@@ -56,6 +56,32 @@ Execute Racochu Agentic Testing runbooks end-to-end in the chat session. This sk
 
 ---
 
+## Runbook Conventions
+
+Conventions that apply to every runbook. Treat these as hard rules, not suggestions.
+
+**Prerequisites:**
+
+- bensyne-mcp running via `apps/bensyne-mcp/scripts/start.sh` (port 3000)
+- racochu in dev mode via `npm run start:dev` from `apps/racochu`
+- Working directory = repository root
+
+**MCP-only:** All observations go through MCP tools (`searchFiles`, `expandFileRelations`, `fetchFile`, `recallMemory`, `listMemoryBanks`) — never curl the MCP server and never hit the DB directly.
+
+**file_id discovery:** Never hardcode `file_id`. Discover it via a unique token:
+
+- `searchFiles` → take `file.id` from the file-backed group result (`file != null`)
+- `recallMemory` → take `file_enrichment.traversal.file_id` from the memory row
+- Note: the additive `file_enrichment` key on `searchFiles` top-level group rows is structurally `null` (enrichment keys off the row's `id`, which only memory rows have) — do not rely on it there.
+
+**Debounce:** Wait ≥3s after writing fixtures; if a search returns 0 hits, retry once after +3s before declaring FAIL.
+
+**Fixtures:** Unique `RB_*` tokens per runbook; a cleanup step at the end of every runbook (delete fixture files; persisted memory rows are an accepted convention).
+
+**Bank scoping is MANDATORY (D39):** Every `searchFiles`/`recallMemory`/`expandFileRelations`/`fetchFile` call must specify exactly one `memory_bank` — the source id where the fixture was placed; never omit, never mix. The server enforces it: `memory_bank` is a required parameter (missing/empty → `ValidationError`), and each bank resolves to its own `mnemosyne.db` and its own file-metadata store. A wrong bank yields empty results — a silent test failure, which is why the search runbook asserts isolation explicitly.
+
+---
+
 ## Workflow
 
 ### Phase 1: Setup — Ensure Development Environment
@@ -91,6 +117,10 @@ Execute Racochu Agentic Testing runbooks end-to-end in the chat session. This sk
    1. general.test.runbook.md — General racochu + bensyne flow
    2. obsidian.test.runbook.md — Obsidian frontmatter + wikilink graph
    3. enrichment.test.runbook.md — LLM enrichment pipeline
+   4. search.test.runbook.md — searchFiles navigation (filters, limit, relations)
+   5. traversal.test.runbook.md — expandFileRelations (wikilinks + companions)
+   6. fetch.test.runbook.md — fetchFile full reconstruction
+   7. center-chunk.test.runbook.md — fetchFile neighbor window + error codes
    All will be executed.
    ```
 
@@ -174,18 +204,18 @@ The `dev.yaml` config defines three specialized watch sources for agent testing:
 
 ```yaml
 watchSources:
-  - id: tmp-general
-    path: ./tmp/general
-    strategy: content-aware
-    # ...
+  - id: tmp-vault
+    path: ./tmp/vault
+    sourceType: vault
+    debounceMs: 1000
   - id: tmp-obsidian
     path: ./tmp/obsidian
-    strategy: obsidian
-    # ...
+    sourceType: obsidian
+    debounceMs: 1000
   - id: tmp-agent-sessions
     path: ./tmp/agent-sessions
-    strategy: agent-sessions
-    # ...
+    sourceType: agent-sessions
+    debounceMs: 1000
 ```
 
 When creating test files during runbook execution, place them in the matching `tmp/*` subdirectory:

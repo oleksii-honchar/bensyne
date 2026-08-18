@@ -314,6 +314,10 @@ export class BensyneClient implements OnApplicationBootstrap {
         this.logger.info(`Memory forgotten: memoryId="${memoryId}"`);
         return Result.ok(undefined as unknown as void);
       }
+      if (parsed.status === 'not_found') {
+        this.logger.debug(`Memory already absent: memoryId="${memoryId}"`);
+        return Result.ok(undefined as unknown as void);
+      }
 
       const errMsg =
         typeof parsed.error === 'string'

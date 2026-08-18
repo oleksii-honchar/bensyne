@@ -6,7 +6,7 @@ import { ValuesType } from '../utils/values-type';
 /**
  * Domain source of truth for file type classification.
  *
- * Controls chunking strategy (prose vs code vs configuration) and chunk size limits,
+ * Controls chunking behavior (prose vs code vs configuration) and chunk size limits,
  * importance scoring weights, and all places a FileRole is needed.
  *
  * - CONFIG: package.json, tsconfig.json, .env, etc.
@@ -22,7 +22,7 @@ export const FILE_ROLES = {
   DOCS: 'docs' as const,
 } as const;
 
-/** File type classification used for chunking strategy, importance scoring, and memory metadata. */
+/** File type classification used for chunking selection, importance scoring, and memory metadata. */
 export type FileRole = ValuesType<typeof FILE_ROLES>;
 
 /**
