@@ -10,6 +10,30 @@ Verify `fetchFile` neighbor-window mode — `center_chunk_index` + `adjacent_chu
 
 > **Dynamic discovery mandate:** chunk indices are discovered **dynamically** from the baseline `fetchFile` call (step 2) — **never hardcoded** (Mastra splits are variable; R3/impact S4).
 
+### Pre-Run Clean (STEP 0)
+
+**Why (D41 §2.4):** start from an EMPTY bank so `chunk_index` values are discovered fresh (dense 0-based) — no stale index values left over from earlier runs.
+
+```bash
+# DATA_DIR = bensyne-mcp data dir. scripts/start.sh defaults to
+# MNEMOSYNE_DATA_DIR=./data/dev → server runs with --data-dir ./data/dev
+# (verified live: scripts/start.sh:24; the server's CWD is apps/bensyne-mcp).
+# Resolves to apps/bensyne-mcp/data/dev.
+# VERIFY YOUR OWN SERVER: ps aux | grep "main.py --port" | grep data-dir
+# If your bensyne-mcp runs with a different --data-dir, substitute that dir.
+#
+# This bank's state is SPLIT across two PER-BANK dirs (both bank-scoped, NOT
+# shared — safe to remove both):
+#   {DATA_DIR}/banks/tmp-vault/ → mnemosyne.db
+#   {DATA_DIR}/tmp-vault/       → file_metadata.db + hash_index.db
+# NOTE: hash_index.db is per-bank ({bank}/hash_index.db), not a shared file.
+rm -rf apps/bensyne-mcp/data/dev/banks/tmp-vault apps/bensyne-mcp/data/dev/tmp-vault
+
+# Then RESTART bensyne-mcp so no stale in-process state persists (it reopens
+# DBs per bank on first tool call; a restart guarantees a clean slate):
+#   apps/bensyne-mcp/scripts/start.sh
+```
+
 ### Fixtures
 
 4 sections each **> 4000 chars** (prose `maxCharacters` 4000 in `dev.yaml` ⇒ ≥1 body chunk per section):
@@ -55,27 +79,34 @@ Wait ≥3s for debounce + chunking + ingestion.
 - Let `c` = `chunk_index` of the chunk whose `text` contains `RB_CENTER_SEC2`.
 - **PASS:** `N >= 4`; `c` found; `reconstruction_status == "complete"`.
 
-#### Step 3: Neighbor window (adjacent_chunks=1)
+#### Step 3: 0-based value-match round-trip (neighbor window, adjacent_chunks=1)
+
+`c` (step 2) is a `chunk_index` **VALUE** read straight from the whole-fetch response.
+Round-tripping it proves the value-match contract end-to-end on real data:
 
 - Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=c, adjacent_chunks=1)`
 - **PASS:**
   - `content == ""`
-  - `chunks` has **exactly 3** entries
+  - **round-trip:** the returned window contains **exactly the chunk whose `chunk_index` VALUE is `c`** (the one discovered in the whole fetch) — a chunk with `chunk_index == c` whose `text` contains `RB_CENTER_SEC2`
+  - `chunks` has **exactly 3** entries (center not at an edge)
   - `chunk_index` set == {c−1, c, c+1} and sorted ascending
   - each chunk has non-empty `text`, a `section_header` key (non-empty string), and keys `id`/`file_id`/`start_line`/`end_line`/`metadata`
-  - the chunk with `chunk_index == c` has `text` containing `RB_CENTER_SEC2` (sanity: the window is centered on the discovered chunk)
 
-#### Step 4: Window clamping
+#### Step 4: Window clamping (0-based values; both edges valid)
 
-- Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=N-1, adjacent_chunks=5)`
-- **PASS:** no error; `chunks` length == `N` (window clamped to the full file).
+- **High edge:** Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=N-1, adjacent_chunks=5)`
+  (N−1 is the highest stored 0-based `chunk_index` value).
+  - **PASS:** no error; `chunks` length == `N` (window clamped to the full file).
+- **Low edge (center=0):** Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=0, adjacent_chunks=1)`
+  - **PASS:** no error (center=0 is a valid 0-based value); right-side-only clamped window — `chunks` has exactly 2 entries with `chunk_index` set == {0, 1}.
 
-#### Step 5: Error codes
+#### Step 5: Error codes (value-matched)
 
 - Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=999, adjacent_chunks=1)`
-- **PASS:** error result with code `CENTER_CHUNK_INDEX_OUT_OF_RANGE`.
+  (999 is a value with **no stored chunk** — the value-match miss, not a range/overflow check).
+  - **PASS:** error result with code `CENTER_CHUNK_INDEX_OUT_OF_RANGE`, and the error details include `available_chunk_indexes` (the stored 0-based values) plus `center_chunk_index` and `total_chunks`.
 - Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=c, adjacent_chunks=10)`
-- **PASS:** error result with code `ADJACENT_CHUNKS_OUT_OF_RANGE`.
+  - **PASS:** error result with code `ADJACENT_CHUNKS_OUT_OF_RANGE`.
 
 ### Cleanup
 

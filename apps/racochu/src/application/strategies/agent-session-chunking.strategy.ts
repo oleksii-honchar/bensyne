@@ -197,7 +197,17 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, edges),
     );
 
-    return Result.ok(enriched);
+    // 8. D41 (clarification A): the strategy composes the final chunk list, so it owns its
+    //    final indices — re-index densely 0..m-1 and set totalChunks = m on every chunk.
+    const finalChunks = enriched.map((chunk, idx) =>
+      ContentChunk.of({
+        ...chunk.toJson(),
+        chunkIndex: idx,
+        totalChunks: enriched.length,
+      }).getValue(),
+    );
+
+    return Result.ok(finalChunks);
   }
 
   private createFrontmatterChunk(

@@ -171,16 +171,18 @@ def register_tools(
         """Fetch and reconstruct file content from its memory chunks.
 
         By default (no center_chunk_index) the whole file is reconstructed from all chunks.
-        With center_chunk_index set, only the neighbor window [center - adjacent_chunks ..
-        center + adjacent_chunks] is returned (clamped to 0..total_chunks-1), each chunk with
-        content, position (chunk_index, start_line/end_line) and section_header.
+        With center_chunk_index set, only the clamped neighbor window around the matched
+        center chunk is returned, each chunk with content, position (chunk_index,
+        start_line/end_line) and section_header.
 
         Args:
             file_id: ID of the file to fetch.
             memory_bank: Memory bank for isolation.
             include_metadata: Include file metadata in the response. Default False.
-            center_chunk_index: 0-based index of the center chunk for neighbor mode.
-                Must be within 0..total_chunks-1 (error otherwise). Default None (whole file).
+            center_chunk_index: the `chunk_index` VALUE of the center chunk, as
+                returned by fetchFile/searchFiles/recallMemory (0-based; round-trip
+                it, don't compute a position). Error if no chunk has that value
+                (details carry available_chunk_indexes). Default None (whole file).
             adjacent_chunks: Number of chunks on each side of the center in neighbor mode.
                 Valid range 0-5. Default 1.
         """

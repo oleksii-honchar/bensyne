@@ -56,10 +56,10 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         Validation decisions (Result pattern, no exceptions):
         - adjacent_chunks outside 0..5 ⇒ ADJACENT_CHUNKS_OUT_OF_RANGE
           (input validation, before any load)
-        - center_chunk_index < 0 or >= total_chunks ⇒
+        - center_chunk_index not present among stored chunk_index values ⇒
           CENTER_CHUNK_INDEX_OUT_OF_RANGE (raised inside compose_fetch;
-          error over clamp: signals bad agent input rather than silently
-          shifting the window)
+          available_chunk_indexes in details; error over clamp: signals bad
+          agent input rather than silently shifting the window)
         """
         file_id = parameters["file_id"]
         include_metadata = parameters.get("include_metadata", False)

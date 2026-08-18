@@ -326,9 +326,10 @@ async def handle_fetch_file(
     Default mode: looks up file by ID, retrieves all chunks ordered by chunk_index,
     reconstructs content with line continuity, and returns with metadata.
 
-    Neighbor mode (center_chunk_index provided): returns only the window
-    [center - adjacent_chunks .. center + adjacent_chunks] clamped to
-    0..total_chunks-1, each chunk with content, position and section_header.
+    Neighbor mode (center_chunk_index provided): returns only the clamped
+    window around the chunk whose stored chunk_index equals center_chunk_index
+    (resolved by value, not position), each chunk with content, position and
+    section_header.
     """
     memory_bank = require_memory_bank(arguments)
     file_id = arguments.get("file_id")

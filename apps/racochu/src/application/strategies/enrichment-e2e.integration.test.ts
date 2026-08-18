@@ -364,7 +364,7 @@ Do not include any other text, explanations, or markdown formatting.`,
 
       expect(chunk.fileRole).toBe(FILE_ROLES.DOCS);
       expect(chunk.importance).toBe(0.5);
-      expect(chunk.chunkIndex).toBe(1);
+      expect(chunk.chunkIndex).toBe(0);
       expect(chunk.totalChunks).toBe(1);
       expect(chunk.metadata?.filePath).toBe('enriched.md');
       expect(chunk.metadata?.sourceId).toBe('test-source');

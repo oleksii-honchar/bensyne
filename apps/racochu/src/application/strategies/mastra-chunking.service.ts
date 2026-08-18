@@ -357,7 +357,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       const chunkResult = ContentChunk.of({
         id: generateId(),
         text: mastraChunk.text,
-        chunkIndex: i + 1,
+        chunkIndex: i,
         totalChunks,
         sectionHeader: enrichmentTitle || filePath,
         breadcrumb: filePath,

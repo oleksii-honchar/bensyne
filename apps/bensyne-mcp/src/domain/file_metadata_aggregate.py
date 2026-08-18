@@ -434,9 +434,13 @@ class FileMetadata:
             mnemosyne_client: Callable memory_id -> optional dict with a
                 "content" key, or None. Keeps the domain layer free of
                 infrastructure references.
-            center_chunk_index: When set, return only the window
-                [center - adjacent .. center + adjacent] (clamped). Out of
-                [0, len(chunks)) ⇒ CENTER_CHUNK_INDEX_OUT_OF_RANGE.
+            center_chunk_index: When set, the center is resolved by VALUE
+                against the ordered chunk list (chunk_index values, 0-based in
+                the goal state). Resolved position p = index of the first chunk
+                with chunk_index == center_chunk_index; window = [p - adjacent
+                .. p + adjacent] clamped. No chunk with that value ⇒
+                CENTER_CHUNK_INDEX_OUT_OF_RANGE (details carry
+                available_chunk_indexes).
             adjacent_chunks: Half-width of the neighbor window (0..5).
 
         Returns:
@@ -455,7 +459,11 @@ class FileMetadata:
             return self._compose_fetch_whole(mnemosyne_client, ordered)
 
         total = len(ordered)
-        if center_chunk_index < 0 or center_chunk_index >= total:
+        p = next(
+            (i for i, c in enumerate(ordered) if c.chunk_index == center_chunk_index),
+            None,
+        )
+        if p is None:
             return Result.ko(
                 [
                     ErrorWithDetails(
@@ -463,12 +471,15 @@ class FileMetadata:
                         {
                             "center_chunk_index": center_chunk_index,
                             "total_chunks": total,
+                            "available_chunk_indexes": [
+                                c.chunk_index for c in ordered
+                            ],
                         },
                     )
                 ]
             )
-        low = max(0, center_chunk_index - adjacent_chunks)
-        high = min(total - 1, center_chunk_index + adjacent_chunks)
+        low = max(0, p - adjacent_chunks)
+        high = min(total - 1, p + adjacent_chunks)
         return self._compose_fetch_neighbor(mnemosyne_client, ordered[low : high + 1])
 
     def _compose_fetch_whole(

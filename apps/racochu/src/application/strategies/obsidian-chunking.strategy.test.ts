@@ -1184,4 +1184,57 @@ Plain text with no wikilinks here.`;
       }
     });
   });
+
+  // --- D41: final-list 0-based dense re-index (clarification A) ---
+
+  describe('final-list 0-based re-index (D41)', () => {
+    const d41Config = aWatchSourceConfig({
+      id: 'test-source',
+      path: '/test/path',
+      memoryBank: 'test-source',
+      exclude: ['**/node_modules/**'],
+      sourceType: 'obsidian',
+    });
+
+    it('with frontmatter: final list is dense 0-based and every chunk carries totalChunks = length', async () => {
+      const chunk1 = aBodyChunk({ chunkIndex: 0 });
+      const chunk2 = aBodyChunk({ chunkIndex: 1 });
+      mockMastraChunkingService = aMastraChunkingService([chunk1, chunk2]);
+      sut = new ObsidianChunkingStrategy(
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+
+      const result = await sut.chunkFile(WITH_FRONTMATTER, '/test/path/note.md', 'test-source', d41Config);
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      // 1 frontmatter + 2 body chunks
+      expect(chunks.length).toBe(3);
+      expect(chunks.map(c => c.chunkIndex)).toEqual([0, 1, 2]);
+      for (const chunk of chunks) {
+        expect(chunk.totalChunks).toBe(3);
+      }
+    });
+
+    it('without frontmatter: final list is dense 0-based and every chunk carries totalChunks = length', async () => {
+      const chunk1 = aBodyChunk({ chunkIndex: 0 });
+      const chunk2 = aBodyChunk({ chunkIndex: 1 });
+      mockMastraChunkingService = aMastraChunkingService([chunk1, chunk2]);
+      sut = new ObsidianChunkingStrategy(
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+
+      const result = await sut.chunkFile(WITHOUT_FRONTMATTER, '/test/path/note.md', 'test-source', d41Config);
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBe(2);
+      expect(chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
+      for (const chunk of chunks) {
+        expect(chunk.totalChunks).toBe(2);
+      }
+    });
+  });
 });

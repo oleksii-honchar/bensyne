@@ -542,7 +542,7 @@ describe('MastraChunkingService', () => {
 
       const firstChunk = chunks[0];
       expect(firstChunk.text).toBe('First chunk text');
-      expect(firstChunk.chunkIndex).toBe(1);
+      expect(firstChunk.chunkIndex).toBe(0);
       expect(firstChunk.totalChunks).toBe(2);
       expect(firstChunk.fileRole).toBe(FILE_ROLES.DOCS);
       expect(firstChunk.metadata).toBeDefined();
@@ -687,9 +687,9 @@ describe('MastraChunkingService', () => {
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
-      expect(chunks[0].chunkIndex).toBe(1);
-      expect(chunks[1].chunkIndex).toBe(2);
-      expect(chunks[2].chunkIndex).toBe(3);
+      expect(chunks[0].chunkIndex).toBe(0);
+      expect(chunks[1].chunkIndex).toBe(1);
+      expect(chunks[2].chunkIndex).toBe(2);
       expect(chunks[0].totalChunks).toBe(3);
       expect(chunks[1].totalChunks).toBe(3);
       expect(chunks[2].totalChunks).toBe(3);

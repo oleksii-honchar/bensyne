@@ -313,3 +313,130 @@ class TestComposeFetchNeighbor:
         assert sorted(body["missing_chunks"]) == ["mem_1", "mem_3"]
         present = next(c for c in body["chunks"] if c["memory_id"] == "mem_2")
         assert present["content"] == "content of mem_2"
+
+
+# ---------------------------------------------------------------------------
+# D41 — value-matched center_chunk_index (0-based value contract)
+# ---------------------------------------------------------------------------
+
+
+class TestComposeFetchValueMatch:
+    """D41: center_chunk_index resolves by stored chunk_index VALUE (first
+    match in the (chunk_index, start_line) sort), not by list position.
+    Error condition = no chunk has that value."""
+
+    def test_non_dense_values_resolved_by_value_not_position(self) -> None:
+        # Stored values [1, 2, 3, 5] — non-dense. Value 5 sits at position 3.
+        # Value-matched: center=5 → OK, window = value-5 chunk + position-adjacent
+        # neighbor (value-3 chunk). Old positional logic: 5 >= 4 → OUT_OF_RANGE.
+        agg = _aggregate(
+            [
+                _chunk(id="c1", memory_id="mem_v1", chunk_index=1, start_line=1, end_line=5),
+                _chunk(id="c2", memory_id="mem_v2", chunk_index=2, start_line=6, end_line=10),
+                _chunk(id="c3", memory_id="mem_v3", chunk_index=3, start_line=11, end_line=15),
+                _chunk(id="c5", memory_id="mem_v5", chunk_index=5, start_line=21, end_line=25),
+            ]
+        )
+        mnemosyne = lambda mid: {"content": f"content of {mid}"}
+
+        result = agg.compose_fetch(mnemosyne, center_chunk_index=5, adjacent_chunks=1)
+
+        assert result.is_ok is True
+        body = result.value
+        assert [c["memory_id"] for c in body["chunks"]] == ["mem_v3", "mem_v5"]
+        assert [c["chunk_index"] for c in body["chunks"]] == [3, 5]
+        # Assert chunk identity via distinct content.
+        by_id = {c["memory_id"]: c for c in body["chunks"]}
+        assert by_id["mem_v5"]["content"] == "content of mem_v5"
+        assert by_id["mem_v3"]["content"] == "content of mem_v3"
+
+    def test_legacy_one_based_values_resolved_by_value_not_position(self) -> None:
+        # Stored values [1, 2, 3] (legacy 1-based ingestion). Value 3 is a valid
+        # center by value even though 3 >= total. Old positional logic: 3 >= 3
+        # → OUT_OF_RANGE. Window must be the value-3 chunk only.
+        agg = _aggregate(
+            [
+                _chunk(id="c1", memory_id="mem_1", chunk_index=1, start_line=1, end_line=10),
+                _chunk(id="c2", memory_id="mem_2", chunk_index=2, start_line=11, end_line=20),
+                _chunk(id="c3", memory_id="mem_3", chunk_index=3, start_line=21, end_line=30),
+            ]
+        )
+        mnemosyne = lambda mid: {"content": f"content of {mid}"}
+
+        result = agg.compose_fetch(mnemosyne, center_chunk_index=3, adjacent_chunks=0)
+
+        assert result.is_ok is True
+        body = result.value
+        assert [c["memory_id"] for c in body["chunks"]] == ["mem_3"]
+        assert [c["chunk_index"] for c in body["chunks"]] == [3]
+        assert body["chunks"][0]["content"] == "content of mem_3"
+
+    def test_missing_value_is_ko_with_available_chunk_indexes(self) -> None:
+        # No chunk has value 5 → OUT_OF_RANGE, and the details must carry
+        # available_chunk_indexes (agent self-correction, clarification B).
+        dense = [
+            _chunk(id="c0", memory_id="mem_0", chunk_index=0),
+            _chunk(id="c1", memory_id="mem_1", chunk_index=1),
+            _chunk(id="c2", memory_id="mem_2", chunk_index=2),
+        ]
+        agg = _aggregate(dense)
+
+        result = agg.compose_fetch(_mnemosyne({}), center_chunk_index=5, adjacent_chunks=1)
+
+        assert result.is_ko is True
+        err = result.errors[0]
+        assert err.error_code == "CENTER_CHUNK_INDEX_OUT_OF_RANGE"
+        assert err.details["available_chunk_indexes"] == [0, 1, 2]
+        assert err.details["center_chunk_index"] == 5
+        assert err.details["total_chunks"] == 3
+
+    def test_negative_value_is_ko_regression_pin(self) -> None:
+        # No chunk has value -1 → OUT_OF_RANGE (pinned across the semantics
+        # change: error condition moved from "< 0" to "no chunk with that value").
+        dense = [
+            _chunk(id="c0", memory_id="mem_0", chunk_index=0),
+            _chunk(id="c1", memory_id="mem_1", chunk_index=1),
+            _chunk(id="c2", memory_id="mem_2", chunk_index=2),
+        ]
+        agg = _aggregate(dense)
+        calls: list[str] = []
+        mnemosyne = lambda mid: calls.append(mid) or {"content": f"c{mid}"}
+
+        result = agg.compose_fetch(mnemosyne, center_chunk_index=-1, adjacent_chunks=1)
+
+        assert result.is_ko is True
+        err = result.errors[0]
+        assert err.error_code == "CENTER_CHUNK_INDEX_OUT_OF_RANGE"
+        assert err.details["available_chunk_indexes"] == [0, 1, 2]
+        assert calls == []
+
+    def test_center_zero_is_right_side_only_clamped_not_error(self) -> None:
+        # center=0 with adjacent>0 → right-side-only clamped window [0, 1]
+        # (spec §2.3), never an error.
+        dense = [
+            _chunk(id="c0", memory_id="mem_0", chunk_index=0),
+            _chunk(id="c1", memory_id="mem_1", chunk_index=1),
+            _chunk(id="c2", memory_id="mem_2", chunk_index=2),
+        ]
+        agg = _aggregate(dense)
+
+        result = agg.compose_fetch(_mnemosyne({}), center_chunk_index=0, adjacent_chunks=1)
+
+        assert result.is_ok is True
+        assert [c["chunk_index"] for c in result.value["chunks"]] == [0, 1]
+
+    def test_duplicate_values_anchor_at_first_in_sort_order(self) -> None:
+        # Two chunks share chunk_index=1 (different start_line). The center
+        # anchors at the FIRST duplicate in (chunk_index, start_line) order.
+        agg = _aggregate(
+            [
+                _chunk(id="c0", memory_id="mem_0", chunk_index=0, start_line=1),
+                _chunk(id="c1a", memory_id="mem_1a", chunk_index=1, start_line=6),
+                _chunk(id="c1b", memory_id="mem_1b", chunk_index=1, start_line=7),
+            ]
+        )
+
+        result = agg.compose_fetch(_mnemosyne({}), center_chunk_index=1, adjacent_chunks=0)
+
+        assert result.is_ok is True
+        assert [c["memory_id"] for c in result.value["chunks"]] == ["mem_1a"]
