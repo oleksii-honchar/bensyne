@@ -22,12 +22,19 @@ Verify `fetchFile` neighbor-window mode — `center_chunk_index` + `adjacent_chu
 # VERIFY YOUR OWN SERVER: ps aux | grep "main.py --port" | grep data-dir
 # If your bensyne-mcp runs with a different --data-dir, substitute that dir.
 #
-# This bank's state is SPLIT across two PER-BANK dirs (both bank-scoped, NOT
-# shared — safe to remove both):
+# This bank's state is SPLIT across three locations (all bank-scoped, safe
+# to remove):
 #   {DATA_DIR}/banks/tmp-vault/ → mnemosyne.db
-#   {DATA_DIR}/tmp-vault/       → file_metadata.db + hash_index.db
-# NOTE: hash_index.db is per-bank ({bank}/hash_index.db), not a shared file.
-rm -rf apps/bensyne-mcp/data/dev/banks/tmp-vault apps/bensyne-mcp/data/dev/tmp-vault
+#   {DATA_DIR}/tmp-vault/       → file_metadata.db
+#   apps/bensyne-mcp/data/tmp-vault/ → hash_index.db  ⚠️ POTENTIAL BUG
+#     HashIndexService falls back to CWD-relative Path("data")/{bank}/
+#     (hash_index_service.py:144) and IGNORES --data-dir — verified live:
+#     server runs with --data-dir ./data/dev but dedup reads
+#     data/tmp-vault/hash_index.db. Left as-is (pre-existing, out of D41
+#     scope); the runbook cleans the ACTUAL location.
+rm -rf apps/bensyne-mcp/data/dev/banks/tmp-vault \
+       apps/bensyne-mcp/data/dev/tmp-vault \
+       apps/bensyne-mcp/data/tmp-vault
 
 # Then RESTART bensyne-mcp so no stale in-process state persists (it reopens
 # DBs per bank on first tool call; a restart guarantees a clean slate):
