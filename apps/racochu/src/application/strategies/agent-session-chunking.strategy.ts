@@ -28,8 +28,10 @@ const COMPANION_DIR_FILES: Record<string, string> = {
 
 /**
  * Lists companion artifacts present in the session root R and returns their
- * absolute paths. Performs exactly ONE readdir of R. On any fs error, returns
- * an empty array (never throws).
+ * absolute paths. Performs exactly ONE readdir of R (plus cheap, targeted
+ * `stat` checks for each companion dir's canonical file). A companion dir
+ * contributes its canonical file ONLY if that file actually exists on disk.
+ * On any fs error, returns an empty/partial array (never throws).
  */
 async function listCompanionArtifacts(sessionRoot: string): Promise<string[]> {
   let entries: import('fs').Dirent[];
@@ -47,12 +49,21 @@ async function listCompanionArtifacts(sessionRoot: string): Promise<string[]> {
     paths.push(path.join(sessionRoot, COMPANION_FILE));
   }
 
-  // Companion directories — resolve to their canonical file
+  // Companion directories — resolve to their canonical file, but ONLY if that
+  // specific file actually exists on disk (a present dir alone is not enough).
   for (const dir of COMPANION_DIRS) {
     if (entryNames.has(dir)) {
       const fileName = COMPANION_DIR_FILES[dir];
       if (fileName) {
-        paths.push(path.join(sessionRoot, dir, fileName));
+        const candidate = path.join(sessionRoot, dir, fileName);
+        try {
+          const stats = await fs.stat(candidate);
+          if (stats.isFile()) {
+            paths.push(candidate);
+          }
+        } catch {
+          // canonical file absent or unreadable → treat as absent, skip
+        }
       }
     }
   }

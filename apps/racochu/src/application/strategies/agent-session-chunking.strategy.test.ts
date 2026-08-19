@@ -694,6 +694,156 @@ describe('AgentSessionChunkingStrategy', () => {
       expect(siblingEdges.length).toBe(0);
     });
 
+    // --- Finding 2: companion edge must only be emitted when the canonical
+    //     file actually exists on disk (not merely because the dir exists) ---
+
+    it('does NOT emit a companion edge for a dir whose canonical file is absent (Finding 2)', async () => {
+      // materials/ present with a non-canonical file only; NO unified-chunk-contract.md
+      testRoot = await createSessionRoot([
+        'session.md',
+        'findings/findings.md',
+        'materials/b-contract.md',
+      ]);
+      const sut = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await sut.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toBeDefined();
+
+      // The phantom canonical companion (materials/unified-chunk-contract.md)
+      // must NOT appear because that file does not exist on disk.
+      const phantomEdge = edges!.find(
+        e => e.target_path === path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+      );
+      expect(phantomEdge).toBeUndefined();
+    });
+
+    it('emits a companion edge for a dir whose canonical file is present (Finding 2 regression)', async () => {
+      testRoot = await createSessionRoot([
+        'session.md',
+        'findings/findings.md',
+        'materials/unified-chunk-contract.md',
+      ]);
+      const sut = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      const result = await sut.chunkFile(
+        'Findings content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toBeDefined();
+
+      // canonical file exists → the companion edge IS emitted
+      const siblingEdge = edges!.find(
+        e =>
+          e.relation_type === 'sibling' &&
+          e.target_path === path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+      );
+      expect(siblingEdge).toBeDefined();
+    });
+
+    it('still includes session.md when present (Finding 2 regression)', async () => {
+      testRoot = await createSessionRoot(['session.md', 'some-file.md']);
+      const sut = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'some-file.md');
+
+      const result = await sut.chunkFile(
+        'Some content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toBeDefined();
+
+      // session.md present → parent_child edge to it still emitted
+      const parentEdge = edges!.find(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdge).toBeDefined();
+    });
+
+    it('emits edges for all 5 companion dirs when their canonical files are present (Finding 2 full-set)', async () => {
+      testRoot = await createSessionRoot([
+        'session.md',
+        'specifications/spec.md',
+        'findings/findings.md',
+        'decisions/decisions.md',
+        'plans/implementation-plan.md',
+        'materials/unified-chunk-contract.md',
+      ]);
+      const sut = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'session.md');
+
+      const result = await sut.chunkFile(
+        'Session content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toBeDefined();
+
+      const siblingTargets = edges!
+        .filter(e => e.relation_type === 'sibling')
+        .map(e => e.target_path)
+        .sort();
+
+      const expectedSiblings = [
+        path.join(testRoot, 'specifications', 'spec.md'),
+        path.join(testRoot, 'findings', 'findings.md'),
+        path.join(testRoot, 'decisions', 'decisions.md'),
+        path.join(testRoot, 'plans', 'implementation-plan.md'),
+        path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+      ].sort();
+
+      expect(siblingTargets).toEqual(expectedSiblings);
+    });
+
+    it('emits only the session.md companion (no siblings) when no companion dirs exist (Finding 2)', async () => {
+      testRoot = await createSessionRoot(['session.md', 'some-file.md']);
+      const sut = createStrategyWithMastra();
+      const filePath = path.join(testRoot, 'some-file.md');
+
+      const result = await sut.chunkFile(
+        'Some content',
+        filePath,
+        'test-source',
+        sourceConfig,
+      );
+
+      expect(result.isOk()).toBe(true);
+      const edges = result.getValue()[0].edges;
+      expect(edges).toBeDefined();
+
+      // session.md present → parent_child edge to it
+      const parentEdge = edges!.find(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdge).toBeDefined();
+
+      // no companion dirs present → no sibling edges
+      const siblingEdges = edges!.filter(e => e.relation_type === 'sibling');
+      expect(siblingEdges.length).toBe(0);
+    });
+
     it('produces chunk with empty edges when session root is unreadable (fs error)', async () => {
       testRoot = await createSessionRoot();
       const sut = createStrategyWithMastra();

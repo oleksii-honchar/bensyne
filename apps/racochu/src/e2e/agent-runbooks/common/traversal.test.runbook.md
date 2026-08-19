@@ -91,10 +91,22 @@ The `relation_types` parameter must return **only** the requested relation types
 - **PASS — filter respected (sibling):** `related_files` contains **only** entries where `file.relation_type == "sibling"`. No `parent_child` entries appear.
 - **NOTE:** `related_files` may be empty if there are no other sibling companions in this fixture tree — that is correct behavior (filter works, zero matches is valid).
 
-#### Step 4: Non-existent relation type returns empty
+#### Step 4: Invalid relation_type value returns an error
+
+The `relation_types` filter is **fail-fast** on invalid enum values — it errors, it does NOT silently return empty.
 
 - Call `expandFileRelations(findings_id, memory_bank="tmp-agent-sessions", relation_types=["nonexistent_type"])`
-- **PASS:** `related_files == []` (no relations of that type; tool does not error on unknown filter value — returns empty).
+- **PASS:** error result with code `INTERNAL_ERROR` and a message containing `is not a valid RelationType` (fail-fast on invalid enum value — the tool does not return an empty array for an unknown filter value).
+
+**Do not confuse the two cases:**
+
+- (a) **Invalid enum value** (not a member of `RelationType`, e.g. `nonexistent_type`) → tool returns an **error** (`INTERNAL_ERROR`, `is not a valid RelationType`).
+- (b) **Valid enum value with zero matching relations** (a real `RelationType` the file has no edges of) → tool returns `related_files == []` (empty array, no error).
+
+**Case (b) check** — `backlink` is a valid `RelationType`, but the `rb-tool-contract/findings/findings.md` fixture has no wikilinks, so it has no outgoing `backlink` edges:
+
+- Call `expandFileRelations(findings_id, memory_bank="tmp-agent-sessions", relation_types=["backlink"])`
+- **PASS:** `related_files == []` (filter valid, zero matches — correct empty behavior, no error).
 - **PASS:** `source_file.id == findings_id` (source file still returned correctly).
 
 ## Part C — error case
