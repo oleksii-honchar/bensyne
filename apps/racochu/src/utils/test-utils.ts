@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'fs';
+import type { NonSharedBuffer } from 'node:buffer';
 
 /**
  * Creates a mock Dirent compatible with fs/promises readdir.
@@ -16,8 +17,8 @@ import * as fs from 'fs';
  * @param isDir - Whether this entry is a directory
  * @returns Mock Dirent object
  */
-export const mockDirent = (name: string, isDir: boolean): fs.Dirent => ({
-  name,
+export const mockDirent = (name: string, isDir: boolean): fs.Dirent<NonSharedBuffer> => ({
+  name: name as unknown as NonSharedBuffer,
   parentPath: null as unknown as string,
   isDirectory: () => isDir,
   isFile: () => !isDir,

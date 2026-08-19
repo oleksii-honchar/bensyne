@@ -177,8 +177,12 @@ describe('WatchSource', () => {
     it('rejects legacy non-D29 source type values (content-aware, file_system)', () => {
       const watchSource = aWatchSource();
 
-      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'content-aware' as never }).isKo()).toBe(true);
-      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'file_system' as never }).isKo()).toBe(true);
+      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'content-aware' as never }).isKo()).toBe(
+        true,
+      );
+      expect(WatchSource.of({ ...watchSource.toJson(), sourceType: 'file_system' as never }).isKo()).toBe(
+        true,
+      );
     });
 
     it('toJson includes sourceType', () => {

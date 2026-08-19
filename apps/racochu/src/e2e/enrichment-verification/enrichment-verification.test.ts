@@ -74,7 +74,7 @@ When enrichment is enabled and the LLM endpoint is reachable, each chunk should 
       await cleanupTempDir(tempDir);
     }
     if (app) {
-      const closePromise = app.close().catch(() => {});
+      const closePromise = app.close().catch(() => undefined);
       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 30000));
       await Promise.race([closePromise, timeoutPromise]);
     }
@@ -164,9 +164,13 @@ When enrichment is enabled and the LLM endpoint is reachable, each chunk should 
 
     // Verify that at least one recall result contains enrichment-related content
     // (the metadata is stored alongside the content, so the recall should return the chunk text)
-    const enrichedResult = recallResults.find(r => r.content.includes('enrichment') || r.content.includes('Enrichment'));
+    const enrichedResult = recallResults.find(
+      r => r.content.includes('enrichment') || r.content.includes('Enrichment'),
+    );
     expect(enrichedResult).toBeDefined();
-    console.log(`[E2E-Enrichment] Enrichment content found in recall: "${enrichedResult?.content.slice(0, 120)}..."`);
+    console.log(
+      `[E2E-Enrichment] Enrichment content found in recall: "${enrichedResult?.content.slice(0, 120)}..."`,
+    );
 
     // File-based memories are recalled with an opaque bensyne-owned file_enrichment block
     // (Task 13 / S6 tolerance — racochu passes it through without parsing the shape).
@@ -206,7 +210,7 @@ describe('LLM connectivity', () => {
 
   afterAll(async () => {
     if (app) {
-      const closePromise = app.close().catch(() => {});
+      const closePromise = app.close().catch(() => undefined);
       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 30000));
       await Promise.race([closePromise, timeoutPromise]);
     }

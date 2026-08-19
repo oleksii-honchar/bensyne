@@ -1,4 +1,4 @@
-import { ContentChunk, FILE_RELATION_TYPES, FILE_ROLES } from './content-chunk.entity';
+import { ContentChunk, FILE_RELATION_TYPES, FILE_ROLES, FileEdge } from './content-chunk.entity';
 import { aContentChunk } from './content-chunk.entity.test-utils';
 
 describe('Chunk', () => {
@@ -252,8 +252,13 @@ describe('Chunk', () => {
 
   describe('Chunk.of — edges', () => {
     it('with valid edges returns ok and preserves exact values', () => {
-      const edges = [
-        { target_path: '/vault/notes/a.md', relation_type: 'parent_child', strength: 0.8, description: 'child note' },
+      const edges: FileEdge[] = [
+        {
+          target_path: '/vault/notes/a.md',
+          relation_type: 'parent_child',
+          strength: 0.8,
+          description: 'child note',
+        },
         { target_path: '/vault/notes/b.md', relation_type: 'backlink', strength: 1 },
       ];
       const chunk = aContentChunk({ edges });
@@ -263,10 +268,15 @@ describe('Chunk', () => {
 
     it('with omitted edge strength defaults to 1', () => {
       const p = aContentChunk().toJson();
-      const result = ContentChunk.of({ ...p, edges: [{ target_path: '/x.md', relation_type: 'sibling' }] } as never);
+      const result = ContentChunk.of({
+        ...p,
+        edges: [{ target_path: '/x.md', relation_type: 'sibling' }],
+      } as never);
 
       expect(result.isOk()).toBe(true);
-      expect(result.getValue().edges).toEqual([{ target_path: '/x.md', relation_type: 'sibling', strength: 1 }]);
+      expect(result.getValue().edges).toEqual([
+        { target_path: '/x.md', relation_type: 'sibling', strength: 1 },
+      ]);
     });
 
     it('with edge strength > 1 returns ko', () => {

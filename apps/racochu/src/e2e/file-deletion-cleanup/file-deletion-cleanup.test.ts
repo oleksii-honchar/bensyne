@@ -96,7 +96,9 @@ describe('[E2E] File Deletion Cleanup — create → ingest → track → delete
     const recallResultsAfter = recallAfter.getValue();
     console.log(`[E2E-FileDeletion] Recall after delete returned ${recallResultsAfter.length} results`);
     // All results containing our unique marker should be gone
-    const remainingWithMarker = recallResultsAfter.filter(r => r.content.includes(`FILEDELETION-${uniqueId}`));
+    const remainingWithMarker = recallResultsAfter.filter(r =>
+      r.content.includes(`FILEDELETION-${uniqueId}`),
+    );
     expect(remainingWithMarker.length).toBe(0);
 
     // Step 8: Verify tracker.db mapping removed

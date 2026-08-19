@@ -3,7 +3,13 @@ import { ConfigurationService } from './configuration.service';
 import { SOURCE_TYPES } from './source-types';
 
 const DEFAULT_CHUNKING: ChunkingConfig = {
-  maxSizes: { agentSessions: 400, obsidianNotes: 500, codeFiles: 400, configuration: 'per-key', plainText: 450 },
+  maxSizes: {
+    agentSessions: 400,
+    obsidianNotes: 500,
+    codeFiles: 400,
+    configuration: 'per-key',
+    plainText: 450,
+  },
   overlap: 50,
   hardCap: 600,
 };

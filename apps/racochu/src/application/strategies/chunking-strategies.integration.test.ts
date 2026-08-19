@@ -21,6 +21,7 @@ import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy'
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
 import { StrategyRouter } from './strategy-router.service';
+import { VaultChunkingStrategy } from './vault-chunking.strategy';
 
 // --- Helpers ---
 
@@ -435,6 +436,7 @@ describe('StrategyRouter with real content', () => {
   let mockAgentSessionStrategy: jest.Mocked<AgentSessionChunkingStrategy>;
   let mockObsidianStrategy: jest.Mocked<ObsidianChunkingStrategy>;
   let mockMastraStrategy: jest.Mocked<MastraChunkingService>;
+  let mockVaultStrategy: jest.Mocked<VaultChunkingStrategy>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -451,10 +453,15 @@ describe('StrategyRouter with real content', () => {
       chunkFile: jest.fn().mockResolvedValue(okResult([createBodyChunk('content-aware body')])),
     } as unknown as jest.Mocked<MastraChunkingService>;
 
+    mockVaultStrategy = {
+      chunkFile: jest.fn().mockResolvedValue(okResult([createBodyChunk('vault body')])),
+    } as unknown as jest.Mocked<VaultChunkingStrategy>;
+
     router = new StrategyRouter(
       mockAgentSessionStrategy,
       mockObsidianStrategy,
       mockMastraStrategy,
+      mockVaultStrategy,
       createMockLogger(),
     );
   });
@@ -484,12 +491,7 @@ describe('StrategyRouter with real content', () => {
     const sut = router.selectStrategy(sourceConfig);
     expect(sut).toBe(mockAgentSessionStrategy);
 
-    const result = await sut.chunkFile(
-      content,
-      '/agent-sessions/session.md',
-      'agent-sessions',
-      sourceConfig,
-    );
+    const result = await sut.chunkFile(content, '/agent-sessions/session.md', 'agent-sessions', sourceConfig);
 
     expect(result.isOk()).toBe(true);
     expect(mockAgentSessionStrategy.chunkFile).toHaveBeenCalledWith(
@@ -500,17 +502,17 @@ describe('StrategyRouter with real content', () => {
     );
   });
 
-  it('routes content-aware sut for regular files', async () => {
+  it('routes vault source config to VaultChunkingStrategy', async () => {
     const content = await fs.readFile(path.join(FIXTURES_DIR, 'sample.md'), 'utf-8');
     const sourceConfig = createContentAwareSourceConfig();
 
     const sut = router.selectStrategy(sourceConfig);
-    expect(sut).toBe(mockMastraStrategy);
+    expect(sut).toBe(mockVaultStrategy);
 
     const result = await sut.chunkFile(content, '/general/sample.md', 'general', sourceConfig);
 
     expect(result.isOk()).toBe(true);
-    expect(mockMastraStrategy.chunkFile).toHaveBeenCalledWith(
+    expect(mockVaultStrategy.chunkFile).toHaveBeenCalledWith(
       content,
       '/general/sample.md',
       'general',
@@ -559,7 +561,7 @@ describe('StrategyRouter with real content', () => {
     ];
     mockAgentSessionStrategy.chunkFile.mockResolvedValue(Result.ok(sessionChunks));
 
-    // Content-aware sut produces unenriched chunks
+    // Vault sut produces plain chunks (mocked)
     const sampleContent = await fs.readFile(path.join(FIXTURES_DIR, 'sample.md'), 'utf-8');
     const plainChunks = [
       createBodyChunk('plain body', {
@@ -569,7 +571,7 @@ describe('StrategyRouter with real content', () => {
         },
       }),
     ];
-    mockMastraStrategy.chunkFile.mockResolvedValue(Result.ok(plainChunks));
+    mockVaultStrategy.chunkFile.mockResolvedValue(Result.ok(plainChunks));
 
     // Route and process each
     const obsidianResult = await router
@@ -660,5 +662,206 @@ describe('SessionMetadataService with real files', () => {
     const result3 = await service.extract(tempDir);
     // Should still return cached value, not the modified file
     expect(result3.getValue().sessionId).toBe('ses_057e2d847ffeJkvVN1hTxIim8L');
+  });
+});
+
+describe('VaultChunkingStrategy with a real tmp/vault fixture', () => {
+  let sut: VaultChunkingStrategy;
+  let mockMastra: jest.Mocked<MastraChunkingService>;
+  let mockLogger: BasePinoLogger;
+  let vaultRoot: string;
+
+  const vaultSourceConfig = (): WatchSourceConfig => ({
+    id: 'vault-source',
+    path: vaultRoot,
+    memoryBank: 'vault',
+    exclude: ['**/node_modules/**'],
+    debounceMs: 3000,
+    sourceType: SOURCE_TYPES.VAULT,
+  });
+
+  const readFile = async (relPath: string): Promise<string> =>
+    fs.readFile(path.join(vaultRoot, relPath), 'utf-8');
+  const writeFixture = async (relPath: string, lines: string[]): Promise<void> =>
+    fs.writeFile(path.join(vaultRoot, relPath), lines.join('\n'), 'utf-8');
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockLogger = createMockLogger();
+    mockMastra = createMockMastraChunkingService([createBodyChunk('vault body content')]);
+    vaultRoot = await createTempDir('rag-e2e-vault-');
+    sut = new VaultChunkingStrategy(mockMastra, mockLogger);
+
+    // Build the tmp/vault fixture (spec §10)
+    await fs.mkdir(path.join(vaultRoot, 'decisions'), { recursive: true });
+    await fs.mkdir(path.join(vaultRoot, 'concepts'), { recursive: true });
+
+    await writeFixture('_Vault-Home.md', ['---', 'type: index', '---', '# Vault Home', '[[0001-x]]']);
+    await writeFixture('decisions/_index.md', [
+      '---',
+      'type: index',
+      '---',
+      '# Decisions',
+      '[[0001-alpha.decision]]',
+    ]);
+    // see_also uses vault-root-relative paths (matches the real .vault grammar,
+    // e.g. `concepts/0001-x.concept.md`, never `../` — spec §3.3 resolves from vaultRoot).
+    await writeFixture('decisions/0001-alpha.decision.md', [
+      '---',
+      'type: decision',
+      'id: DEC-0001',
+      'see_also:',
+      '  - concepts/0001-x.concept.md',
+      '---',
+      'Decision body. Related: [[0001-x]]',
+    ]);
+    await writeFixture('decisions/0002-beta.decision.md', [
+      '---',
+      'type: decision',
+      'id: DEC-0002',
+      'see_also: ["concepts/0001-x.concept.md"]',
+      '---',
+      'Beta body.',
+    ]);
+    await writeFixture('concepts/_index.md', ['# Concepts', '[[0001-x.concept]]']);
+    await writeFixture('concepts/0001-x.concept.md', [
+      '# X Concept',
+      'Links to [[decisions/0002-beta.decision]]',
+    ]);
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(vaultRoot);
+  });
+
+  it('skips index files (_Vault-Home.md) → Result.ok([])', async () => {
+    const content = await readFile('_Vault-Home.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, '_Vault-Home.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(result.getValue()).toEqual([]);
+  });
+
+  it('skips folder index files (_index.md) → Result.ok([])', async () => {
+    const content = await readFile('decisions/_index.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'decisions', '_index.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(result.getValue()).toEqual([]);
+  });
+
+  it('0001-alpha: edges include the see_also recommendation edge AND the resolved bare-wikilink backlink edge', async () => {
+    const content = await readFile('decisions/0001-alpha.decision.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'decisions', '0001-alpha.decision.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunks = result.getValue();
+    expect(chunks.length).toBeGreaterThan(0);
+
+    const conceptTarget = path.join(vaultRoot, 'concepts', '0001-x.concept.md');
+    for (const chunk of chunks) {
+      expect(chunk.edges).toBeDefined();
+      const edges = chunk.edges ?? [];
+
+      // see_also → recommendation edge (absolute, existence-gated)
+      expect(edges.some(e => e.target_path === conceptTarget && e.relation_type === 'recommendation')).toBe(
+        true,
+      );
+
+      // [[0001-x]] bare slug → typed node concepts/0001-x.concept.md via prefix match (backlink).
+      // Note: see_also and the wikilink both resolve to the SAME absolute path, so both a
+      // recommendation and a backlink edge to conceptTarget must be present.
+      expect(edges.some(e => e.target_path === conceptTarget && e.relation_type === 'backlink')).toBe(true);
+
+      // note.wikilinks metadata carries the bare slug
+      const wikilinks = JSON.parse(chunk.metadata!['note.wikilinks'] ?? '[]');
+      expect(wikilinks).toContain('0001-x');
+    }
+  });
+
+  it('0001-alpha: metadata note.type=decision and note.properties.id=DEC-0001 are present on chunks', async () => {
+    const content = await readFile('decisions/0001-alpha.decision.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'decisions', '0001-alpha.decision.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    const chunks = result.getValue();
+    for (const chunk of chunks) {
+      expect(chunk.metadata?.['note.type']).toBe('decision');
+      expect(chunk.metadata?.['note.properties.id']).toBe('DEC-0001');
+    }
+  });
+
+  it('0001-alpha: body text wikilinks are cleaned (no [[) before Mastra chunking', async () => {
+    const content = await readFile('decisions/0001-alpha.decision.md');
+    await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'decisions', '0001-alpha.decision.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    expect(mockMastra.chunkFile).toHaveBeenCalled();
+    const bodyContent = mockMastra.chunkFile.mock.calls[0][0] as string;
+    expect(bodyContent).not.toContain('[[');
+    expect(bodyContent).toContain('Decision body. Related: 0001-x');
+  });
+
+  it('0002-beta: inline-array see_also resolves to a recommendation edge', async () => {
+    const content = await readFile('decisions/0002-beta.decision.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'decisions', '0002-beta.decision.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    const chunks = result.getValue();
+    const conceptTarget = path.join(vaultRoot, 'concepts', '0001-x.concept.md');
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(
+        (chunk.edges ?? []).some(
+          e => e.target_path === conceptTarget && e.relation_type === 'recommendation',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('0001-x: path-form wikilink resolves to a backlink edge', async () => {
+    const content = await readFile('concepts/0001-x.concept.md');
+    const result = await sut.chunkFile(
+      content,
+      path.join(vaultRoot, 'concepts', '0001-x.concept.md'),
+      'vault-source',
+      vaultSourceConfig(),
+    );
+
+    const chunks = result.getValue();
+    const decisionTarget = path.join(vaultRoot, 'decisions', '0002-beta.decision.md');
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(
+        (chunk.edges ?? []).some(e => e.target_path === decisionTarget && e.relation_type === 'backlink'),
+      ).toBe(true);
+    }
   });
 });

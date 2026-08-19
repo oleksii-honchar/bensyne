@@ -1,7 +1,7 @@
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import {
-  SOURCE_TYPES,
   SOURCE_TYPE_UNKNOWN,
+  SOURCE_TYPES,
   sourceTypeSchema,
   WireSourceType,
 } from '@/infrastructure/config/source-types';
@@ -11,6 +11,7 @@ import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy'
 import { BaseChunkingStrategy } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
+import { VaultChunkingStrategy } from './vault-chunking.strategy';
 
 /**
  * Routes chunking requests to the appropriate chunker based on the watch
@@ -19,7 +20,7 @@ import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
  * Routing (source_type → chunker):
  *   obsidian        → ObsidianChunkingStrategy
  *   agent-sessions  → AgentSessionChunkingStrategy
- *   vault           → MastraChunkingService (content-aware path, re-keyed)
+ *   vault           → VaultChunkingStrategy
  *   unknown / other → MastraChunkingService (fallback)
  *
  * Degrade-never-reject (mirrors bensyne `_coerce_source_type`): any incoming
@@ -34,6 +35,7 @@ export class StrategyRouter {
     private readonly agentSessionStrategy: AgentSessionChunkingStrategy,
     private readonly obsidianStrategy: ObsidianChunkingStrategy,
     private readonly mastraStrategy: MastraChunkingService,
+    private readonly vaultStrategy: VaultChunkingStrategy,
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'StrategyRouter' });
@@ -58,7 +60,7 @@ export class StrategyRouter {
     const map: Record<WireSourceType, BaseChunkingStrategy> = {
       [SOURCE_TYPES.OBSIDIAN]: this.obsidianStrategy,
       [SOURCE_TYPES.AGENT_SESSIONS]: this.agentSessionStrategy,
-      [SOURCE_TYPES.VAULT]: this.mastraStrategy,
+      [SOURCE_TYPES.VAULT]: this.vaultStrategy,
       [SOURCE_TYPE_UNKNOWN]: this.mastraStrategy,
     };
 

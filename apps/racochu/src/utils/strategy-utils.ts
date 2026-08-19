@@ -15,7 +15,7 @@ export function splitFrontmatter(content: string): { frontmatter: string | null;
   };
 }
 
-const WIKILINK_REGEX = /\[\[([^\[\]|#]+)(?:#[^\[\]|]*)?(?:\|[^\[\]]*)?\]\]/g;
+const WIKILINK_REGEX = /\[\[([^[\]|#]+)(?:#[^[\]|]*)?(?:\|[^[\]]*)?\]\]/g;
 
 /**
  * Extracts deduplicated wikilink targets from text.

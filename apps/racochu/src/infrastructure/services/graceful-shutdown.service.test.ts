@@ -13,8 +13,11 @@ class MockBasePinoLogger extends BasePinoLogger {
   errorCalls: { message: string | Record<string, unknown>; meta?: Record<string, unknown> }[] = [];
   warnCalls: { message: string | Record<string, unknown>; meta?: Record<string, unknown> }[] = [];
   debugCalls: { message: string | Record<string, unknown>; meta?: Record<string, unknown> }[] = [];
+  contexts: string[] = [];
 
-  setContext(_context: string): void {}
+  setContext(_context: string): void {
+    this.contexts.push(_context);
+  }
   log(message: string | Record<string, unknown>, meta?: Record<string, unknown>): void {
     this.logCalls.push({ message, meta });
   }

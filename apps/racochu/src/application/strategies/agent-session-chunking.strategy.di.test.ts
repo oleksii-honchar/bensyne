@@ -1,10 +1,10 @@
-import { Test } from '@nestjs/testing';
 import { aBodyChunk } from '@/domain/content-chunk.entity.test-utils';
 import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { aLogger } from '@/infrastructure/logging/logger.test-utils';
 import { SessionMetadataService } from '@/infrastructure/services/session-metadata.service';
 import { aSessionMetadataService } from '@/infrastructure/services/session-metadata.service.test-utils';
+import { Test } from '@nestjs/testing';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';

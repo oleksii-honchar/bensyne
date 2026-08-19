@@ -383,7 +383,7 @@ describe('ConfigurationService', () => {
     afterAll(() => {
       // Restore original env
       Object.keys(process.env).forEach(key => {
-        if (!originalEnv.hasOwnProperty(key)) delete process.env[key];
+        if (!Object.prototype.hasOwnProperty.call(originalEnv, key)) delete process.env[key];
       });
       Object.assign(process.env, originalEnv);
     });

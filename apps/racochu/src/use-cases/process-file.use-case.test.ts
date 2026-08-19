@@ -544,10 +544,7 @@ describe('ProcessFileUseCase', () => {
       expect(mockBensyneClient.forget).toHaveBeenCalledTimes(2);
       expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-old-1', memoryBank);
       expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-old-2', memoryBank);
-      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(
-        filePath,
-        oldMemoryIds,
-      );
+      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(filePath, oldMemoryIds);
     });
 
     it('should forget only stale memory IDs (mixed case) and keep current ones in tracker', async () => {
@@ -569,10 +566,7 @@ describe('ProcessFileUseCase', () => {
       expect(result.isOk()).toBe(true);
       expect(mockBensyneClient.forget).toHaveBeenCalledTimes(1);
       expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-a', memoryBank);
-      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(
-        filePath,
-        ['mem-a'],
-      );
+      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(filePath, ['mem-a']);
     });
   });
 

@@ -10,6 +10,9 @@ import { splitFrontmatter } from '@/utils/strategy-utils';
 import * as fsSync from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { MastraChunkingService } from './mastra-chunking.service';
+import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
 
 // Mock fs/promises with real implementations by default; individual tests can
 // override specific methods (e.g. readdir) while keeping stat/readFile/etc. real.
@@ -21,9 +24,6 @@ jest.mock('fs/promises', () => {
     stat: jest.fn((...args: Parameters<typeof actual.stat>) => actual.stat(...args)),
   };
 });
-import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
-import { MastraChunkingService } from './mastra-chunking.service';
-import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
 
 // --- Test fixtures (loaded from shared fixtures) ---
 
@@ -550,7 +550,10 @@ describe('AgentSessionChunkingStrategy', () => {
     ];
 
     async function createSessionRoot(companions: string[] = COMPANION_FILES): Promise<string> {
-      const root = path.join('/tmp', 'companion-edges-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      const root = path.join(
+        '/tmp',
+        'companion-edges-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+      );
       for (const rel of companions) {
         const fullPath = path.join(root, rel);
         await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
@@ -587,12 +590,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -630,12 +628,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'session.md');
 
-      const result = await sut.chunkFile(
-        'Session content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Session content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -671,12 +664,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -699,20 +687,11 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('does NOT emit a companion edge for a dir whose canonical file is absent (Finding 2)', async () => {
       // materials/ present with a non-canonical file only; NO unified-chunk-contract.md
-      testRoot = await createSessionRoot([
-        'session.md',
-        'findings/findings.md',
-        'materials/b-contract.md',
-      ]);
+      testRoot = await createSessionRoot(['session.md', 'findings/findings.md', 'materials/b-contract.md']);
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const edges = result.getValue()[0].edges;
@@ -735,12 +714,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const edges = result.getValue()[0].edges;
@@ -760,12 +734,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'some-file.md');
 
-      const result = await sut.chunkFile(
-        'Some content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Some content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const edges = result.getValue()[0].edges;
@@ -790,12 +759,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'session.md');
 
-      const result = await sut.chunkFile(
-        'Session content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Session content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const edges = result.getValue()[0].edges;
@@ -822,12 +786,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'some-file.md');
 
-      const result = await sut.chunkFile(
-        'Some content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Some content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const edges = result.getValue()[0].edges;
@@ -852,12 +811,7 @@ describe('AgentSessionChunkingStrategy', () => {
       // Simulate fs failure on readdir
       (fsPromises.readdir as jest.Mock).mockRejectedValueOnce(new Error('EACCES'));
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -878,18 +832,11 @@ describe('AgentSessionChunkingStrategy', () => {
 
       (fsPromises.readdir as jest.Mock).mockClear();
 
-      await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       // locateSessionRoot uses stat (not readdir); the companion listing and the
       // cross-reference walk each readdir the session root once.
-      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
-        call => call[0] === testRoot,
-      );
+      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(call => call[0] === testRoot);
       expect(rootCalls.length).toBe(2);
     });
 
@@ -900,22 +847,10 @@ describe('AgentSessionChunkingStrategy', () => {
 
       (fsPromises.readdir as jest.Mock).mockClear();
 
-      await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
-      await sut.chunkFile(
-        'More findings',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
+      await sut.chunkFile('More findings', filePath, 'test-source', sourceConfig);
 
-      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
-        call => call[0] === testRoot,
-      );
+      const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(call => call[0] === testRoot);
       expect(rootCalls.length).toBe(4);
     });
 
@@ -924,12 +859,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        'Findings content',
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile('Findings content', filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -948,12 +878,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
 
-      const result = await sut.chunkFile(
-        WITH_FRONTMATTER,
-        filePath,
-        'test-source',
-        sourceConfig,
-      );
+      const result = await sut.chunkFile(WITH_FRONTMATTER, filePath, 'test-source', sourceConfig);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -977,10 +902,7 @@ describe('AgentSessionChunkingStrategy', () => {
 
     /** Session root with the full companion set + one archived material. */
     async function createXrefSessionRoot(): Promise<string> {
-      const root = path.join(
-        '/tmp',
-        `xref-wiring-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      );
+      const root = path.join('/tmp', `xref-wiring-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       const files = [
         'session.md',
         'specifications/spec.md',
@@ -1015,10 +937,7 @@ describe('AgentSessionChunkingStrategy', () => {
 
     it('merges companion + cross_reference edges onto every chunk when content references an archived material', async () => {
       testRoot = await createXrefSessionRoot();
-      const mastra = aMastraChunkingService([
-        aBodyChunk({ chunkIndex: 0 }),
-        aBodyChunk({ chunkIndex: 1 }),
-      ]);
+      const mastra = aMastraChunkingService([aBodyChunk({ chunkIndex: 0 }), aBodyChunk({ chunkIndex: 1 })]);
       const sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mastra as unknown as MastraChunkingService,
@@ -1154,12 +1073,7 @@ describe('AgentSessionChunkingStrategy', () => {
         mockLogger,
       );
 
-      const result = await sut.chunkFile(
-        WITH_FRONTMATTER,
-        '/test/path/file.md',
-        'test-source',
-        d41Config,
-      );
+      const result = await sut.chunkFile(WITH_FRONTMATTER, '/test/path/file.md', 'test-source', d41Config);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
@@ -1181,12 +1095,7 @@ describe('AgentSessionChunkingStrategy', () => {
         mockLogger,
       );
 
-      const result = await sut.chunkFile(
-        WITHOUT_FRONTMATTER,
-        '/test/path/file.md',
-        'test-source',
-        d41Config,
-      );
+      const result = await sut.chunkFile(WITHOUT_FRONTMATTER, '/test/path/file.md', 'test-source', d41Config);
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();

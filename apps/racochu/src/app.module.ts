@@ -12,6 +12,7 @@ import { AgentSessionChunkingStrategy } from './application/strategies/agent-ses
 import { MastraChunkingService } from './application/strategies/mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './application/strategies/obsidian-chunking.strategy';
 import { StrategyRouter } from './application/strategies/strategy-router.service';
+import { VaultChunkingStrategy } from './application/strategies/vault-chunking.strategy';
 
 import { ConfigurationModule } from './infrastructure/config/configuration.module';
 import { LoggerModule } from './infrastructure/logging/logger.module';
@@ -62,6 +63,7 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
     MastraChunkingService,
     AgentSessionChunkingStrategy,
     ObsidianChunkingStrategy,
+    VaultChunkingStrategy,
     StrategyRouter,
 
     // Enhancement pipeline

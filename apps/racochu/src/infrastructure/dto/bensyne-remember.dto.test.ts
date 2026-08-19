@@ -2,8 +2,8 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { aBodyChunk, aContentChunk } from '../../domain/content-chunk.entity.test-utils';
-import unifiedChunkContractV1Fixture from './fixtures/unified-chunk-contract-v1.json';
 import { BensyneRememberDto, MnemosyneRememberPayload } from './bensyne-remember.dto';
+import unifiedChunkContractV1Fixture from './fixtures/unified-chunk-contract-v1.json';
 
 type FixtureChunkProps = Omit<Parameters<typeof aContentChunk>[0], 'id'> & { id: string };
 
@@ -36,7 +36,9 @@ describe('BensyneRememberDto', () => {
       expect(dto).not.toHaveProperty('hash');
       expect(dto.metadata.file_hash).toBe('ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17');
       // Dual-hash wire contract (D13): chunk_hash = sha256 of the exact chunk text
-      expect(dto.metadata.chunk_hash).toBe('aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c');
+      expect(dto.metadata.chunk_hash).toBe(
+        'aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c',
+      );
     });
 
     it('maps legacy flat keys to v1 snake_case keys without top-level dialect leakage', () => {
@@ -302,15 +304,18 @@ describe('BensyneRememberDto', () => {
       ['agent-sessions', 'agent-sessions'],
       ['vault', 'vault'],
       ['unknown', 'unknown'],
-    ])('passes through stamped sourceType %s as source_type %s (D29 4-value axis)', (sourceType, expected) => {
-      const chunk = aContentChunk({
-        metadata: { sourceType },
-      });
+    ])(
+      'passes through stamped sourceType %s as source_type %s (D29 4-value axis)',
+      (sourceType, expected) => {
+        const chunk = aContentChunk({
+          metadata: { sourceType },
+        });
 
-      const dto = BensyneRememberDto.fromChunk(chunk);
+        const dto = BensyneRememberDto.fromChunk(chunk);
 
-      expect(dto.metadata.source_type).toBe(expected);
-    });
+        expect(dto.metadata.source_type).toBe(expected);
+      },
+    );
 
     it('omits source_type when the chunk carries no stamped sourceType (key absent, bensyne degrades)', () => {
       const chunk = aContentChunk({

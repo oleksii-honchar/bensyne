@@ -197,15 +197,10 @@ export async function buildCrossReferenceEdges(
   const targets = new Set<string>();
 
   // --- Pass 1: path-pattern refs ---
-  const uniqueTokens = [...new Set(content.match(XREF_PATH_TOKEN_RE) ?? [])].slice(
-    0,
-    XREF_MAX_TOKENS,
-  );
+  const uniqueTokens = [...new Set(content.match(XREF_PATH_TOKEN_RE) ?? [])].slice(0, XREF_MAX_TOKENS);
   for (const token of uniqueTokens) {
     const expanded = expandTilde(token);
-    const resolved = path.isAbsolute(expanded)
-      ? path.resolve(expanded)
-      : path.resolve(sessionRoot, expanded);
+    const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(sessionRoot, expanded);
 
     if (resolved === normalizedSelf) {
       continue; // self-skip
@@ -355,12 +350,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     // 3b. Build cross-reference edges from in-content refs to archived material (D42 §2.3).
     //     Walks the session tree for *.md files; on fs error degrades to no cross-ref edges.
     const sessionFiles = await this.listSessionFilesSafe(sessionPath);
-    const xrefEdges = await this.buildCrossReferenceEdgesSafe(
-      content,
-      filePath,
-      sessionPath,
-      sessionFiles,
-    );
+    const xrefEdges = await this.buildCrossReferenceEdgesSafe(content, filePath, sessionPath, sessionFiles);
     const allEdges = [...edges, ...xrefEdges];
 
     // 4. Split frontmatter from body

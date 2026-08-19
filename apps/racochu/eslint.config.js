@@ -8,7 +8,16 @@ const eslintConfigBase = require('./eslint.config.base');
 module.exports = tseslint.config(
   ...eslintConfigBase,
   {
-    ignores: ['src/generated/**'],
+    ignores: ['src/generated/**', 'src/e2e/fixtures/golden-query/seed-files/**'],
+  },
+  {
+    files: ['src/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
   },
   {
     files: ['src/**/*.ts'],

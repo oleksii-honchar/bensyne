@@ -23,7 +23,7 @@ export class LlmClientFactory {
     // The provider is also callable: provider(modelId) returns the model.
     // We handle all cases by preferring .chat(), then .chatModel(), then the callable form.
     // Avoid .bind() — the @ai-sdk/openai-v6 provider has Symbol keys that break bind().
-    const prov = provider as typeof provider & { chatModel?: (id: string) => any };
+    const prov = provider as typeof provider & { chatModel?: (id: string) => unknown };
     const model =
       typeof provider.chat === 'function'
         ? provider.chat(config.llmModel)

@@ -8,12 +8,14 @@ import { BaseChunkingStrategy } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
 import { StrategyRouter } from './strategy-router.service';
+import { VaultChunkingStrategy } from './vault-chunking.strategy';
 
 describe('StrategyRouter (D29: source_type → chunker)', () => {
   let router: StrategyRouter;
   let mockAgentSessionStrategy: jest.Mocked<AgentSessionChunkingStrategy>;
   let mockObsidianStrategy: jest.Mocked<ObsidianChunkingStrategy>;
   let mockMastraStrategy: jest.Mocked<MastraChunkingService>;
+  let mockVaultStrategy: jest.Mocked<VaultChunkingStrategy>;
   let mockLogger: ReturnType<typeof aLogger>;
 
   const aSourceConfig = (sourceType: string): WatchSourceConfig =>
@@ -39,12 +41,17 @@ describe('StrategyRouter (D29: source_type → chunker)', () => {
       chunkFile: jest.fn(),
     } as unknown as jest.Mocked<MastraChunkingService>;
 
+    mockVaultStrategy = {
+      chunkFile: jest.fn(),
+    } as unknown as jest.Mocked<VaultChunkingStrategy>;
+
     mockLogger = aLogger();
 
     router = new StrategyRouter(
       mockAgentSessionStrategy,
       mockObsidianStrategy,
       mockMastraStrategy,
+      mockVaultStrategy,
       mockLogger,
     );
   });
@@ -57,12 +64,18 @@ describe('StrategyRouter (D29: source_type → chunker)', () => {
       },
     );
 
-    it.each(['file_system', 'agent_session', 'git', 'database', 'external', 'remote', 'content-aware', 'garbage'])(
-      'resolves legacy/unknown value %s to unknown (never throws)',
-      sourceType => {
-        expect(router.resolveSourceType(sourceType)).toBe(SOURCE_TYPE_UNKNOWN);
-      },
-    );
+    it.each([
+      'file_system',
+      'agent_session',
+      'git',
+      'database',
+      'external',
+      'remote',
+      'content-aware',
+      'garbage',
+    ])('resolves legacy/unknown value %s to unknown (never throws)', sourceType => {
+      expect(router.resolveSourceType(sourceType)).toBe(SOURCE_TYPE_UNKNOWN);
+    });
 
     it('resolves undefined input to unknown (never throws)', () => {
       expect(router.resolveSourceType(undefined)).toBe(SOURCE_TYPE_UNKNOWN);
@@ -82,10 +95,10 @@ describe('StrategyRouter (D29: source_type → chunker)', () => {
       expect(result).toBe(mockAgentSessionStrategy);
     });
 
-    it('dispatches vault to MastraChunkingService (content-aware path, re-keyed)', () => {
+    it('dispatches vault to VaultChunkingStrategy', () => {
       const result = router.selectStrategy(aSourceConfig(SOURCE_TYPES.VAULT));
 
-      expect(result).toBe(mockMastraStrategy);
+      expect(result).toBe(mockVaultStrategy);
     });
 
     it('resolves an unknown source_type to unknown and falls back to MastraChunkingService without throwing', () => {
@@ -103,6 +116,7 @@ describe('StrategyRouter (D29: source_type → chunker)', () => {
         mockAgentSessionStrategy,
         undefined as unknown as ObsidianChunkingStrategy,
         mockMastraStrategy,
+        mockVaultStrategy,
         mockLogger,
       );
 

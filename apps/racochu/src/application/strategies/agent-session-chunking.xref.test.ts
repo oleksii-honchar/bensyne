@@ -388,12 +388,12 @@ describe('buildCrossReferenceEdges — Pass 2 basename (conservative, D42 §2.2)
     void dupA;
     void dupB;
 
-    const edges = await buildCrossReferenceEdges(
-      'The notes.md we discussed',
+    const edges = await buildCrossReferenceEdges('The notes.md we discussed', tree.specMd, tree.sessionRoot, [
+      tree.sessionMd,
       tree.specMd,
-      tree.sessionRoot,
-      [tree.sessionMd, tree.specMd, dupA, dupB],
-    );
+      dupA,
+      dupB,
+    ]);
 
     expect(edges).toEqual([]);
   });

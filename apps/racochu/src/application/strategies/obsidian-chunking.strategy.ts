@@ -76,7 +76,7 @@ function emptyNoteMetadata(): NoteMetadata {
   };
 }
 
-function formatNoteMetadata(metadata: NoteMetadata): Record<string, string> {
+export function formatNoteMetadata(metadata: NoteMetadata): Record<string, string> {
   const result: Record<string, string> = {
     'note.aliases': JSON.stringify(metadata.aliases),
     'note.tags': JSON.stringify(metadata.tags),

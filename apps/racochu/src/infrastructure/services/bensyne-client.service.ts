@@ -5,9 +5,9 @@ import { ContentChunk } from '../../domain/content-chunk.entity';
 import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
 import { ConfigurationService } from '../config/configuration.service';
-import { BensyneRecallResult } from './bensyne-recall-result.type';
 import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
+import { BensyneRecallResult } from './bensyne-recall-result.type';
 
 /**
  * JSON-RPC 2.0 request sent to the MCP server.

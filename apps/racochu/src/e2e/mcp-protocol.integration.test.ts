@@ -286,7 +286,7 @@ async function waitForServerReady(): Promise<void> {
       // If no server was ever started (red-demo mode), keep polling until the
       // deadline so the failure surfaces as "not ready" — connection refused.
       if (serverProcess && (serverProcess.killed || serverProcess.exitCode !== null)) {
-        throw new Error(`bensyne-mcp server exited during startup: ${String(lastError)}`);
+        throw new Error(`bensyne-mcp server exited during startup: ${String(error)}`, { cause: error });
       }
       await new Promise(resolve => setTimeout(resolve, 500));
     }

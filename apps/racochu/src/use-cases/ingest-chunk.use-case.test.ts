@@ -163,10 +163,7 @@ describe('IngestChunkUseCase', () => {
 
   describe('memory IDs exposure', () => {
     it('should return ingested memory IDs in the result', async () => {
-      const chunks = [
-        aContentChunk({ chunkIndex: 0 }),
-        aContentChunk({ chunkIndex: 1 }),
-      ];
+      const chunks = [aContentChunk({ chunkIndex: 0 }), aContentChunk({ chunkIndex: 1 })];
       mockBensyneClientService.remember
         .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-1', status: 'stored' }))
         .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-2', status: 'stored' }));

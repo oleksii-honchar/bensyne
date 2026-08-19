@@ -6,14 +6,15 @@ import { ImportanceScoringService } from '../application/services/importance-sco
 import { TagExtractionService } from '../application/services/tag-extraction.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
-import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { FileEdge } from '../domain/content-chunk.entity';
-import { BensyneRememberDto } from '../infrastructure/dto/bensyne-remember.dto';
+import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { EnhancementConfig, WatchSourceConfig } from '../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
 import { SOURCE_TYPES } from '../infrastructure/config/source-types';
+import { BensyneRememberDto } from '../infrastructure/dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
+import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
 import { ChunkContentUseCase } from './chunk-content.use-case';
 
@@ -333,7 +334,7 @@ describe('ChunkContentUseCase', () => {
 
       expect(result.isKo()).toBe(true);
       expect(result.getErrors()[0].message).toBe('No chunker selected for sourceId="test-source"');
-      expect((result.getErrors()[0] as any).code).toBe('StrategySelectionError');
+      expect((result.getErrors()[0] as ErrorWithDetails).code).toBe('StrategySelectionError');
       expect(mockStrategy.chunkFile).not.toHaveBeenCalled();
     });
 
@@ -349,7 +350,7 @@ describe('ChunkContentUseCase', () => {
 
       expect(result.isKo()).toBe(true);
       expect(result.getErrors()[0].message).toBe('No chunker selected for sourceId="test-source"');
-      expect((result.getErrors()[0] as any).code).toBe('StrategySelectionError');
+      expect((result.getErrors()[0] as ErrorWithDetails).code).toBe('StrategySelectionError');
     });
   });
 
@@ -381,7 +382,11 @@ describe('ChunkContentUseCase', () => {
         filePath: '/sessions/26/08/11/session.md',
         sourceId: 'agent-sessions',
         memoryBank: 'agent-sessions',
-        sourceConfig: { ...defaultSourceConfig, id: 'agent-sessions', sourceType: SOURCE_TYPES.AGENT_SESSIONS },
+        sourceConfig: {
+          ...defaultSourceConfig,
+          id: 'agent-sessions',
+          sourceType: SOURCE_TYPES.AGENT_SESSIONS,
+        },
       });
 
       expect(result.isOk()).toBe(true);

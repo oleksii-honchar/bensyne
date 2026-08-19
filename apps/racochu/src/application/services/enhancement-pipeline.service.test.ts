@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { FILE_ROLES } from '../../domain/content-chunk.entity';
+import { FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
 import { aContentChunk } from '../../domain/content-chunk.entity.test-utils';
 import { DEFAULT_CONFIG } from '../../infrastructure/config/configuration.service';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
@@ -178,18 +178,18 @@ describe('EnhancementPipelineService', () => {
 
     describe('D40 — edge preservation (regression)', () => {
       it('should preserve typed edges (FileEdge[]) across enhancement and still apply importance/tags/memoryBank', async () => {
-        const inputEdges = [
+        const inputEdges: FileEdge[] = [
           {
             target_path: '/vault/linked-note.md',
             relation_type: 'backlink',
             strength: 0.9,
             description: 'wikilink',
           },
-          { target_path: '/vault/companion.md', relation_type: 'sibling' },
+          { target_path: '/vault/companion.md', relation_type: 'sibling', strength: 1 },
         ];
         const chunk = aContentChunk({ edges: inputEdges });
-        // The entity normalizes edges through zod (strength defaults to 1 when
-        // omitted). Assert against the entity's parsed edges, not the raw literal.
+        // The entity normalizes edges through zod. Assert against the entity's
+        // parsed edges, not the raw literal.
         const expectedEdges = chunk.edges;
         expect(expectedEdges).toBeDefined();
 
