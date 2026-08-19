@@ -16,6 +16,7 @@ constructors directly.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -48,6 +49,8 @@ def _raise_on_ko(result, handler_name: str) -> dict:
     msg = f"{handler_name} failed"
     if error:
         msg = f"{handler_name} failed: {error.error_code}"
+        if error.details:
+            msg = f"{msg} — details: {json.dumps(error.details)}"
     raise ValidationError(msg)
 
 

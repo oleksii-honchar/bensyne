@@ -12,7 +12,9 @@ Verify `fetchFile` neighbor-window mode — `center_chunk_index` + `adjacent_chu
 
 ### Pre-Run Clean (STEP 0)
 
-**Why (D41 §2.4):** start from an EMPTY bank so `chunk_index` values are discovered fresh (dense 0-based) — no stale index values left over from earlier runs.
+**Why (D41 §2.4):** start from an EMPTY bank so `chunk_index` values are discovered fresh — no stale index values left over from earlier runs.
+
+> **Non-dense indices:** stored `chunk_index` values start at 0 but are **not guaranteed dense or contiguous** (Mastra may skip/merge sections — observed live: `[0,1,2,4,5,7,8,10,11,12]`). All assertions below use the DYNAMICALLY DISCOVERED values, never positional arithmetic like `N−1`.
 
 ```bash
 # DATA_DIR = bensyne-mcp data dir. scripts/start.sh defaults to
@@ -84,6 +86,7 @@ Wait ≥3s for debounce + chunking + ingestion.
 - Call `fetchFile(file_id, memory_bank="tmp-vault")`
 - Let `N` = number of chunks.
 - Let `c` = `chunk_index` of the chunk whose `text` contains `RB_CENTER_SEC2`.
+- Let `max` = the **maximum stored `chunk_index` value** in this response (indices are non-dense; `max` may be greater than `N−1` — e.g. observed live `N=10, max=12`).
 - **PASS:** `N >= 4`; `c` found; `reconstruction_status == "complete"`.
 
 #### Step 3: 0-based value-match round-trip (neighbor window, adjacent_chunks=1)
@@ -95,17 +98,18 @@ Round-tripping it proves the value-match contract end-to-end on real data:
 - **PASS:**
   - `content == ""`
   - **round-trip:** the returned window contains **exactly the chunk whose `chunk_index` VALUE is `c`** (the one discovered in the whole fetch) — a chunk with `chunk_index == c` whose `text` contains `RB_CENTER_SEC2`
-  - `chunks` has **exactly 3** entries (center not at an edge)
-  - `chunk_index` set == {c−1, c, c+1} and sorted ascending
+  - the window is **positional**: the center chunk sits at window position 1 (middle), with one neighbor on each side
+  - `chunks` has **exactly 3** entries (center not at an edge of the stored list)
+  - the returned `chunk_index` values are sorted ascending; **they are NOT guaranteed to be {c−1, c, c+1} numerically** (non-dense storage) — assert the center VALUE matches `c` and neighbors are the chunks immediately before/after it in the stored order
   - each chunk has non-empty `text`, a `section_header` key (non-empty string), and keys `id`/`file_id`/`start_line`/`end_line`/`metadata`
 
 #### Step 4: Window clamping (0-based values; both edges valid)
 
-- **High edge:** Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=N-1, adjacent_chunks=5)`
-  (N−1 is the highest stored 0-based `chunk_index` value).
-  - **PASS:** no error; `chunks` length == `N` (window clamped to the full file).
+- **High edge:** Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=max, adjacent_chunks=5)`
+  (`max` = maximum stored `chunk_index` VALUE from step 2 — NOT `N−1`, which may not be a stored value under non-dense indexing).
+  - **PASS:** no error; the returned window ends with the chunk whose `chunk_index == max`; `chunks` length == `N` (window clamped to the full file).
 - **Low edge (center=0):** Call `fetchFile(file_id, memory_bank="tmp-vault", center_chunk_index=0, adjacent_chunks=1)`
-  - **PASS:** no error (center=0 is a valid 0-based value); right-side-only clamped window — `chunks` has exactly 2 entries with `chunk_index` set == {0, 1}.
+  - **PASS:** no error (center=0 is a valid stored value); left-clamped window — `chunks` has exactly 2 entries; the first entry has `chunk_index == 0`; the second is the next stored chunk in order (its value is not necessarily 1).
 
 #### Step 5: Error codes (value-matched)
 

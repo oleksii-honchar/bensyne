@@ -34,6 +34,7 @@ Wait ≥3s for debounce + chunking + ingestion.
 
 - Call `listMemoryBanks`
 - **PASS:** banks include `tmp-vault` and `tmp-obsidian` (ids from `apps/racochu/dev.yaml`)
+- **Note:** a bank may first appear in `listMemoryBanks` only after its initial ingest has completed — if a bank is missing, wait ~5s and re-list before failing (verified live 2026-08-19: both banks appeared after their first file was processed).
 
 #### Step 2: Vault bank keyword search
 
