@@ -9,9 +9,9 @@ see_also: [
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",
   "decisions/0043-non-fatal-enrichment-graceful-degradation.decision.md",
   "decisions/0047-disable-enrichment-by-default.decision.md",
-  "concepts/0006-mastra-chunking-strategies.concept.md",
-  "specifications/0002-enrichment-pipeline.spec.md",
-  "memories/0012-enrichment-metadata-not-indexed.memory.md"
+  "concepts/0013-mastra-chunking-strategies.concept.md",
+  "specifications/0004-enrichment-pipeline.spec.md",
+  "memories/0019-enrichment-metadata-not-indexed.memory.md"
 ]
 ---
 

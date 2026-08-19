@@ -7,7 +7,7 @@ updatedAt: "2026-08-09T19:30:00Z"
 tags: [enrichment, search, mnemosyne, metadata, gotcha]
 see_also: [
   "decisions/0047-disable-enrichment-by-default.decision.md",
-  "concepts/0014-llm-enrichment.concept.md"
+  "concepts/0021-llm-enrichment.concept.md"
 ]
 deprecated:
   date: null

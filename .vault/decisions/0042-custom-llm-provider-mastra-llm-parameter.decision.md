@@ -10,8 +10,8 @@ tags: [enrichment, mastra, llm, litellm]
 supersedes: []
 superseded_by: []
 see_also: [
-  "concepts/0014-llm-enrichment.concept.md",
-  "memories/0009-mastra-extract-metadata-basellm-hardcoded.memory.md",
+  "concepts/0021-llm-enrichment.concept.md",
+  "memories/0016-mastra-extract-metadata-basellm-hardcoded.memory.md",
   "decisions/0027-mastra-rag-integration.decision.md"
 ]
 ---

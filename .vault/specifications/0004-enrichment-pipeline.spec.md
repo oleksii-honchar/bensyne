@@ -9,10 +9,10 @@ createdAt: "2026-08-01T07:30:00Z"
 updatedAt: "2026-08-01T07:30:00Z"
 tags: [enrichment, mnemosyne, mastra-rag]
 see_also: [
-  "specifications/0001-enhancement-specification.spec.md",
-  "concepts/0003-enhancement-pipeline.concept.md",
-  "concepts/0006-mastra-chunking-strategies.concept.md",
-  "concepts/0014-llm-enrichment.concept.md",
+  "specifications/0003-enhancement-specification.spec.md",
+  "concepts/0010-enhancement-pipeline.concept.md",
+  "concepts/0013-mastra-chunking-strategies.concept.md",
+  "concepts/0021-llm-enrichment.concept.md",
   "decisions/0022-importance-scoring-algorithm.decision.md",
   "decisions/0023-hybrid-tag-generation.decision.md",
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",

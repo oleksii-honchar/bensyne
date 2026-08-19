@@ -11,7 +11,7 @@ tags: [enhancement, mnemosyne]
 see_also: [
   "decisions/0019-content-aware-enhancement-architecture.decision.md",
   "decisions/0027-mastra-rag-integration.decision.md",
-  "concepts/0003-enhancement-pipeline.concept.md"
+  "concepts/0010-enhancement-pipeline.concept.md"
 ]
 ---
 

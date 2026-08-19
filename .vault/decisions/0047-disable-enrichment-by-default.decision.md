@@ -12,8 +12,8 @@ superseded_by: []
 see_also: [
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",
   "decisions/0043-non-fatal-enrichment-graceful-degradation.decision.md",
-  "concepts/0014-llm-enrichment.concept.md",
-  "memories/0012-enrichment-metadata-not-indexed.memory.md"
+  "concepts/0021-llm-enrichment.concept.md",
+  "memories/0019-enrichment-metadata-not-indexed.memory.md"
 ]
 ---
 

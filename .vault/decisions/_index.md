@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-18"
+updatedAt: "2026-08-19"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0048). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0050). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -66,3 +66,5 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0045-wikilink-extraction-graph-structure]] — Wikilink Extraction for Graph Structure
 - [[0046-document-level-graph-metadata]] — Document-Level Graph Metadata on All Chunks
 - [[0047-disable-enrichment-by-default]] — Disable Enrichment Pipeline by Default
+- [[0049-agent-session-cross-reference-edges]] — Producer-Side Cross-Reference Content Edges for Agent Sessions
+- [[0050-session-md-sibling-companion-edges]] — Session.md Exposes Sibling Companion Edges

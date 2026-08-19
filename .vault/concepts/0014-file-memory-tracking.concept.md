@@ -52,4 +52,4 @@ Without tracking, memories persist indefinitely even after source files are dele
 - `FileTracker.fileHash` — nullable String, SHA-256 hash of file content, indexed for hash lookups
 - `FileTracker.hardwareId` — nullable String, device ID from `native-machine-id`, indexed for audit
 - Populated by `IngestChunkUseCase` → `FileMemoryTrackerService.trackMemory()` → `repository.updateFileTrackerHash()`
-- Enables local dedup checks before calling Mnemosyne (see `concepts/0013-file-hash-deduplication.concept.md`)
+- Enables local dedup checks before calling Mnemosyne (see `concepts/0020-file-hash-deduplication.concept.md`)

@@ -11,7 +11,7 @@ supersedes: []
 superseded_by: []
 see_also: [
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",
-  "concepts/0014-llm-enrichment.concept.md"
+  "concepts/0021-llm-enrichment.concept.md"
 ]
 ---
 
