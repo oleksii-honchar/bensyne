@@ -39,14 +39,16 @@ Agent session files (specs, decisions, plans, etc.) contain frontmatter with ses
 - **`session.md` exposes `sibling` edges** (only `parent_child` is suppressed for the root) —
   session files are conceptually connected (see [[0050-session-md-sibling-companion-edges]])
 
-*Cross-reference content edges* (`buildCrossReferenceEdges`, DEC-0049):
-- Turns in-content `*.md` references into `cross_reference` edges (strength **0.7**; structural
+*Cross-reference content edges* (`buildCrossReferenceEdges`, DEC-0049, amended 2026-08-19):
+- Turns in-content file references into `cross_reference` edges (strength **0.7**; structural
   edges stay **1.0**) — content previously went unscanned, so referenced files never became edges
-- **Pass 1** path-pattern: regex `[\w./~-]+\.md\b` (abs/rel/`~`); **Pass 2** conservative basename
-  (archive/ names, `session.md`, unique-in-tree; collision-skip on ambiguous basenames)
+- **Pass 1** path-pattern: regex `[\w./~-]+\.[A-Za-z][A-Za-z0-9]*\b` — **any letter extension**
+  (abs/rel/`~`); **Pass 2** conservative basename (archive/ names, `session.md`,
+  unique-in-tree; collision-skip on ambiguous basenames)
 - **Cross-session references allowed** (no containment guard) — existence gate (`fs.stat`) is the
   only filter; **no self-edges**, **no dangling** edges (nonexistent refs dropped, self-heal on
-  re-ingest); bounded walk (maxDepth 4, maxFiles 200); on error → `[]`
+  re-ingest); bounded `walkAllFiles` (maxDepth 4, maxFiles 200) collects **all regular files**;
+  on error → `[]` (see [0057-cross-file-traversal-any-file-targets](../decisions/0057-cross-file-traversal-any-file-targets.decision.md))
 
 **Session metadata format (verified in `src/infrastructure/services/session-metadata.service.ts`):**
 

@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-18"
+updatedAt: "2026-08-19"
 tags: []
 ---
 
@@ -41,3 +41,4 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0019-session-metadata-service]] — Session Metadata Service
 - [[0021-llm-enrichment]] — LLM Enrichment
 - [[0023-materialization]] — Materialization
+- [[0024-vault-note-chunking]] — Vault Note Chunking

@@ -5,7 +5,7 @@ title: "Obsidian Note Chunking"
 createdAt: "2026-08-06T12:00:00Z"
 updatedAt: "2026-08-08T13:55:00Z"
 tags: [chunking, obsidian, metadata]
-see_also: [concepts/0016-chunking-strategy-pattern.concept.md, decisions/0035-obsidian-note-chunking-strategy.decision.md, decisions/0044-generic-frontmatter-preservation.decision.md, decisions/0045-wikilink-extraction-graph-structure.decision.md]
+see_also: [concepts/0016-chunking-strategy-pattern.concept.md, concepts/0024-vault-note-chunking.concept.md, decisions/0035-obsidian-note-chunking-strategy.decision.md, decisions/0044-generic-frontmatter-preservation.decision.md, decisions/0045-wikilink-extraction-graph-structure.decision.md, decisions/0058-obsidian-wikilink-edge-gating.decision.md]
 ---
 
 # Concept: Obsidian Note Chunking
@@ -66,9 +66,10 @@ Obsidian notes carry rich metadata in frontmatter that improves retrieval qualit
 - Dedup preserving first-occurrence order; no cap on count
 - Attached to all chunks regardless of frontmatter presence (body-derived)
 
-**Key difference from agent sessions:**
-- Obsidian: metadata comes from same-file frontmatter; no parent file lookup; tags are merged into chunk tags
+**Key differences from other strategies:**
+- Obsidian: metadata comes from same-file frontmatter; no parent file lookup; tags are merged into chunk tags; wikilinks are extracted to metadata (no graph edges)
 - Agent sessions: metadata comes from parent `session.md`; no tag merging; metadata is session-scoped
+- Vault: frontmatter metadata + wikilink **graph edges** with a resolution ladder (see [0024-vault-note-chunking](0024-vault-note-chunking.concept.md))
 
 **Config example:**
 

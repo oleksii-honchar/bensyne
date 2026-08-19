@@ -55,6 +55,9 @@ function createVaultFixture(): VaultFixture {
   fsSync.writeFileSync(path.join(root, 'decisions', '0002-beta.decision.md'), '# B\n');
   fsSync.mkdirSync(path.join(root, 'decisions', 'archive'), { recursive: true });
   fsSync.writeFileSync(path.join(root, 'decisions', 'archive', '0003-old.decision.md'), '# Old\n');
+  // Non-md attachment (path-form + bare resolution; spec §3.2 ADR-V4/T1 amendment)
+  fsSync.mkdirSync(path.join(root, 'assets'), { recursive: true });
+  fsSync.writeFileSync(path.join(root, 'assets', 'diagram.png'), 'PNGDATA');
   return {
     root,
     cleanup: () => fsSync.rmSync(root, { recursive: true, force: true }),
@@ -248,6 +251,25 @@ describe('buildSeeAlsoEdges', () => {
     expect(edges[0].target_path).toBe(path.join(root, 'concepts', '0002-x.concept.md'));
   });
 
+  it('resolves see_also to a non-md existing file as-is (recommendation edge, any type)', async () => {
+    // Regression guard: see_also already resolves as-is first → non-md targets work
+    const record = parseFrontmatterRecord('see_also: assets/diagram.png');
+    const edges = await buildSeeAlsoEdges(
+      record,
+      root,
+      path.join(root, 'decisions', '0001-alpha.decision.md'),
+    );
+
+    expect(edges).toEqual([
+      {
+        target_path: path.join(root, 'assets', 'diagram.png'),
+        relation_type: 'recommendation',
+        strength: 1,
+        description: expect.stringContaining('see_also'),
+      },
+    ]);
+  });
+
   it('drops nonexistent ghost targets', async () => {
     const record = parseFrontmatterRecord('see_also: concepts/ghost.concept.md');
     const edges = await buildSeeAlsoEdges(
@@ -428,6 +450,93 @@ describe('resolveWikilinkTarget', () => {
     );
     expect(resolved).toBe(path.join(root, 'concepts', '0001-x.concept.md'));
     expect(fsp.readdir).toHaveBeenCalled();
+  });
+
+  // --- spec §3.2 ADR-V4/T1 amendment: notes-first any-file ladder ---
+
+  it('resolves path-form with extension as-is (assets/diagram.png → not .png.md)', async () => {
+    const resolved = await resolveWikilinkTarget(
+      'assets/diagram.png',
+      path.join(root, 'RB_PLAIN.md'),
+      root,
+      path.join(root, 'RB_PLAIN.md'),
+    );
+    // Fixes the toMd() bug: [[assets/diagram.png]] must NOT become assets/diagram.png.md
+    expect(resolved).toBe(path.join(root, 'assets', 'diagram.png'));
+  });
+
+  it('resolves bare target with extension to root-level as-is file (2c)', async () => {
+    // Root-level diagram.png exists; [[diagram.png]] (bare, no /) resolves via root as-is
+    fsSync.writeFileSync(path.join(root, 'diagram.png'), 'PNGDATA');
+    const resolved = await resolveWikilinkTarget(
+      'diagram.png',
+      path.join(root, 'RB_PLAIN.md'),
+      root,
+      path.join(root, 'RB_PLAIN.md'),
+    );
+    expect(resolved).toBe(path.join(root, 'diagram.png'));
+  });
+
+  it('resolves bare target to root-level extensionless file as-is (2c)', async () => {
+    // Only an extensionless Makefile exists (no Makefile.md); [[Makefile]] resolves via root as-is
+    fsSync.writeFileSync(path.join(root, 'Makefile'), 'all:\n\techo build\n');
+    const resolved = await resolveWikilinkTarget(
+      'Makefile',
+      path.join(root, 'RB_PLAIN.md'),
+      root,
+      path.join(root, 'RB_PLAIN.md'),
+    );
+    expect(resolved).toBe(path.join(root, 'Makefile'));
+  });
+
+  it('resolves bare target to same-folder extensionless file as-is (2d)', async () => {
+    // Extensionless file in the same folder as the source; resolved via same-folder as-is
+    fsSync.writeFileSync(path.join(root, 'decisions', 'config'), 'cfg\n');
+    const srcPath = path.join(root, 'decisions', '0001-alpha.decision.md');
+    const resolved = await resolveWikilinkTarget('config', srcPath, root, srcPath);
+    expect(resolved).toBe(path.join(root, 'decisions', 'config'));
+  });
+
+  it('resolves extensionless same-name file via the all-files walk (2e)', async () => {
+    // Extensionless file nested in a subfolder (misses a–d) → found by the lazy all-files walk
+    fsSync.mkdirSync(path.join(root, 'tools'), { recursive: true });
+    fsSync.writeFileSync(path.join(root, 'tools', 'runner'), 'bin\n');
+    const resolved = await resolveWikilinkTarget(
+      'runner',
+      path.join(root, 'RB_PLAIN.md'),
+      root,
+      path.join(root, 'RB_PLAIN.md'),
+    );
+    expect(resolved).toBe(path.join(root, 'tools', 'runner'));
+  });
+
+  it('resolves same-name non-md file via the all-files walk (2e)', async () => {
+    // A non-md attachment nested in a subfolder whose stem matches target → found by walk.
+    // Uses a distinct stem to avoid the shared fixture's assets/diagram.png.
+    fsSync.mkdirSync(path.join(root, 'nested'), { recursive: true });
+    fsSync.writeFileSync(path.join(root, 'nested', 'chart.png'), 'PNGDATA');
+    // a–d all miss (no root/nested chart.md, no root/nested chart as-is) → walk finds it
+    const resolved = await resolveWikilinkTarget(
+      'chart',
+      path.join(root, 'RB_PLAIN.md'),
+      root,
+      path.join(root, 'RB_PLAIN.md'),
+    );
+    expect(resolved).toBe(path.join(root, 'nested', 'chart.png'));
+  });
+
+  it('drops ambiguous bare targets with multiple non-md matches (2e)', async () => {
+    // Isolated tmp dir: [[diagram]] with BOTH diagram.png and diagram.jpg → ambiguous → drop
+    const isolatedRoot = fsSync.mkdtempSync(path.join(os.tmpdir(), 'vault-ambig-test-'));
+    try {
+      fsSync.writeFileSync(path.join(isolatedRoot, 'diagram.png'), 'PNG');
+      fsSync.writeFileSync(path.join(isolatedRoot, 'diagram.jpg'), 'JPG');
+      const srcPath = path.join(isolatedRoot, 'note.md');
+      const resolved = await resolveWikilinkTarget('diagram', srcPath, isolatedRoot, srcPath);
+      expect(resolved).toBeUndefined();
+    } finally {
+      fsSync.rmSync(isolatedRoot, { recursive: true, force: true });
+    }
   });
 });
 

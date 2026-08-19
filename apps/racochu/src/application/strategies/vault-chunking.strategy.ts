@@ -173,14 +173,25 @@ export async function buildSeeAlsoEdges(
 
 /**
  * Resolves a wikilink target to an absolute path using the vault-specific
- * resolution ladder (spec §3.2):
- * 1. Path form (`/` in target): `resolve(vaultRoot, target + '.md')`.
- * 2. Bare form, first existing wins:
- *    a. `resolve(vaultRoot, target + '.md')` (root-level node)
- *    b. `resolve(dirname(filePath), target + '.md')` (same-folder node)
- *    c. Vault-wide stem match via lazy bounded walk (maxDepth 5, maxFiles 500):
- *       stem equals target OR starts with `target + '.'` (typed nodes).
- *       Exactly 1 match → use; 0 or >1 (ambiguous) → undefined.
+ * resolution ladder (spec §3.2, amended ADR-T1 notes-first any-file):
+ *
+ * 1. Path form (`/` in target) — terminal:
+ *    - as-is `resolve(vaultRoot, target)` when target has an extension
+ *      (`path.extname !== ''`, e.g. `.png`/`.json`/`.txt`) — fixes the toMd bug
+ *    - else the prior `resolve(vaultRoot, target + '.md')` join
+ *    - stat-gated; first existing candidate wins; never falls through to the
+ *      bare ladder.
+ *
+ * 2. Bare form (no `/`) — strict ladder a→b→c→d→e, first existing wins:
+ *    a. `resolve(vaultRoot, target + '.md')` (root-level note, UNCHANGED)
+ *    b. `resolve(dirname(filePath), target + '.md')` (same-folder note, UNCHANGED)
+ *    c. `resolve(vaultRoot, target)` as-is (NEW: explicit-ext & extensionless)
+ *    d. `resolve(dirname(filePath), target)` as-is (NEW)
+ *    e. Vault-wide walk over ALL files (lazy — only when a–d miss), bounded
+ *       maxDepth 5 / maxFiles 500 counting all files; match: basename === target
+ *       OR stem === target OR stem startsWith `target + '.'`; exactly 1 match →
+ *       use; 0 or >1 (ambiguous) → undefined.
+ *
  * 3. Every candidate is existence-gated; self-references and fs errors → undefined.
  */
 export async function resolveWikilinkTarget(
@@ -190,28 +201,49 @@ export async function resolveWikilinkTarget(
   selfPath: string,
 ): Promise<string | undefined> {
   try {
-    // 1. Path form
+    // 1. Path form (terminal)
     if (target.includes('/')) {
-      const candidate = path.resolve(vaultRoot, toMd(target));
-      return await pickExisting(candidate, selfPath);
+      if (path.extname(target) !== '') {
+        const asIs = path.resolve(vaultRoot, target);
+        const asIsHit = await pickExisting(asIs, selfPath);
+        if (asIsHit !== undefined) {
+          return asIsHit;
+        }
+      }
+      const mdCandidate = path.resolve(vaultRoot, toMd(target));
+      return await pickExisting(mdCandidate, selfPath);
     }
 
-    // 2a. Root-level node
+    // 2a. Root-level node (UNCHANGED)
     const rootCandidate = path.resolve(vaultRoot, toMd(target));
     const rootHit = await pickExisting(rootCandidate, selfPath);
     if (rootHit !== undefined) {
       return rootHit;
     }
 
-    // 2b. Same-folder node
+    // 2b. Same-folder node (UNCHANGED)
     const sameFolderCandidate = path.resolve(path.dirname(filePath), toMd(target));
     const sameFolderHit = await pickExisting(sameFolderCandidate, selfPath);
     if (sameFolderHit !== undefined) {
       return sameFolderHit;
     }
 
-    // 2c. Vault-wide stem match (lazy — only reached when 2a/2b miss)
-    const matches = await findStemMatches(target, vaultRoot, selfPath);
+    // 2c. Root-level as-is (NEW)
+    const rootAsIsCandidate = path.resolve(vaultRoot, target);
+    const rootAsIsHit = await pickExisting(rootAsIsCandidate, selfPath);
+    if (rootAsIsHit !== undefined) {
+      return rootAsIsHit;
+    }
+
+    // 2d. Same-folder as-is (NEW)
+    const sameFolderAsIsCandidate = path.resolve(path.dirname(filePath), target);
+    const sameFolderAsIsHit = await pickExisting(sameFolderAsIsCandidate, selfPath);
+    if (sameFolderAsIsHit !== undefined) {
+      return sameFolderAsIsHit;
+    }
+
+    // 2e. Vault-wide all-files match (lazy — only reached when a–d miss)
+    const matches = await findFileMatches(target, vaultRoot, selfPath);
     return matches.length === 1 ? matches[0] : undefined;
   } catch {
     return undefined;
@@ -457,10 +489,31 @@ async function pickExisting(candidate: string, selfPath: string): Promise<string
   return candidate;
 }
 
-async function findStemMatches(target: string, vaultRoot: string, selfPath: string): Promise<string[]> {
+/**
+ * Computes the stem of a basename: the basename with its last extension removed.
+ * - `diagram.png` → `diagram`
+ * - `0045-x.decision.md` → `0045-x.decision`
+ * - no dot (or leading dot) → unchanged (e.g. `Makefile`, `.env`)
+ */
+function stemOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) {
+    return name;
+  }
+  return name.slice(0, dot);
+}
+
+/**
+ * Vault-wide bounded walk over ALL files (amended ADR-V4/T1):
+ * - maxDepth 5 / maxFiles 500, counting ALL regular files visited
+ * - match rule: basename === target OR stem(basename) === target OR
+ *   stem(basename).startsWith(target + '.') (typed-node rule)
+ * - self-path excluded; early-exit at 2 matches (ambiguous)
+ */
+async function findFileMatches(target: string, vaultRoot: string, selfPath: string): Promise<string[]> {
   const matches: string[] = [];
   const typedPrefix = `${target}.`;
-  let visitedMdFiles = 0;
+  let visitedFiles = 0;
   const queue: { dir: string; depth: number }[] = [{ dir: vaultRoot, depth: 0 }];
 
   while (queue.length > 0 && matches.length < 2) {
@@ -481,15 +534,18 @@ async function findStemMatches(target: string, vaultRoot: string, selfPath: stri
         }
         continue;
       }
-      if (!entry.isFile() || !entry.name.endsWith('.md')) {
+      if (!entry.isFile()) {
         continue;
       }
-      visitedMdFiles += 1;
-      if (visitedMdFiles > MAX_WALK_FILES) {
+      visitedFiles += 1;
+      if (visitedFiles > MAX_WALK_FILES) {
         return matches;
       }
-      const stem = entry.name.slice(0, -3);
-      if ((stem === target || stem.startsWith(typedPrefix)) && fullPath !== selfPath) {
+      const stem = stemOf(entry.name);
+      if (
+        (entry.name === target || stem === target || stem.startsWith(typedPrefix)) &&
+        fullPath !== selfPath
+      ) {
         matches.push(fullPath);
       }
     }

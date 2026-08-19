@@ -5,11 +5,11 @@ system: racochu
 title: "Producer-Side Cross-Reference Content Edges for Agent Sessions"
 status: accepted
 createdAt: "2026-08-19T13:11:20Z"
-updatedAt: "2026-08-19T13:11:20Z"
-tags: [agent-sessions, cross-reference, edges, chunking, graph]
+updatedAt: "2026-08-19T18:44:41Z"
+tags: [agent-sessions, cross-reference, edges, chunking, graph, cross-file]
 supersedes: []
 superseded_by: []
-see_also: [concepts/0017-agent-session-chunking.concept.md, concepts/0006-file-chunk-relation.concept.md, decisions/0045-wikilink-extraction-graph-structure.decision.md, decisions/0050-session-md-sibling-companion-edges.decision.md]
+see_also: [concepts/0017-agent-session-chunking.concept.md, concepts/0006-file-chunk-relation.concept.md, decisions/0045-wikilink-extraction-graph-structure.decision.md, decisions/0050-session-md-sibling-companion-edges.decision.md, decisions/0057-cross-file-traversal-any-file-targets.decision.md]
 ---
 
 # DEC-0049: Producer-Side Cross-Reference Content Edges for Agent Sessions
@@ -34,11 +34,16 @@ that turns in-content `*.md` references into typed `cross_reference` file edges.
 `derive_file_id` untouched ⇒ no id churn). **No bensyne changes.**
 
 **Detection — two passes, deduped:**
-- **Pass 1 (path-pattern, primary):** regex `[\w./~-]+\.md\b`; expand `~`; resolve
-  (abs → as-is, rel → vs session root). **No containment guard** — cross-session refs allowed.
-  Existence gate: emit only if the target is in the session tree **or** `fs.stat` confirms a real file.
+- **Pass 1 (path-pattern, primary):** regex `[\w./~-]+\.[A-Za-z][A-Za-z0-9]*\b` — **any letter
+  extension** (amendment 2026-08-19, user ruling: any in-bank file reference is traversable);
+  expand `~`; resolve (abs → as-is, rel → vs session root). **No containment guard** —
+  cross-session refs allowed. Prose false positives that do match (`e.g`, domain names) are
+  absorbed by the existence gate. Existence gate: emit only if the target is in the session
+  tree **or** `fs.stat` confirms a real file.
 - **Pass 2 (basename, conservative):** distinctive basenames only (under `archive/`, or `session.md`,
   or unique-in-tree); standalone-token match; **collision-skip** on ambiguous basenames.
+  Runs on the **all-files** pool — unique extensionless/non-md files (e.g. `Makefile`,
+  `report.csv`) become reachable.
 
 **Edge contract (ratified in D42):**
 - `relation_type = cross_reference` (existing vocabulary, both apps)
@@ -47,7 +52,9 @@ that turns in-content `*.md` references into typed `cross_reference` file edges.
 - **Cross-session references allowed** — the existence gate is the only filter (user ruling 2026-08-19)
 - **No dangling** edges (nonexistent refs dropped; self-heal on re-ingest)
 - **No self-edges**
-- Bounded walk (maxDepth 4, maxFiles 200); on any error → `[]` (chunking always succeeds)
+- Bounded walk `walkAllFiles` (maxDepth 4, maxFiles 200) collects **all regular files**
+  (was `*.md`-only; bounds now count all files); exported pool accessor
+  `listSessionFiles` (was `listSessionMdFiles`); on any error → `[]` (chunking always succeeds)
 
 ## Alternatives Considered
 

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as fsp from 'fs/promises';
 import * as yaml from 'js-yaml';
 import * as path from 'path';
 import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
@@ -97,23 +98,69 @@ export function formatNoteMetadata(metadata: NoteMetadata): Record<string, strin
 
 /**
  * Resolves deduplicated wikilink targets to backlink edges against the watch-source root.
- * - `[[Note]]` → `<root>/Note.md`
+ * Existence-gated (spec §3.3 / ADR-T4 amendment), root-anchored flat protocol preserved:
+ * - explicit-extension target (`[[diagram.png]]`) → literal `<root>/diagram.png`;
+ *   emitted only when the file exists — missing explicit files are dropped
+ *   (NO phantom `*.ext.md` stubs).
+ * - extensionless target (`[[Note]]`) → `<root>/Note.md`; emitted when the note
+ *   exists, otherwise a D4 best-effort stub edge to `<root>/Note.md`
+ *   (forward note refs still stub — notes-only stub policy).
  * - `[[Note|alias]]` / `[[Note#heading]]` → target before `|`, `#heading` stripped
- *   (already normalized by extractWikilinks)
+ *   (already normalized by extractWikilinks).
  * - `[[sub/Note]]` → `<root>/sub/Note.md`
- * Unresolvable targets still yield a best-effort edge (bensyne stub policy D4).
+ * - self-references (`[[Self]]` in `Self.md`) are skipped (vault/agent-sessions parity).
+ *
+ * `sourceNoteName` (for descriptions) is derived from `filePath` as today.
  */
-export function buildWikilinkEdges(
+export async function buildWikilinkEdges(
   wikilinks: string[],
   vaultRoot: string,
-  sourceNoteName: string,
-): FileEdge[] {
-  return wikilinks.map(target => ({
-    target_path: path.join(vaultRoot, `${target}.md`),
+  filePath: string,
+): Promise<FileEdge[]> {
+  const sourceNoteName = path.basename(filePath).replace(/\.md$/i, '');
+  const selfPath = path.resolve(filePath);
+  const edges: FileEdge[] = [];
+
+  for (const target of wikilinks) {
+    const hasExt = path.extname(target) !== '';
+
+    if (hasExt) {
+      // Explicit file target: existence-gated, no stub fallback
+      const candidate = path.resolve(vaultRoot, target);
+      if (!(await isFile(candidate)) || candidate === selfPath) {
+        continue;
+      }
+      edges.push(toBacklinkEdge(candidate, target, sourceNoteName));
+      continue;
+    }
+
+    // Note-protocol target: root-joined .md, D4 stub when missing
+    const noteCandidate = path.resolve(vaultRoot, `${target}.md`);
+    if (noteCandidate === selfPath) {
+      continue;
+    }
+    edges.push(toBacklinkEdge(noteCandidate, target, sourceNoteName));
+  }
+
+  return edges;
+}
+
+function toBacklinkEdge(targetPath: string, target: string, sourceNoteName: string): FileEdge {
+  return {
+    target_path: targetPath,
     relation_type: 'backlink',
     strength: 1,
     description: `wikilink from ${sourceNoteName} to ${target}`,
-  }));
+  };
+}
+
+async function isFile(candidate: string): Promise<boolean> {
+  try {
+    const stats = await fsp.stat(candidate);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -143,9 +190,8 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     // 2. Extract wikilinks from body (body-derived, independent of frontmatter)
     const wikilinks = extractWikilinks(body);
 
-    // 3. Resolve wikilinks to backlink edges against the watch-source root
-    const sourceNoteName = path.basename(filePath).replace(/\.md$/i, '');
-    const edges = buildWikilinkEdges(wikilinks, path.resolve(sourceConfig.path), sourceNoteName);
+    // 3. Resolve wikilinks to existence-gated backlink edges against the watch-source root (ADR-T4)
+    const edges = await buildWikilinkEdges(wikilinks, path.resolve(sourceConfig.path), filePath);
 
     // 4. Extract note metadata if frontmatter exists
     const noteMetadata = frontmatter ? extractNoteMetadata(frontmatter) : null;

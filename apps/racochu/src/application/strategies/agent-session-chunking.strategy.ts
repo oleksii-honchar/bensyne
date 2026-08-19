@@ -124,7 +124,8 @@ function buildCompanionEdges(filePath: string, sessionRoot: string, companions: 
 const XREF_MAX_DEPTH = 4;
 const XREF_MAX_FILES = 200;
 const XREF_MAX_TOKENS = 200;
-const XREF_PATH_TOKEN_RE = /[\w./~-]+\.md\b/g;
+// spec: cross-file traversal amendment (ADR-T2) — any letter extension, still required.
+const XREF_PATH_TOKEN_RE = /[\w./~-]+\.[A-Za-z][A-Za-z0-9]*\b/g;
 
 /** Expands a leading `~` / `~/` to the OS home directory. */
 export function expandTilde(token: string): string {
@@ -137,8 +138,12 @@ export function expandTilde(token: string): string {
   return token;
 }
 
-/** Recursively collects *.md absolute paths under dir, bounded by maxDepth/maxFiles. */
-async function walkMdFiles(dir: string, depth: number, files: string[]): Promise<void> {
+// spec: cross-file traversal amendment (ADR-T2) — collects ALL regular files (any extension).
+/**
+ * Recursively collects ALL regular file absolute paths under dir, bounded by
+ * maxDepth/maxFiles (the count applies to every file, not just .md).
+ */
+async function walkAllFiles(dir: string, depth: number, files: string[]): Promise<void> {
   if (depth > XREF_MAX_DEPTH || files.length >= XREF_MAX_FILES) {
     return;
   }
@@ -149,21 +154,22 @@ async function walkMdFiles(dir: string, depth: number, files: string[]): Promise
     }
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      await walkMdFiles(fullPath, depth + 1, files);
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      await walkAllFiles(fullPath, depth + 1, files);
+    } else if (entry.isFile()) {
       files.push(fullPath);
     }
   }
 }
 
 /**
- * Lists all *.md absolute paths under sessionRoot (recursive, bounded:
- * maxDepth 4, maxFiles 200). On any fs error returns [] (never throws).
+ * Lists all regular file absolute paths under sessionRoot (recursive, bounded:
+ * maxDepth 4, maxFiles 200 — the count applies to ALL files now). On any fs error
+ * returns [] (never throws).
  */
-export async function listSessionMdFiles(sessionRoot: string): Promise<string[]> {
+export async function listSessionFiles(sessionRoot: string): Promise<string[]> {
   try {
     const files: string[] = [];
-    await walkMdFiles(sessionRoot, 1, files);
+    await walkAllFiles(sessionRoot, 1, files);
     return files;
   } catch {
     return [];
@@ -348,7 +354,8 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     const edges = buildCompanionEdges(filePath, sessionPath, companions);
 
     // 3b. Build cross-reference edges from in-content refs to archived material (D42 §2.3).
-    //     Walks the session tree for *.md files; on fs error degrades to no cross-ref edges.
+    //     Walks the session tree for all files (any extension); on fs error degrades to no
+    //     cross-ref edges.
     const sessionFiles = await this.listSessionFilesSafe(sessionPath);
     const xrefEdges = await this.buildCrossReferenceEdgesSafe(content, filePath, sessionPath, sessionFiles);
     const allEdges = [...edges, ...xrefEdges];
@@ -425,7 +432,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
 
   private async listSessionFilesSafe(sessionRoot: string): Promise<string[]> {
     try {
-      return await listSessionMdFiles(sessionRoot);
+      return await listSessionFiles(sessionRoot);
     } catch (error) {
       this.logger.debug('Failed to list session files for cross-reference walk', {
         sessionRoot,

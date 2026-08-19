@@ -8,7 +8,7 @@ tags: []
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0050). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0058). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -68,3 +68,11 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0047-disable-enrichment-by-default]] — Disable Enrichment Pipeline by Default
 - [[0049-agent-session-cross-reference-edges]] — Producer-Side Cross-Reference Content Edges for Agent Sessions
 - [[0050-session-md-sibling-companion-edges]] — Session.md Exposes Sibling Companion Edges
+- [[0051-vault-chunking-strategy]] — Vault Chunking Strategy — First-Class Obsidian Vault Source
+- [[0052-vault-index-moc-skip]] — Vault Index/MOC Notes Skipped from Chunking
+- [[0053-vault-edge-vocabulary-mapping]] — Vault Edge Vocabulary Mapping — Wikilinks, Embeds, Mentions, Tags
+- [[0054-vault-wikilink-resolution-ladder]] — Vault Wikilink 6-Level Resolution Ladder
+- [[0055-vault-wikilink-body-cleaning]] — Vault Wikilink Body Cleaning Before Chunking
+- [[0056-vault-note-metadata-reuse]] — Vault Note Metadata Reuse — YAML Frontmatter Parsed Once
+- [[0057-cross-file-traversal-any-file-targets]] — Cross-File Traversal Targets Any In-Bank File
+- [[0058-obsidian-wikilink-edge-gating]] — Obsidian Wikilink Edge Gating — hasExt-Based Source Detection

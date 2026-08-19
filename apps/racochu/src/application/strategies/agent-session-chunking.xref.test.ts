@@ -18,7 +18,7 @@ import {
   AgentSessionChunkingStrategy,
   buildCrossReferenceEdges,
   expandTilde,
-  listSessionMdFiles,
+  listSessionFiles,
 } from './agent-session-chunking.strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
@@ -85,24 +85,27 @@ describe('expandTilde (agent-session cross-reference, D42 §2.2)', () => {
   });
 });
 
-describe('listSessionMdFiles (agent-session cross-reference, D42 §2.2)', () => {
+describe('listSessionFiles (agent-session cross-reference, D42 §2.2)', () => {
   let base: string;
 
   beforeEach(() => {
     base = fsSync.mkdtempSync(path.join(os.tmpdir(), 'xref-walk-'));
   });
 
-  it('collects *.md files recursively', async () => {
+  it('collects ALL regular files recursively (incl. non-md)', async () => {
     writeFile(base, 'session.md', 'x');
     writeFile(base, 'a/b/c/nested.md', 'x');
+    // spec: cross-file traversal amendment (ADR-T2) — non-md files are now part of the pool
     writeFile(base, 'a/readme.txt', 'not md');
     writeFile(base, 'notes.md', 'x');
 
-    const files = await listSessionMdFiles(base);
+    const files = await listSessionFiles(base);
 
     const expected = [
       path.join(base, 'session.md'),
       path.join(base, 'a', 'b', 'c', 'nested.md'),
+      // spec: cross-file traversal amendment (ADR-T2) — readme.txt is now included
+      path.join(base, 'a', 'readme.txt'),
       path.join(base, 'notes.md'),
     ].sort();
     expect([...files].sort()).toEqual(expected);
@@ -112,24 +115,26 @@ describe('listSessionMdFiles (agent-session cross-reference, D42 §2.2)', () => 
     writeFile(base, 'a/b/c/deep4.md', 'x'); // depth 4 — included
     writeFile(base, 'a/b/c/d/deep5.md', 'x'); // depth 5 — excluded
 
-    const files = await listSessionMdFiles(base);
+    const files = await listSessionFiles(base);
 
     expect(files).toContain(path.join(base, 'a', 'b', 'c', 'deep4.md'));
     expect(files).not.toContain(path.join(base, 'a', 'b', 'c', 'd', 'deep5.md'));
   });
 
-  it('respects the file-count bound (maxFiles 200)', async () => {
+  it('respects the file-count bound (maxFiles 200) across ALL files', async () => {
     for (let i = 0; i < 205; i++) {
-      writeFile(base, `f${i}.md`, 'x');
+      // Mix of extensions: the bound must count every regular file, not just .md.
+      const ext = i % 3 === 0 ? 'txt' : i % 3 === 1 ? 'json' : 'md';
+      writeFile(base, `f${i}.${ext}`, 'x');
     }
 
-    const files = await listSessionMdFiles(base);
+    const files = await listSessionFiles(base);
 
     expect(files.length).toBe(200);
   });
 
   it('returns [] on fs error (nonexistent root)', async () => {
-    const files = await listSessionMdFiles(path.join(base, 'does-not-exist'));
+    const files = await listSessionFiles(path.join(base, 'does-not-exist'));
     expect(files).toEqual([]);
   });
 
@@ -142,7 +147,7 @@ describe('listSessionMdFiles (agent-session cross-reference, D42 §2.2)', () => 
     fsSync.chmodSync(blockedDir, 0o000);
 
     try {
-      const files = await listSessionMdFiles(base);
+      const files = await listSessionFiles(base);
       expect(files).toEqual([]);
     } finally {
       fsSync.chmodSync(blockedDir, 0o755);
@@ -310,6 +315,67 @@ describe('buildCrossReferenceEdges — Pass 1 path-pattern (D42 §2.2)', () => {
     expect(targets).toEqual([tree.contractMd, tree.specMd].sort());
     expect(edges.every(e => e.relation_type === 'cross_reference' && e.strength === 0.7)).toBe(true);
   });
+
+  // spec: cross-file traversal amendment (ADR-T2) — any letter-extension token is now matched.
+  it('resolves a non-md .txt ref via the all-files pool — full, relative, and tilde forms', async () => {
+    const notesTxt = writeFile(tree.sessionRoot, 'materials/notes.txt', 'a text note');
+    const pool = [notesTxt];
+
+    // Full (absolute) form — resolved as-is, matched from the pool.
+    const edgesAbs = await buildCrossReferenceEdges(
+      `Read ${notesTxt} for context`,
+      tree.sessionMd,
+      tree.sessionRoot,
+      pool,
+    );
+    expect(edgesAbs).toHaveLength(1);
+    expect(edgesAbs[0]).toEqual({
+      target_path: notesTxt,
+      relation_type: 'cross_reference',
+      strength: 0.7,
+      description: 'content reference to materials/notes.txt',
+    });
+
+    // Relative form — resolved against the session root.
+    const edgesRel = await buildCrossReferenceEdges(
+      'Read materials/notes.txt for context',
+      tree.sessionMd,
+      tree.sessionRoot,
+      pool,
+    );
+    expect(edgesRel).toHaveLength(1);
+    expect(edgesRel[0].target_path).toBe(notesTxt);
+    expect(edgesRel[0].relation_type).toBe('cross_reference');
+    expect(edgesRel[0].strength).toBe(0.7);
+
+    // Tilde form — ~/ expands to the (mocked) session root.
+    const homedirMock = os.homedir as unknown as jest.Mock;
+    homedirMock.mockReturnValue(tree.sessionRoot);
+    try {
+      const edgesTilde = await buildCrossReferenceEdges(
+        'Read ~/materials/notes.txt for context',
+        tree.sessionMd,
+        tree.sessionRoot,
+        pool,
+      );
+      expect(edgesTilde).toHaveLength(1);
+      expect(edgesTilde[0].target_path).toBe(notesTxt);
+    } finally {
+      homedirMock.mockRestore();
+    }
+  });
+
+  // spec: cross-file traversal amendment (ADR-T2) — non-md tokens are still existence-gated.
+  it('emits no edge for a missing non-md target (existence gate)', async () => {
+    const edges = await buildCrossReferenceEdges(
+      'Ref materials/missing.txt and other/absent.json',
+      tree.sessionMd,
+      tree.sessionRoot,
+      [],
+    );
+
+    expect(edges).toEqual([]);
+  });
 });
 
 describe('buildCrossReferenceEdges — Pass 2 basename (conservative, D42 §2.2)', () => {
@@ -396,6 +462,40 @@ describe('buildCrossReferenceEdges — Pass 2 basename (conservative, D42 §2.2)
     ]);
 
     expect(edges).toEqual([]);
+  });
+
+  // spec: cross-file traversal amendment (ADR-T2) — Pass 2 now runs on the all-files pool.
+  it('matches a unique non-md basename standalone', async () => {
+    const reportCsv = writeFile(tree.sessionRoot, 'materials/report.csv', 'a,b,c');
+
+    const edges = await buildCrossReferenceEdges(
+      'The data lives in report.csv as captured',
+      tree.specMd,
+      tree.sessionRoot,
+      [tree.sessionMd, tree.specMd, reportCsv],
+    );
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0].target_path).toBe(reportCsv);
+    expect(edges[0].relation_type).toBe('cross_reference');
+    expect(edges[0].strength).toBe(0.7);
+  });
+
+  // spec: cross-file traversal amendment (ADR-T2) — unique extensionless files are reachable.
+  it('matches a unique extensionless basename standalone', async () => {
+    const makefile = writeFile(tree.sessionRoot, 'Makefile', 'all: echo hi');
+
+    const edges = await buildCrossReferenceEdges(
+      'Build targets are declared in Makefile for this package',
+      tree.specMd,
+      tree.sessionRoot,
+      [tree.sessionMd, tree.specMd, makefile],
+    );
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0].target_path).toBe(makefile);
+    expect(edges[0].relation_type).toBe('cross_reference');
+    expect(edges[0].strength).toBe(0.7);
   });
 });
 

@@ -7,10 +7,15 @@ import { aLogger } from '@/infrastructure/logging/logger.test-utils';
 import '@/utils/mastra-rag.test-utils';
 import { splitFrontmatter } from '@/utils/strategy-utils';
 import * as fsSync from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
-import { ObsidianChunkingStrategy, extractNoteMetadata } from './obsidian-chunking.strategy';
+import {
+  ObsidianChunkingStrategy,
+  buildWikilinkEdges,
+  extractNoteMetadata,
+} from './obsidian-chunking.strategy';
 
 // --- Test fixtures (loaded from shared fixtures) ---
 
@@ -1230,11 +1235,163 @@ Plain text with no wikilinks here.`;
 
       expect(result.isOk()).toBe(true);
       const chunks = result.getValue();
+      // 2 body chunks
       expect(chunks.length).toBe(2);
       expect(chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
       for (const chunk of chunks) {
         expect(chunk.totalChunks).toBe(2);
       }
     });
+  });
+});
+
+// --- ADR-T4: async existence-gated wikilink edges (cross-file traversal amendment) ---
+
+interface ObsidianVaultFixture {
+  root: string;
+  cleanup: () => void;
+}
+
+function createObsidianVaultFixture(): ObsidianVaultFixture {
+  const root = fsSync.mkdtempSync(path.join(os.tmpdir(), 'obsidian-strategy-test-'));
+  // Note protocol + explicit-extension targets + self-link source (real files for fs gates)
+  fsSync.writeFileSync(path.join(root, 'Self.md'), '# Self\n');
+  fsSync.writeFileSync(path.join(root, 'Note.md'), '# Note\n');
+  fsSync.writeFileSync(path.join(root, 'diagram.png'), 'PNGDATA');
+  fsSync.mkdirSync(path.join(root, 'sub'), { recursive: true });
+  fsSync.writeFileSync(path.join(root, 'sub', 'Note.md'), '# Sub\n');
+  return {
+    root,
+    cleanup: () => fsSync.rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+describe('buildWikilinkEdges (ADR-T4 existence-gated)', () => {
+  let fixture: ObsidianVaultFixture;
+  let root: string;
+
+  beforeEach(() => {
+    fixture = createObsidianVaultFixture();
+    root = fixture.root;
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it('resolves [[Note]] to root Note.md backlink edge when the note exists', async () => {
+    const edges = await buildWikilinkEdges(['Note'], root, path.join(root, 'a.md'));
+
+    expect(edges).toEqual([
+      {
+        target_path: path.join(root, 'Note.md'),
+        relation_type: 'backlink',
+        strength: 1,
+        description: 'wikilink from a to Note',
+      },
+    ]);
+  });
+
+  it('keeps D4 best-effort stub edge for missing extensionless (note-like) target', async () => {
+    const edges = await buildWikilinkEdges(['Missing Note'], root, path.join(root, 'a.md'));
+
+    expect(edges).toEqual([
+      {
+        target_path: path.join(root, 'Missing Note.md'),
+        relation_type: 'backlink',
+        strength: 1,
+        description: 'wikilink from a to Missing Note',
+      },
+    ]);
+  });
+
+  it('resolves [[diagram.png]] to existing root diagram.png (NEW)', async () => {
+    const edges = await buildWikilinkEdges(['diagram.png'], root, path.join(root, 'a.md'));
+
+    expect(edges).toEqual([
+      {
+        target_path: path.join(root, 'diagram.png'),
+        relation_type: 'backlink',
+        strength: 1,
+        description: 'wikilink from a to diagram.png',
+      },
+    ]);
+  });
+
+  // spec: cross-file traversal amendment (ADR-T4)
+  it('drops missing explicit-extension targets — NO phantom *.ext.md stub (CHANGED)', async () => {
+    const edges = await buildWikilinkEdges(['missing.png'], root, path.join(root, 'a.md'));
+
+    expect(edges).toEqual([]);
+  });
+
+  it('drops self wikilinks — [[Self]] inside Self.md yields no self-edge (NEW)', async () => {
+    const edges = await buildWikilinkEdges(['Self'], root, path.join(root, 'Self.md'));
+
+    expect(edges).toEqual([]);
+  });
+
+  it('resolves [[sub/Note]] path form to root-joined sub/Note.md', async () => {
+    const edges = await buildWikilinkEdges(['sub/Note'], root, path.join(root, 'a.md'));
+
+    expect(edges).toEqual([
+      {
+        target_path: path.join(root, 'sub', 'Note.md'),
+        relation_type: 'backlink',
+        strength: 1,
+        description: 'wikilink from a to sub/Note',
+      },
+    ]);
+  });
+});
+
+describe('ObsidianChunkingStrategy.chunkFile with ADR-T4 existence-gated edges', () => {
+  let fixture: ObsidianVaultFixture;
+  let sut: ObsidianChunkingStrategy;
+  let mockLogger: BasePinoLogger;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fixture = createObsidianVaultFixture();
+    mockLogger = aLogger();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it('attaches only existence-gated edges to all chunks (existing ext kept, missing ext dropped, self skipped)', async () => {
+    const root = fixture.root;
+    const bodyChunk = aBodyChunk();
+    const mockMastra = aMastraChunkingService([bodyChunk]);
+    sut = new ObsidianChunkingStrategy(mockMastra as unknown as MastraChunkingService, mockLogger);
+
+    const result = await sut.chunkFile(
+      'Links: [[diagram.png]] and [[missing.png]] and [[Self]].',
+      path.join(root, 'Self.md'),
+      'test-source',
+      aWatchSourceConfig({
+        id: 'test-source',
+        path: root,
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'obsidian',
+      }),
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunks = result.getValue();
+    expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+    for (const chunk of chunks) {
+      expect(chunk.edges).toEqual([
+        {
+          target_path: path.join(root, 'diagram.png'),
+          relation_type: 'backlink',
+          strength: 1,
+          description: 'wikilink from Self to diagram.png',
+        },
+      ]);
+    }
   });
 });

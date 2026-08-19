@@ -865,3 +865,175 @@ describe('VaultChunkingStrategy with a real tmp/vault fixture', () => {
     }
   });
 });
+
+// spec: cross-file traversal amendment (ADR-T1/T2/T4) — integration gate that each
+// source type emits at least one edge to a NON-MD target with an absolute,
+// correctly-typed target_path (spec §6 Phase 4, §7).
+describe('Cross-file traversal — non-md target integration (all source types)', () => {
+  let tempDir: string;
+  let mockMastra: jest.Mocked<MastraChunkingService>;
+  let mockLogger: BasePinoLogger;
+
+  const integrationSessionMetadata: SessionMetadata = {
+    sessionId: 'ses_057e2d847ffeJkvVN1hTxIim8L',
+    createdAt: '2026-07-28T09:46:23Z',
+    status: 'in-progress',
+    phase: 'implementation',
+    nextAgent: 'reviewer',
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockLogger = createMockLogger();
+    mockMastra = createMockMastraChunkingService([createBodyChunk('body content')]);
+    tempDir = await createTempDir('rag-e2e-xref-integration-');
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it('agent-sessions: session.md referencing notes.txt emits a cross_reference edge to the non-md file', async () => {
+    const sessionRoot = path.join(tempDir, '26/07/28/integration-session');
+    await fs.mkdir(sessionRoot, { recursive: true });
+
+    // notes.txt exists in the session tree (non-md target).
+    const notesTxt = path.join(sessionRoot, 'notes.txt');
+    await fs.writeFile(notesTxt, 'raw session notes', 'utf-8');
+
+    // session.md references notes.txt via a relative path token.
+    const sessionMdPath = path.join(sessionRoot, 'session.md');
+    const content = [
+      '---',
+      'sessionId: ses_057e2d847ffeJkvVN1hTxIim8L',
+      '---',
+      'Reference notes.txt for details.',
+    ].join('\n');
+    await fs.writeFile(sessionMdPath, content, 'utf-8');
+
+    const mockSessionMetadataService = {
+      extract: jest.fn().mockResolvedValue(okResult(integrationSessionMetadata)),
+    };
+    const sut = new AgentSessionChunkingStrategy(
+      mockSessionMetadataService as unknown as SessionMetadataService,
+      mockMastra,
+      mockLogger,
+    );
+
+    const result = await sut.chunkFile(
+      content,
+      sessionMdPath,
+      'agent-sessions',
+      createAgentSessionsSourceConfig(),
+    );
+    expect(result.isOk()).toBe(true);
+
+    const chunks = result.getValue();
+    const edges = chunks.flatMap(c => c.edges ?? []);
+
+    // At least one cross_reference edge to the non-md notes.txt target.
+    const notesEdge = edges.find(e => e.target_path === notesTxt);
+    expect(notesEdge).toBeDefined();
+    expect(notesEdge?.relation_type).toBe('cross_reference');
+    expect(notesEdge?.strength).toBe(0.7);
+
+    // Absolute, correctly-typed (non-md) target_path.
+    expect(path.isAbsolute(notesEdge!.target_path)).toBe(true);
+    expect(notesEdge!.target_path.endsWith('.txt')).toBe(true);
+  });
+
+  it('vault: [[assets/diagram.png]] wikilink + non-md see_also emit edges to non-md targets', async () => {
+    const vaultRoot = path.join(tempDir, 'vault');
+    await fs.mkdir(path.join(vaultRoot, 'assets'), { recursive: true });
+
+    // Non-md targets exist in the vault.
+    const diagramPng = path.join(vaultRoot, 'assets', 'diagram.png');
+    await fs.writeFile(diagramPng, 'PNGDATA', 'utf-8');
+    const seeAlsoPng = path.join(vaultRoot, 'assets', 'see_also.png');
+    await fs.writeFile(seeAlsoPng, 'PNGDATA', 'utf-8');
+
+    const notePath = path.join(vaultRoot, 'decisions', '0001-alpha.decision.md');
+    await fs.mkdir(path.dirname(notePath), { recursive: true });
+    const content = [
+      '---',
+      'type: decision',
+      'see_also:',
+      '  - assets/see_also.png',
+      '---',
+      'Decision body. Diagram: [[assets/diagram.png]]',
+    ].join('\n');
+    await fs.writeFile(notePath, content, 'utf-8');
+
+    const sourceConfig: WatchSourceConfig = {
+      id: 'vault-source',
+      path: vaultRoot,
+      memoryBank: 'vault',
+      exclude: ['**/node_modules/**'],
+      debounceMs: 3000,
+      sourceType: SOURCE_TYPES.VAULT,
+    };
+    const sut = new VaultChunkingStrategy(mockMastra, mockLogger);
+
+    const result = await sut.chunkFile(content, notePath, 'vault-source', sourceConfig);
+    expect(result.isOk()).toBe(true);
+
+    const chunks = result.getValue();
+    const edges = chunks.flatMap(c => c.edges ?? []);
+
+    // backlink edge to assets/diagram.png (path-form wikilink, non-md).
+    const backlinkEdge = edges.find(e => e.target_path === diagramPng);
+    expect(backlinkEdge).toBeDefined();
+    expect(backlinkEdge?.relation_type).toBe('backlink');
+    expect(path.isAbsolute(backlinkEdge!.target_path)).toBe(true);
+    expect(backlinkEdge!.target_path.endsWith('.png')).toBe(true);
+
+    // recommendation edge to assets/see_also.png (non-md see_also).
+    const recEdge = edges.find(e => e.target_path === seeAlsoPng);
+    expect(recEdge).toBeDefined();
+    expect(recEdge?.relation_type).toBe('recommendation');
+    expect(path.isAbsolute(recEdge!.target_path)).toBe(true);
+    expect(recEdge!.target_path.endsWith('.png')).toBe(true);
+  });
+
+  it('obsidian: [[diagram.png]] emits an edge (exists); [[missing.png]] emits NO edge', async () => {
+    const vaultRoot = path.join(tempDir, 'obsidian-vault');
+    await fs.mkdir(vaultRoot, { recursive: true });
+
+    // diagram.png exists; missing.png does not.
+    const diagramPng = path.join(vaultRoot, 'diagram.png');
+    await fs.writeFile(diagramPng, 'PNGDATA', 'utf-8');
+
+    const notePath = path.join(vaultRoot, 'Note.md');
+    const content = ['---', 'tags: [integration]', '---', 'See [[diagram.png]] and [[missing.png]].'].join(
+      '\n',
+    );
+    await fs.writeFile(notePath, content, 'utf-8');
+
+    const sourceConfig: WatchSourceConfig = {
+      id: 'obsidian-vault',
+      path: vaultRoot,
+      memoryBank: 'obsidian',
+      exclude: ['**/node_modules/**'],
+      debounceMs: 3000,
+      sourceType: SOURCE_TYPES.OBSIDIAN,
+    };
+    const sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
+
+    const result = await sut.chunkFile(content, notePath, 'obsidian-vault', sourceConfig);
+    expect(result.isOk()).toBe(true);
+
+    const chunks = result.getValue();
+    const edges = chunks.flatMap(c => c.edges ?? []);
+
+    // backlink edge to diagram.png (exists, non-md).
+    const diagramEdge = edges.find(e => e.target_path === diagramPng);
+    expect(diagramEdge).toBeDefined();
+    expect(diagramEdge?.relation_type).toBe('backlink');
+    expect(path.isAbsolute(diagramEdge!.target_path)).toBe(true);
+    expect(diagramEdge!.target_path.endsWith('.png')).toBe(true);
+
+    // NO edge to missing.png — phantom *.ext.md stub eliminated (ADR-T4).
+    const missingEdge = edges.find(e => e.target_path.endsWith('missing.png'));
+    expect(missingEdge).toBeUndefined();
+  });
+});
