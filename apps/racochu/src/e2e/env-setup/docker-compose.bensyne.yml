@@ -32,7 +32,7 @@ services:
       # Rebuild when the LiteLLM cert changes:
       #   openssl s_client -connect lite-llm.lan:443 -servername lite-llm.lan -showcerts </dev/null | \
       #     awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' > src/e2e/env-setup/litellm-ca.pem
-      - /Users/oleksii.honchar/www/olho/racochu/src/e2e/env-setup/litellm-ca.pem:/usr/local/share/ca-certificates/litellm-ca.crt:ro
+      - /Users/oleksii.honchar/www/olho/bensyne/apps/racochu/src/e2e/env-setup/litellm-ca.pem:/usr/local/share/ca-certificates/litellm-ca.crt:ro
       # E2E data dir is injected per-run by global-setup.ts (fresh temp dir) so
       # each e2e run starts with a clean Bensyne state (no cross-run pollution).
       # Falls back to the repo data/e2e dir for manual `npm run bensyne:start`.
