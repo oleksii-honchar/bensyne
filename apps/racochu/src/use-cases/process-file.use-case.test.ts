@@ -69,7 +69,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
 
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
 
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
@@ -116,7 +116,7 @@ describe('ProcessFileUseCase', () => {
 
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       await useCase.execute({
@@ -239,7 +239,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockFileHasherService.compute.mockRejectedValue(new Error('Hash failed'));
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       await useCase.execute({
@@ -271,7 +271,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockHardwareIdDetectorService.getHardwareId.mockRejectedValue(new Error('HW detection failed'));
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       await useCase.execute({
@@ -304,7 +304,7 @@ describe('ProcessFileUseCase', () => {
       mockFileHasherService.compute.mockRejectedValue(new Error('Hash failed'));
       mockHardwareIdDetectorService.getHardwareId.mockRejectedValue(new Error('HW failed'));
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       const result = await useCase.execute({
@@ -336,7 +336,7 @@ describe('ProcessFileUseCase', () => {
 
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       await useCase.execute({
@@ -367,7 +367,7 @@ describe('ProcessFileUseCase', () => {
     beforeEach(() => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
     });
 
@@ -490,6 +490,92 @@ describe('ProcessFileUseCase', () => {
     });
   });
 
+  describe('stale memory ID forgetting (set-difference)', () => {
+    const filePath = '/path/to/file.md';
+    const sourceId = 'test-source';
+    const memoryBank = 'test-memoryBank';
+    const fileContent = 'Updated content';
+    const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
+    const chunks = [aContentChunk({ text: 'updated chunk' })];
+
+    beforeEach(() => {
+      (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+    });
+
+    it('should NOT forget any memories when new ingest returns identical memory IDs (dedupe case)', async () => {
+      const memoryIds = ['mem-a', 'mem-b'];
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds } as never));
+      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockFileMemoryTrackerService.forgetMemories.mockResolvedValue(null);
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'change',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockBensyneClient.forget).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.forgetMemories).not.toHaveBeenCalled();
+    });
+
+    it('should forget all old memory IDs when new ingest produces entirely different IDs', async () => {
+      const oldMemoryIds = ['mem-old-1', 'mem-old-2'];
+      const newMemoryIds = ['mem-new-1', 'mem-new-2'];
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: newMemoryIds } as never));
+      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockFileMemoryTrackerService.forgetMemories.mockResolvedValue(null);
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'change',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(2);
+      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-old-1', memoryBank);
+      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-old-2', memoryBank);
+      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(
+        filePath,
+        oldMemoryIds,
+      );
+    });
+
+    it('should forget only stale memory IDs (mixed case) and keep current ones in tracker', async () => {
+      const oldMemoryIds = ['mem-a', 'mem-b'];
+      const newMemoryIds = ['mem-b', 'mem-c'];
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: newMemoryIds } as never));
+      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockFileMemoryTrackerService.forgetMemories.mockResolvedValue(null);
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'change',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(1);
+      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-a', memoryBank);
+      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(
+        filePath,
+        ['mem-a'],
+      );
+    });
+  });
+
   describe('execute with CHANGE event', () => {
     it('should re-chunk and re-ingest on change', async () => {
       const filePath = '/path/to/file.md';
@@ -501,7 +587,7 @@ describe('ProcessFileUseCase', () => {
 
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
@@ -547,7 +633,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
       mockFileMemoryTrackerService.forgetMemories.mockResolvedValue(null);
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
@@ -581,7 +667,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
       await useCase.execute({
@@ -638,7 +724,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockBensyneClient.forget
         .mockResolvedValueOnce(Result.ok(undefined as unknown as void))
         .mockResolvedValueOnce(Result.ko([new Error('Forget failed')]));
@@ -670,7 +756,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
       mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
       mockFileMemoryTrackerService.forgetMemories.mockRejectedValue(new Error('DB error'));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
@@ -1040,7 +1126,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
 
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
 
       mockProcessingQueue.addToQueue.mockImplementation(async task => {
         await task();
@@ -1073,7 +1159,7 @@ describe('ProcessFileUseCase', () => {
       (fs.readFile as jest.Mock).mockResolvedValue(fileContent);
 
       mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
-      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
 
       mockProcessingQueue.addToQueue.mockImplementation(async task => {
         await task();

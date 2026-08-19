@@ -5,8 +5,8 @@ description: |
   Use when user asks to run agent runbooks, points to src/e2e/agent-runbooks, or mentions "agent runbook" or "agentic test".
   Also trigger on: "run the obsidian runbook", "run the enrichment runbook", "agent-based testing", "interactive e2e test".
   DO NOT trigger on "run all tests", "run e2e tests", or "test:e2e" — those are npm test commands (npm run test / npm run test:e2e).
-version: '1.2'
-updatedAt: '2026-08-18T18:00:00+03:00'
+version: '1.3'
+updatedAt: '2026-08-19T11:00:00+03:00'
 author: 'racochu'
 status: 'production-ready'
 tags: ['agentic-testing', 'agent-runbooks', 'mcp', 'racochu', 'interactive']
@@ -48,7 +48,7 @@ Execute Racochu Agentic Testing runbooks end-to-end in the chat session. This sk
 - **Base tmp directory is relative to racochu repo root**, NOT to the skill location or agent-runbooks directory
 - Absolute path: `/Users/oleksii.honchar/www/olho/racochu/tmp/` (or `$RACOCHU_ROOT/tmp/`)
 - Per-source subdirectories:
-  - `tmp/general/` — General markdown files (content-aware strategy)
+  - `tmp/vault/` — Vault files (vault strategy)
   - `tmp/obsidian/` — Obsidian notes with frontmatter + wikilinks
   - `tmp/agent-sessions/` — Agent session markdown files
 
@@ -89,7 +89,7 @@ Conventions that apply to every runbook. Treat these as hard rules, not suggesti
 **Objective:** Confirm racochu and bensyne are running with correct config.
 
 1. **Check dev config:** Read `dev.yaml` and verify:
-   - Watch sources include `tmp/general`, `tmp/obsidian` and `tmp/agent-sessions` with correct strategies
+   - Watch sources include `tmp/vault`, `tmp/obsidian` and `tmp/agent-sessions` with correct strategies
    - MCP URL is `http://localhost:3000` (bensyne)
    - Enrichment is configured if the runbook needs it
 
@@ -109,19 +109,30 @@ Conventions that apply to every runbook. Treat these as hard rules, not suggesti
 
 **Objective:** List available runbooks and determine which to execute.
 
-1. List files in `src/e2e/agent-runbooks/` matching `*.test.runbook.md`
+**Runbook structure principle (ratified):**
+
+- **`by-source-type/<type>.test.runbook.md`** — verify **source-specific relations & metadata** that this type produces (via recall/expand). **No general MCP tool checks** live here.
+- **`common/<tool>.test.runbook.md`** — verify **general MCP tool contracts** (searchFiles, recallMemory, fetchFile, expandFileRelations, enrichment pipeline), **source-agnostic**.
+
+1. List files in `src/e2e/agent-runbooks/by-source-type/` and `src/e2e/agent-runbooks/common/` matching `*.test.runbook.md`
 2. If user specified a particular runbook, read only that one
 3. If user did not specify, read ALL runbooks and present them:
    ```
    Available runbooks:
-   1. general.test.runbook.md — General racochu + bensyne flow
-   2. obsidian.test.runbook.md — Obsidian frontmatter + wikilink graph
-   3. enrichment.test.runbook.md — LLM enrichment pipeline
-   4. search.test.runbook.md — searchFiles navigation (filters, limit, relations)
-   5. traversal.test.runbook.md — expandFileRelations (wikilinks + companions)
-   6. fetch.test.runbook.md — fetchFile full reconstruction
-   7. center-chunk.test.runbook.md — fetchFile neighbor window + error codes
-   All will be executed.
+
+   by-source-type/  (source-specific relations & metadata):
+   1. agent-sessions.test.runbook.md — companion edges + content cross_reference edges (S0–S8) + cross-session ref (S9)
+   2. obsidian.test.runbook.md       — Obsidian frontmatter metadata + wikilink backlink edges
+   3. vault.test.runbook.md          — FROZEN (deferred; do not run)
+
+   common/  (general MCP tool contracts, source-agnostic):
+   4. search.test.runbook.md         — searchFiles navigation (filters, limit, relations, bank isolation)
+   5. fetch.test.runbook.md          — fetchFile full reconstruction
+   6. center-chunk.test.runbook.md   — fetchFile neighbor window + error codes
+   7. enrichment.test.runbook.md     — LLM enrichment pipeline
+   8. traversal.test.runbook.md      — expandFileRelations tool contract (one-hop, relation_types filter, structure, errors)
+
+   All active runbooks will be executed (vault.test.runbook.md is frozen/skipped).
    ```
 
 **Output:** List of runbooks to execute (single or all).
@@ -138,7 +149,7 @@ For each runbook, execute its phases in order:
 
 3. **Execute test steps sequentially** — for each step:
     - If the step involves creating test files, write them to the correct `tmp/*` subdirectory based on content type:
-      - General markdown files → `tmp/general/`
+      - Vault files → `tmp/vault/`
       - Obsidian notes (with frontmatter, wikilinks) → `tmp/obsidian/`
       - Agent session files → `tmp/agent-sessions/`
       - Other content → use the appropriate source directory from `dev.yaml`
@@ -220,10 +231,10 @@ watchSources:
 
 When creating test files during runbook execution, place them in the matching `tmp/*` subdirectory:
 
-| Content type                                | Directory             | Watch source         | Strategy         |
-| ------------------------------------------- | --------------------- | -------------------- | ---------------- |
-| General markdown files                      | `tmp/general/`        | `tmp-general`        | `content-aware`  |
-| Obsidian notes with frontmatter + wikilinks | `tmp/obsidian/`       | `tmp-obsidian`       | `obsidian`       |
+| Content type                                | Directory             | Watch source         | Source type    |
+| ------------------------------------------- | --------------------- | -------------------- | -------------- |
+| Vault files                                 | `tmp/vault/`          | `tmp-vault`          | `vault`        |
+| Obsidian notes with frontmatter + wikilinks | `tmp/obsidian/`       | `tmp-obsidian`       | `obsidian`     |
 | Agent session markdown files                | `tmp/agent-sessions/` | `tmp-agent-sessions` | `agent-sessions` |
 
 **Why separate directories:** Each source uses a different chunking strategy and memory bank. Obsidian strategy parses frontmatter, wikilinks, and generic properties. Agent-sessions strategy extracts session metadata. Mixing them in one directory loses strategy-specific enrichment.
@@ -247,7 +258,7 @@ Stop and ask when you encounter:
 - [ ] Confirmed this is an agent runbook request (not "run all tests" / npm test command)
 - [ ] bensyne MCP tools verified accessible (memory list succeeds)
 - [ ] racochu running via `npm run start:dev`
-- [ ] dev.yaml watch sources include `tmp/general`, `tmp/obsidian` and `tmp/agent-sessions`
+- [ ] dev.yaml watch sources include `tmp/vault`, `tmp/obsidian` and `tmp/agent-sessions`
 - [ ] All requested runbooks discovered and executed
 - [ ] Each runbook step executed with MCP tools (not curl)
 - [ ] Debounce wait times respected after file creation

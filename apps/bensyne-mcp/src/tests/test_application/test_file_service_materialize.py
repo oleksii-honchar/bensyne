@@ -678,6 +678,98 @@ class TestMaterializeSourceTypeAxis:
 
 
 # ===================================================================
+# materialize_file_context — source_type promotion (stub-first ingest)
+# ===================================================================
+
+
+class TestMaterializeSourceTypePromotion:
+    """The existing-file branch must propagate the context's source_type.
+
+    Stub-first ordering (D4): a file first seen as an edge target is stored as
+    a PENDING row with source_type=unknown; when the real file is later
+    ingested, the producer's context value must be persisted (the producer is
+    the source of truth). An unknown context value must never clobber a
+    known stored value.
+    """
+
+    def _create_stub(self, service: FileService) -> str:
+        """Stub /never/ingested.md as PENDING/unknown via a dangling edge."""
+        context = _context(edges=[{"target_path": "/never/ingested.md", "relation_type": "backlink"}])
+        assert service.materialize_file_context(BANK, context, "mem_promo_stub").is_ok is True
+        stub_id = derive_file_id(BANK, "/never/ingested.md")
+        stub = service.file_repository.get_file_by_id(stub_id).value
+        assert stub is not None
+        assert stub.status is FileStatus.PENDING
+        assert stub.source_type is SourceType.UNKNOWN
+        return stub_id
+
+    def test_stub_first_then_ingest_promotes_source_type(self, service: FileService) -> None:
+        """PENDING/unknown stub + context with non-unknown source_type ⇒ promoted."""
+        stub_id = self._create_stub(service)
+
+        # Real ingestion of the stubbed target (fixture source_type=agent-sessions).
+        target_context = _context(path="/never/ingested.md", edges=[])
+        assert target_context.source_type is SourceType.AGENT_SESSIONS  # parse sanity
+        result = service.materialize_file_context(BANK, target_context, "mem_promo_target")
+        assert result.is_ok is True
+
+        upgraded = service.file_repository.get_file_by_id(stub_id).value
+        assert upgraded is not None
+        assert upgraded.source_type is SourceType.AGENT_SESSIONS
+        assert upgraded.status is FileStatus.INDEXED
+
+    def test_context_source_type_wins_over_different_known(self, service: FileService) -> None:
+        """Two different non-unknown values ⇒ the later context (producer) wins."""
+        file_path = "/promo_wins.md"
+        first = _context(path=file_path, source_type="obsidian", edges=[])
+        assert service.materialize_file_context(BANK, first, "m_promo_first").is_ok is True
+        file_id = derive_file_id(BANK, file_path)
+        stored = service.file_repository.get_file_by_id(file_id).value
+        assert stored is not None and stored.source_type is SourceType.OBSIDIAN
+
+        second = _context(path=file_path, source_type="vault", edges=[])
+        assert second.source_type is SourceType.VAULT  # parse sanity
+        assert service.materialize_file_context(BANK, second, "m_promo_second").is_ok is True
+
+        stored_after = service.file_repository.get_file_by_id(file_id).value
+        assert stored_after is not None
+        assert stored_after.source_type is SourceType.VAULT
+
+    def test_unknown_context_never_clobbers_known(self, service: FileService) -> None:
+        """context source_type=unknown + stored known value ⇒ known value survives."""
+        file_path = "/promo_known.md"
+        first = _context(path=file_path, source_type="obsidian", edges=[])
+        assert service.materialize_file_context(BANK, first, "m_promo_known").is_ok is True
+
+        second = _context(path=file_path, source_type="unknown", edges=[])
+        assert second.source_type is SourceType.UNKNOWN  # parse sanity
+        assert service.materialize_file_context(BANK, second, "m_promo_unknown").is_ok is True
+
+        file_id = derive_file_id(BANK, file_path)
+        stored = service.file_repository.get_file_by_id(file_id).value
+        assert stored is not None
+        assert stored.source_type is SourceType.OBSIDIAN
+
+    def test_same_source_type_rematerialize_is_event_silent(self, service: FileService) -> None:
+        """Re-materialize with the same source_type ⇒ no events, unchanged row."""
+        stub_id = self._create_stub(service)
+
+        target_context = _context(path="/never/ingested.md", edges=[])
+        first = service.materialize_file_context(BANK, target_context, "mem_promo_target")
+        assert first.is_ok is True
+        promoted = first.events  # promotion pass emits creation/status events
+
+        second = service.materialize_file_context(BANK, target_context, "mem_promo_target")
+        assert second.is_ok is True
+        assert second.events == [], f"expected zero events on identical re-materialize, got {second.events}"
+
+        upgraded = service.file_repository.get_file_by_id(stub_id).value
+        assert upgraded is not None
+        assert upgraded.source_type is SourceType.AGENT_SESSIONS
+        assert promoted != [], "promotion pass must emit events (source_type actually changed)"
+
+
+# ===================================================================
 # rebuild_projection
 # ===================================================================
 

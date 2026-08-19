@@ -161,6 +161,60 @@ describe('IngestChunkUseCase', () => {
     });
   });
 
+  describe('memory IDs exposure', () => {
+    it('should return ingested memory IDs in the result', async () => {
+      const chunks = [
+        aContentChunk({ chunkIndex: 0 }),
+        aContentChunk({ chunkIndex: 1 }),
+      ];
+      mockBensyneClientService.remember
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-1', status: 'stored' }))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-2', status: 'stored' }));
+      mockFileMemoryTrackerService.trackMemory.mockResolvedValue(undefined);
+
+      const result = await useCase.execute({
+        chunks,
+        sourceId: 'test-source',
+        metadata: { filePath: '/test/file.md' },
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ memoryIds: ['mem-1', 'mem-2'] });
+    });
+
+    it('should return only memory IDs from successful ingestions', async () => {
+      const chunks = [
+        aContentChunk({ chunkIndex: 0 }),
+        aContentChunk({ chunkIndex: 1 }),
+        aContentChunk({ chunkIndex: 2 }),
+      ];
+      mockBensyneClientService.remember
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-1', status: 'stored' }))
+        .mockResolvedValueOnce(Result.ko([new Error('Failed')]))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-3', status: 'stored' }));
+      mockFileMemoryTrackerService.trackMemory.mockResolvedValue(undefined);
+
+      const result = await useCase.execute({
+        chunks,
+        sourceId: 'test-source',
+        metadata: { filePath: '/test/file.md' },
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ memoryIds: ['mem-1', 'mem-3'] });
+    });
+
+    it('should return empty memoryIds array when no chunks to ingest', async () => {
+      const result = await useCase.execute({
+        chunks: [],
+        sourceId: 'test-source',
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ memoryIds: [] });
+    });
+  });
+
   describe('FileMemoryTracker integration', () => {
     it('should call trackMemory after successful BensyneClient.remember with correct args', async () => {
       const chunk = aContentChunk({ chunkIndex: 0, memoryBank: 'agent-sessions' });

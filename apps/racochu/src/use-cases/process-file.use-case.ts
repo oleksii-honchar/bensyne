@@ -33,6 +33,10 @@ const processFileParamsSchema = z.object({
 
 export type ProcessFileParams = z.infer<typeof processFileParamsSchema>;
 
+export interface IngestFileResult {
+  memoryIds: string[];
+}
+
 const defaultSourceConfig = (): WatchSourceConfig => ({
   id: 'default',
   path: '',
@@ -178,7 +182,11 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
   }
 
   private async handleAdd(params: ProcessFileParams): Promise<Result<void>> {
-    return this.ingestFile(params);
+    const result = await this.ingestFile(params);
+    if (result.isKo()) {
+      return result as unknown as Result<void>;
+    }
+    return Result.ok(undefined as unknown as void);
   }
 
   private async handleChange(params: ProcessFileParams): Promise<Result<void>> {
@@ -188,34 +196,38 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
     // Step 2: Ingest new content — new memory IDs tracked alongside old ones
     const ingestResult = await this.ingestFile(params);
     if (ingestResult.isKo()) {
-      return ingestResult;
+      return ingestResult as unknown as Result<void>;
     }
 
-    // Step 3: Forget old memories from Mnemosyne (continue on failure)
-    if (oldMemoryIds.length > 0) {
-      const forgetResult = await this.forgetOldMemoriesByIds(oldMemoryIds, params);
+    // Step 3: Compute stale memory IDs (old IDs not present in new ingest)
+    const newMemoryIds = ingestResult.getValue().memoryIds;
+    const staleIds = oldMemoryIds.filter(id => !newMemoryIds.includes(id));
+
+    // Step 4: Forget stale memories from Mnemosyne (continue on failure)
+    if (staleIds.length > 0) {
+      const forgetResult = await this.forgetOldMemoriesByIds(staleIds, params);
       if (forgetResult.isKo()) {
         this.logger.warn(
-          `Old memory cleanup failed, new content ingested successfully: path="${params.filePath}", error="${forgetResult.getFormattedErrors()}"`,
+          `Stale memory cleanup failed, new content ingested successfully: path="${params.filePath}", error="${forgetResult.getFormattedErrors()}"`,
         );
       }
     }
 
-    // Step 4: Remove old memory IDs from tracker (non-fatal)
-    if (oldMemoryIds.length > 0) {
+    // Step 5: Remove stale memory IDs from tracker (non-fatal)
+    if (staleIds.length > 0) {
       try {
-        await this.fileMemoryTrackerService.forgetMemories(params.filePath, oldMemoryIds);
+        await this.fileMemoryTrackerService.forgetMemories(params.filePath, staleIds);
       } catch (error) {
         this.logger.warn(
-          `Failed to remove old memories from tracker; path="${params.filePath}", error="${error instanceof Error ? error.message : String(error)}"`,
+          `Failed to remove stale memories from tracker; path="${params.filePath}", error="${error instanceof Error ? error.message : String(error)}"`,
         );
       }
     }
 
-    return ingestResult;
+    return Result.ok(undefined as unknown as void);
   }
 
-  private async ingestFile(params: ProcessFileParams): Promise<Result<void>> {
+  private async ingestFile(params: ProcessFileParams): Promise<Result<IngestFileResult>> {
     // Check file existence before processing
     let fileExists: boolean;
     try {
@@ -233,7 +245,7 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
         fileExists = true;
       } catch {
         this.logger.warn(`File still not found after retry, skipping: path="${params.filePath}"`);
-        return Result.ok(undefined as unknown as void); // Skip gracefully
+        return Result.ok({ memoryIds: [] }); // Skip gracefully
       }
     }
 
@@ -281,13 +293,13 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
     });
 
     if (chunksResult.isKo()) {
-      return chunksResult as unknown as Result<void>;
+      return chunksResult as unknown as Result<IngestFileResult>;
     }
 
     const chunks = chunksResult.getValue();
     if (chunks.length === 0) {
       this.logger.debug(`No chunks generated; path="${params.filePath}"`);
-      return Result.ok(undefined as unknown as void);
+      return Result.ok({ memoryIds: [] });
     }
 
     this.logger.info(`Chunks created; path="${params.filePath}", chunks=${chunks.length}`);
@@ -305,14 +317,16 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
     });
 
     if (ingestResult.isKo()) {
-      return ingestResult as unknown as Result<void>;
+      return ingestResult as unknown as Result<IngestFileResult>;
     }
 
+    const { memoryIds } = ingestResult.getValue();
+
     this.logger.info(
-      `File processed: path="${params.filePath}", event="${params.eventType}", chunks=${chunks.length}`,
+      `File processed: path="${params.filePath}", event="${params.eventType}", chunks=${chunks.length}, memoryIds=${memoryIds.length}`,
     );
 
-    return Result.ok(undefined as unknown as void);
+    return Result.ok({ memoryIds });
   }
 
   private async handleDelete(params: ProcessFileParams): Promise<Result<void>> {

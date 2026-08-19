@@ -14,6 +14,6 @@ export interface IngestChunkUseCaseMock {
  */
 export function aIngestChunkUseCase(): IngestChunkUseCaseMock {
   return {
-    execute: jest.fn().mockResolvedValue(Result.ok(undefined as unknown as void)),
+    execute: jest.fn().mockResolvedValue(Result.ok({ memoryIds: [] })),
   };
 }

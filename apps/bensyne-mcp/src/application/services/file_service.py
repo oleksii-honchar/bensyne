@@ -416,13 +416,19 @@ class FileService:
                 file = index_result.value
                 events.extend(index_result.events)
 
-            # 3b. Update metadata (hash, role, language, summary, merged
-            #     metadata). No-op (zero events) when nothing changed.
+            # 3b. Update metadata (hash, source_type, role, language, summary,
+            #     merged metadata). No-op (zero events) when nothing changed.
             #     total_chunks is NOT touched here — it is re-aggregated from
             #     the real chunk set after the upsert below (spec §2.2).
+            #     source_type: the producer is the source of truth — a real
+            #     (non-unknown) context value promotes/overrides the stored
+            #     one (incl. stub PENDING/unknown rows); unknown is passed
+            #     through as None so it never clobbers a known stored value
+            #     (the entity keeps its current value on None).
             merged_metadata = {**file.metadata, **context.extra}
             update_result = file.update_metadata(
                 hash=context.file_hash,
+                source_type=context.source_type if context.source_type != SourceType.UNKNOWN else None,
                 file_role=context.file_role,
                 language=context.language,
                 summary=context.summary,

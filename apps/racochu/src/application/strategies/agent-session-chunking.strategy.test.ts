@@ -721,7 +721,7 @@ describe('AgentSessionChunkingStrategy', () => {
       }
     });
 
-    it('makes exactly ONE readdir call per process-file run', async () => {
+    it('makes exactly TWO root readdir calls per process-file run (companion + cross-ref walk)', async () => {
       testRoot = await createSessionRoot();
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
@@ -735,14 +735,15 @@ describe('AgentSessionChunkingStrategy', () => {
         sourceConfig,
       );
 
-      // locateSessionRoot uses stat (not readdir), so only the companion listing calls readdir
+      // locateSessionRoot uses stat (not readdir); the companion listing and the
+      // cross-reference walk each readdir the session root once.
       const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
         call => call[0] === testRoot,
       );
-      expect(rootCalls.length).toBe(1);
+      expect(rootCalls.length).toBe(2);
     });
 
-    it('makes exactly ONE readdir call per process-file run (two runs = two calls)', async () => {
+    it('makes exactly TWO root readdir calls per process-file run (two runs = four calls)', async () => {
       testRoot = await createSessionRoot();
       const sut = createStrategyWithMastra();
       const filePath = path.join(testRoot, 'findings', 'findings.md');
@@ -765,7 +766,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const rootCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
         call => call[0] === testRoot,
       );
-      expect(rootCalls.length).toBe(2);
+      expect(rootCalls.length).toBe(4);
     });
 
     it('edge target_path values are absolute paths starting with the session root', async () => {
@@ -816,6 +817,169 @@ describe('AgentSessionChunkingStrategy', () => {
       // Body chunk still has session metadata
       const bodyMeta = chunks[1].metadata;
       expect(bodyMeta?.['session.id']).toBe('ses_test123');
+    });
+  });
+
+  // --- D42 §2.3: cross-reference edges wired into chunkFile ---
+
+  describe('cross-reference edges wired into chunkFile (D42 §2.3)', () => {
+    let testRoot: string;
+
+    /** Session root with the full companion set + one archived material. */
+    async function createXrefSessionRoot(): Promise<string> {
+      const root = path.join(
+        '/tmp',
+        `xref-wiring-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      const files = [
+        'session.md',
+        'specifications/spec.md',
+        'findings/findings.md',
+        'decisions/decisions.md',
+        'plans/implementation-plan.md',
+        'materials/unified-chunk-contract.md',
+        'materials/archive/260819-0001-materials.md',
+      ];
+      for (const rel of files) {
+        const fullPath = path.join(root, rel);
+        await fsPromises.mkdir(path.dirname(fullPath), { recursive: true });
+        await fsPromises.writeFile(fullPath, 'content');
+      }
+      return root;
+    }
+
+    const sourceConfig = aWatchSourceConfig({
+      id: 'test-source',
+      path: '/test/path',
+      memoryBank: 'test-source',
+      exclude: ['**/node_modules/**'],
+      sourceType: 'agent-sessions',
+    });
+
+    afterEach(async () => {
+      if (testRoot) {
+        await fsPromises.rm(testRoot, { recursive: true, force: true });
+        testRoot = '';
+      }
+    });
+
+    it('merges companion + cross_reference edges onto every chunk when content references an archived material', async () => {
+      testRoot = await createXrefSessionRoot();
+      const mastra = aMastraChunkingService([
+        aBodyChunk({ chunkIndex: 0 }),
+        aBodyChunk({ chunkIndex: 1 }),
+      ]);
+      const sut = new AgentSessionChunkingStrategy(
+        mockSessionMetadataService as unknown as SessionMetadataService,
+        mastra as unknown as MastraChunkingService,
+        mockLogger,
+      );
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      // Content references an archived material (the cross_reference target).
+      const content = [
+        '---',
+        'sessionId: ses_xref123',
+        'status: in-progress',
+        '---',
+        '',
+        'See materials/archive/260819-0001-materials.md for details.',
+        '',
+      ].join('\n');
+
+      const result = await sut.chunkFile(content, filePath, 'test-source', sourceConfig);
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      // 1 frontmatter + 2 body chunks
+      expect(chunks.length).toBe(3);
+
+      const archivedTarget = path.join(testRoot, 'materials', 'archive', '260819-0001-materials.md');
+
+      // EVERY chunk (not just the frontmatter chunk) must carry the merged edge array.
+      for (const chunk of chunks) {
+        const edges = chunk.edges;
+        expect(edges).toBeDefined();
+
+        // Companion: parent_child → session.md
+        const parentEdge = edges!.find(
+          e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+        );
+        expect(parentEdge).toBeDefined();
+
+        // Companion: sibling → each of the other 4 companions (excluding F and session.md)
+        const siblingTargets = edges!
+          .filter(e => e.relation_type === 'sibling')
+          .map(e => e.target_path)
+          .sort();
+        const expectedSiblings = [
+          path.join(testRoot, 'specifications', 'spec.md'),
+          path.join(testRoot, 'decisions', 'decisions.md'),
+          path.join(testRoot, 'plans', 'implementation-plan.md'),
+          path.join(testRoot, 'materials', 'unified-chunk-contract.md'),
+        ].sort();
+        expect(siblingTargets).toEqual(expectedSiblings);
+
+        // Cross-reference: → the archived material (strength 0.7, absolute path)
+        const xrefEdge = edges!.find(
+          e => e.relation_type === 'cross_reference' && e.target_path === archivedTarget,
+        );
+        expect(xrefEdge).toBeDefined();
+        expect(xrefEdge!.strength).toBe(0.7);
+        expect(path.isAbsolute(xrefEdge!.target_path)).toBe(true);
+      }
+    });
+
+    it('degrades to companion-only edges when the cross-ref walk hits an fs error (chunking still succeeds)', async () => {
+      testRoot = await createXrefSessionRoot();
+      const mastra = aMastraChunkingService([aBodyChunk()]);
+      const sut = new AgentSessionChunkingStrategy(
+        mockSessionMetadataService as unknown as SessionMetadataService,
+        mastra as unknown as MastraChunkingService,
+        mockLogger,
+      );
+      const filePath = path.join(testRoot, 'findings', 'findings.md');
+
+      // Companion listing is the FIRST readdir of the session root — let it succeed.
+      // The cross-ref walk is the SECOND readdir — make it reject.
+      const actualReaddir = jest.requireActual<typeof import('fs/promises')>('fs/promises').readdir;
+      (fsPromises.readdir as jest.Mock).mockClear();
+      (fsPromises.readdir as jest.Mock).mockImplementationOnce(
+        async (...args: Parameters<typeof fsPromises.readdir>) => actualReaddir(...args),
+      );
+      (fsPromises.readdir as jest.Mock).mockRejectedValueOnce(new Error('EACCES: cross-ref walk blocked'));
+
+      // Content references a NON-EXISTENT file, so the fs.stat existence gate cannot add
+      // a cross_reference edge even if it runs — only companion edges should survive.
+      const content = 'See materials/archive/ghost-missing.md for details.';
+
+      const result = await sut.chunkFile(content, filePath, 'test-source', sourceConfig);
+
+      // chunking still succeeds despite the cross-ref fs error
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBeGreaterThan(0);
+
+      const edges = chunks[0].edges;
+      expect(edges).toBeDefined();
+
+      // Companion edges still present.
+      const parentEdge = edges!.find(
+        e => e.relation_type === 'parent_child' && e.target_path === path.join(testRoot, 'session.md'),
+      );
+      expect(parentEdge).toBeDefined();
+
+      // NO cross_reference edges (the cross-ref path failed).
+      const xrefEdges = edges!.filter(e => e.relation_type === 'cross_reference');
+      expect(xrefEdges.length).toBe(0);
+
+      // The cross-ref scan was actually attempted: chunkFile must issue a SECOND
+      // readdir of the session root (the cross-ref walk) beyond the companion listing.
+      // (Before the wiring, only the companion readdir exists, so this is RED.)
+      const rootReaddirCalls = (fsPromises.readdir as jest.Mock).mock.calls.filter(
+        call => call[0] === testRoot,
+      );
+      expect(rootReaddirCalls.length).toBeGreaterThanOrEqual(2);
     });
   });
 

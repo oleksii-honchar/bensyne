@@ -18,8 +18,12 @@ const ingestChunkParamsSchema = z.object({
 
 export type IngestChunkParams = z.infer<typeof ingestChunkParamsSchema>;
 
+export interface IngestChunkResult {
+  memoryIds: string[];
+}
+
 @Injectable()
-export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, void> {
+export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, IngestChunkResult> {
   constructor(
     private readonly bensyneClient: BensyneClient,
     private readonly fileMemoryTrackerService: FileMemoryTrackerService,
@@ -42,17 +46,18 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, void> {
     return Result.ok(parsed.data);
   }
 
-  protected async executeInternal(params: IngestChunkParams): Promise<Result<void>> {
+  protected async executeInternal(params: IngestChunkParams): Promise<Result<IngestChunkResult>> {
     this.logger.debug(`Ingesting chunks; count=${params.chunks.length}, source="${params.sourceId}"`);
 
     if (params.chunks.length === 0) {
       this.logger.debug('No chunks to ingest');
-      return Result.ok(undefined as unknown as void);
+      return Result.ok({ memoryIds: [] });
     }
 
     let successCount = 0;
     let failureCount = 0;
     const errors: { chunkId: bigint; error: string }[] = [];
+    const memoryIds: string[] = [];
 
     for (const chunk of params.chunks) {
       try {
@@ -60,6 +65,7 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, void> {
         if (result.isOk()) {
           const { memory_id, status } = result.getValue();
           successCount++;
+          memoryIds.push(memory_id);
           this.logger.debug(
             `Chunk ingested; id="${chunk.id}", index=${chunk.chunkIndex}, memoryId="${memory_id}", status="${status}"`,
           );
@@ -123,6 +129,6 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, void> {
       );
     }
 
-    return Result.ok(undefined as unknown as void);
+    return Result.ok({ memoryIds });
   }
 }

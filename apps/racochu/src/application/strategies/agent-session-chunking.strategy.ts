@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
@@ -100,6 +101,168 @@ function buildCompanionEdges(filePath: string, sessionRoot: string, companions: 
   return edges;
 }
 
+// ---------------------------------------------------------------------------
+// Producer-side content cross-reference edges (D42 §2.2)
+//
+// Turns in-content references to other session files into typed
+// `cross_reference` file edges. Cross-session refs are ALLOWED (user ruling
+// 2026-08-19): there is NO session-containment guard — the existence gate is
+// the only filter.
+// ---------------------------------------------------------------------------
+
+const XREF_MAX_DEPTH = 4;
+const XREF_MAX_FILES = 200;
+const XREF_MAX_TOKENS = 200;
+const XREF_PATH_TOKEN_RE = /[\w./~-]+\.md\b/g;
+
+/** Expands a leading `~` / `~/` to the OS home directory. */
+export function expandTilde(token: string): string {
+  if (token === '~') {
+    return os.homedir();
+  }
+  if (token.startsWith('~/')) {
+    return path.join(os.homedir(), token.slice(2));
+  }
+  return token;
+}
+
+/** Recursively collects *.md absolute paths under dir, bounded by maxDepth/maxFiles. */
+async function walkMdFiles(dir: string, depth: number, files: string[]): Promise<void> {
+  if (depth > XREF_MAX_DEPTH || files.length >= XREF_MAX_FILES) {
+    return;
+  }
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (files.length >= XREF_MAX_FILES) {
+      return;
+    }
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await walkMdFiles(fullPath, depth + 1, files);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      files.push(fullPath);
+    }
+  }
+}
+
+/**
+ * Lists all *.md absolute paths under sessionRoot (recursive, bounded:
+ * maxDepth 4, maxFiles 200). On any fs error returns [] (never throws).
+ */
+export async function listSessionMdFiles(sessionRoot: string): Promise<string[]> {
+  try {
+    const files: string[] = [];
+    await walkMdFiles(sessionRoot, 1, files);
+    return files;
+  } catch {
+    return [];
+  }
+}
+
+function escapeRegexChars(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Builds `cross_reference` edges from in-content file references (D42 §2.2).
+ *
+ * Pass 1 (path-pattern, primary): regex token extraction, tilde expansion,
+ * resolution (absolute as-is, relative vs session root), self-skip, NO
+ * containment guard, existence gate (sessionFiles membership or fs.stat).
+ *
+ * Pass 2 (basename, conservative): distinctive basenames (under archive/, or
+ * session.md, or unique in the tree), standalone-token match, collision-skip.
+ *
+ * Emits one edge per unique target (strength 0.7, absolute target_path).
+ */
+export async function buildCrossReferenceEdges(
+  content: string,
+  filePath: string,
+  sessionRoot: string,
+  sessionFiles: string[],
+): Promise<FileEdge[]> {
+  const normalizedSelf = path.resolve(filePath);
+  const sessionFileSet = new Set(sessionFiles.map(f => path.resolve(f)));
+  const targets = new Set<string>();
+
+  // --- Pass 1: path-pattern refs ---
+  const uniqueTokens = [...new Set(content.match(XREF_PATH_TOKEN_RE) ?? [])].slice(
+    0,
+    XREF_MAX_TOKENS,
+  );
+  for (const token of uniqueTokens) {
+    const expanded = expandTilde(token);
+    const resolved = path.isAbsolute(expanded)
+      ? path.resolve(expanded)
+      : path.resolve(sessionRoot, expanded);
+
+    if (resolved === normalizedSelf) {
+      continue; // self-skip
+    }
+    if (sessionFileSet.has(resolved)) {
+      targets.add(resolved);
+      continue;
+    }
+    // Existence gate — the ONLY filter (cross-session refs allowed, no containment guard)
+    try {
+      const stats = await fs.stat(resolved);
+      if (stats.isFile()) {
+        targets.add(resolved);
+      }
+    } catch {
+      // missing target → no edge
+    }
+  }
+
+  // --- Pass 2: conservative basename refs ---
+  const byBasename = new Map<string, string[]>();
+  for (const f of sessionFiles) {
+    const resolved = path.resolve(f);
+    const base = path.basename(resolved);
+    const existing = byBasename.get(base) ?? [];
+    existing.push(resolved);
+    byBasename.set(base, existing);
+  }
+
+  for (const [base, filesForBase] of byBasename) {
+    // collision-skip: basename maps to >1 file in the tree
+    if (filesForBase.length > 1) {
+      continue;
+    }
+    const candidate = filesForBase[0];
+    if (targets.has(candidate)) {
+      continue; // already targeted by Pass 1
+    }
+    const rel = path.relative(sessionRoot, candidate);
+    const underArchive = rel.includes(`${path.sep}archive${path.sep}`);
+    const isSessionMd = base === 'session.md';
+    const uniqueInTree = filesForBase.length === 1;
+    if (!underArchive && !isSessionMd && !uniqueInTree) {
+      continue;
+    }
+    // Standalone token match: basename not preceded by a path char and not
+    // followed by a word char (avoids double-counting Pass-1 path refs).
+    const standaloneRe = new RegExp(`(?<![\\w./-])${escapeRegexChars(base)}(?!\\w)`, 'g');
+    if (standaloneRe.test(content)) {
+      if (candidate !== normalizedSelf) {
+        targets.add(candidate);
+      }
+    }
+  }
+
+  // --- Emit: one edge per unique target ---
+  const edges: FileEdge[] = [];
+  for (const target of targets) {
+    edges.push({
+      target_path: target,
+      relation_type: 'cross_reference',
+      strength: 0.7,
+      description: `content reference to ${path.relative(sessionRoot, target)}`,
+    });
+  }
+  return edges;
+}
+
 /**
  * Walks up the directory tree from the given file path to find session.md.
  * Returns the directory containing session.md, or the parent directory of the file as fallback.
@@ -174,9 +337,20 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       ? sessionMetadataResult.getValue()
       : { sessionId: '', createdAt: '', status: '', phase: '', nextAgent: '' };
 
-    // 3. List companion artifacts (ONE readdir; fs error ⇒ empty list, chunking still succeeds)
+    // 3. List companion artifacts (fs error ⇒ empty list, chunking still succeeds)
     const companions = await this.listCompanionsSafe(sessionPath);
     const edges = buildCompanionEdges(filePath, sessionPath, companions);
+
+    // 3b. Build cross-reference edges from in-content refs to archived material (D42 §2.3).
+    //     Walks the session tree for *.md files; on fs error degrades to no cross-ref edges.
+    const sessionFiles = await this.listSessionFilesSafe(sessionPath);
+    const xrefEdges = await this.buildCrossReferenceEdgesSafe(
+      content,
+      filePath,
+      sessionPath,
+      sessionFiles,
+    );
+    const allEdges = [...edges, ...xrefEdges];
 
     // 4. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
@@ -194,7 +368,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     // 7. Enrich all chunks with session metadata and companion edges
     const allChunks = [...chunks, ...bodyChunks];
     const enriched = allChunks.map(chunk =>
-      this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, edges),
+      this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, allEdges),
     );
 
     // 8. D41 (clarification A): the strategy composes the final chunk list, so it owns its
@@ -242,6 +416,35 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     } catch (error) {
       this.logger.debug('Failed to list companion artifacts in session root', {
         sessionRoot,
+        error: String(error),
+      });
+      return [];
+    }
+  }
+
+  private async listSessionFilesSafe(sessionRoot: string): Promise<string[]> {
+    try {
+      return await listSessionMdFiles(sessionRoot);
+    } catch (error) {
+      this.logger.debug('Failed to list session files for cross-reference walk', {
+        sessionRoot,
+        error: String(error),
+      });
+      return [];
+    }
+  }
+
+  private async buildCrossReferenceEdgesSafe(
+    content: string,
+    filePath: string,
+    sessionRoot: string,
+    sessionFiles: string[],
+  ): Promise<FileEdge[]> {
+    try {
+      return await buildCrossReferenceEdges(content, filePath, sessionRoot, sessionFiles);
+    } catch (error) {
+      this.logger.debug('Failed to build cross-reference edges', {
+        filePath,
         error: String(error),
       });
       return [];
