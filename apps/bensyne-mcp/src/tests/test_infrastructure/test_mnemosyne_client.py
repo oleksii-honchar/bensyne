@@ -76,11 +76,32 @@ class TestMnemosyneClientConstructor:
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs["data_dir"] == "/custom/data"
 
-    def test_default_data_dir_is_data_root(self, mock_mnemosyne_instance: MagicMock) -> None:
-        """When no data_dir is given, the client bakes the single fixed /data root."""
+    def test_default_data_dir_is_relative(
+        self, mock_mnemosyne_instance: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When no data_dir or DATA_DIR is given, the client defaults to relative ./data."""
+        monkeypatch.delenv("DATA_DIR", raising=False)
         with patch.object(MnemosyneClient, "_create_instance", return_value=mock_mnemosyne_instance) as mock_create:
             MnemosyneClient(memory_bank="test")
-        assert mock_create.call_args.kwargs["data_dir"] == "/data"
+        assert mock_create.call_args.kwargs["data_dir"] == "./data"
+
+    def test_data_dir_env_wins_over_default(
+        self, mock_mnemosyne_instance: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """DATA_DIR env var is honored when no explicit data_dir is given."""
+        monkeypatch.setenv("DATA_DIR", "/from/env")
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock_mnemosyne_instance) as mock_create:
+            MnemosyneClient(memory_bank="test")
+        assert mock_create.call_args.kwargs["data_dir"] == "/from/env"
+
+    def test_explicit_data_dir_wins_over_env(
+        self, mock_mnemosyne_instance: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit data_dir (e.g. from CLI --data-dir) wins over the DATA_DIR env var."""
+        monkeypatch.setenv("DATA_DIR", "/from/env")
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock_mnemosyne_instance) as mock_create:
+            MnemosyneClient(memory_bank="test", data_dir="/from/cli")
+        assert mock_create.call_args.kwargs["data_dir"] == "/from/cli"
 
 
 # ---------------------------------------------------------------------------

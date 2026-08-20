@@ -30,7 +30,7 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data"
+  data_dir: "./data"
   default_bank: "default"
 """
     )
@@ -90,10 +90,10 @@ class TestInstancePoolConfig:
         assert cfg.data_dir == "/data"
         assert cfg.default_bank == "default"
 
-    def test_instance_pool_config_default_data_dir_is_data_root(self):
-        """InstancePoolConfig bakes the single fixed container data root /data."""
+    def test_instance_pool_config_default_data_dir_is_relative(self):
+        """InstancePoolConfig defaults to a relative ./data root (resolved against CWD)."""
         cfg = InstancePoolConfig()
-        assert cfg.data_dir == "/data"
+        assert cfg.data_dir == "./data"
 
 
 class TestAppConfig:
@@ -129,8 +129,22 @@ class TestConfigManager:
 
         assert cfg.instance_pool.max_instances == 50
         assert cfg.instance_pool.eviction_timeout == 300
-        assert cfg.instance_pool.data_dir == "/data"
+        assert cfg.instance_pool.data_dir == "./data"
         assert cfg.instance_pool.default_bank == "default"
+
+    def test_real_default_config_data_dir_is_relative(self):
+        """The shipped config/default.yaml uses a relative ./data root (no read-only /data)."""
+        real_config_dir = Path(__file__).resolve().parents[3] / "config"
+        manager = ConfigManager(config_dir=str(real_config_dir))
+        cfg = manager.load()
+        assert cfg.instance_pool.data_dir == "./data"
+
+    def test_data_dir_env_wins_over_yaml(self, config_dir: Path, monkeypatch: pytest.MonkeyPatch):
+        """DATA_DIR env var wins over the data_dir declared in YAML."""
+        monkeypatch.setenv("DATA_DIR", "/from/env")
+        manager = ConfigManager(config_dir=str(config_dir))
+        cfg = manager.load()
+        assert cfg.instance_pool.data_dir == "/from/env"
 
     def test_env_var_overrides_yaml_values(self, config_dir: Path, monkeypatch: pytest.MonkeyPatch):
         """LOG_LEVEL env var overrides logging.level from YAML."""

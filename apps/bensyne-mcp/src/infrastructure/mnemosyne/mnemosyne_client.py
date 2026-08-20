@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from src.domain.memory_entity import Memory
 
+from src.infrastructure.config.data_dir import resolve_data_dir
 from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import get_logger
 
@@ -27,11 +28,12 @@ class MnemosyneClient:
     with Result-based error handling.
     """
 
-    def __init__(self, memory_bank: str, data_dir: str = "/data") -> None:
+    def __init__(self, memory_bank: str, data_dir: str | None = None) -> None:
         self.memory_bank = memory_bank
         self.created_at = time.time()
         self.last_accessed = time.time()
-        self._instance = self._create_instance(memory_bank=memory_bank, data_dir=data_dir)
+        # Resolution order: explicit (config/CLI) -> DATA_DIR env -> "./data".
+        self._instance = self._create_instance(memory_bank=memory_bank, data_dir=resolve_data_dir(data_dir))
 
     def _create_instance(self, memory_bank: str, data_dir: str) -> Any:
         """Create the underlying Mnemosyne library instance.

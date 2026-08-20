@@ -36,7 +36,9 @@ services:
       # E2E data dir is injected per-run by global-setup.ts (fresh temp dir) so
       # each e2e run starts with a clean Bensyne state (no cross-run pollution).
       # Falls back to the repo data/e2e dir for manual `npm run bensyne:start`.
-      - ${E2E_DATA_DIR:-../../../data/e2e}:/data/mnemosyne/data
+      # Mounts at /data — the container's DATA_DIR (set via ENV in the image) —
+      # for the 1.1.1+ image layout (was /data/mnemosyne/data pre-1.1.1).
+      - ${E2E_DATA_DIR:-../../../data/e2e}:/data
     # Install numpy (required by bensyne embeddings.py for _embed_api) and
     # the Caddy CA cert before starting the server. The locally-built image
     # uses mnemosyne-memory[mcp] which doesn't include numpy.

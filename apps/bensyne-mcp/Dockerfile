@@ -20,6 +20,9 @@ RUN mkdir -p /data
 
 EXPOSE 3000
 
+# Data dir: set here so the container always writes to /data (mounted volume).
+# Local/dev runs use the relative ./data default in the image source.
+ENV DATA_DIR=/data
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 ENV LOG_LEVEL=INFO

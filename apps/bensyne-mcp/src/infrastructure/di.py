@@ -44,6 +44,7 @@ from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
 from src.application.use_cases.search_files_use_case import SearchFilesUseCase
 from src.domain.config_models import InstancePoolConfig
+from src.infrastructure.config.data_dir import resolve_data_dir
 from src.infrastructure.mnemosyne.bank_manager import BankManager
 from src.infrastructure.bank.router import MemoryBankRouter
 from src.infrastructure.mcp.hash_index_service import HashIndexService
@@ -118,6 +119,11 @@ def _build_expand_file_relations_use_case(
     )
 
 
+def _build_bank_manager() -> BankManager:
+    """Build BankManager resolving the data dir (DATA_DIR env -> ./data default)."""
+    return BankManager(data_dir=resolve_data_dir())
+
+
 def _build_bank_type_checker(data_dir: Path) -> Callable[[str], str]:
     """Build the forget-path bank type checker (mirrors MnemosyneClient path resolution).
 
@@ -145,10 +151,9 @@ class Container(containers.DeclarativeContainer):
 
     logger = providers.Singleton(get_logger, "bensyne")
 
-    bank_manager = providers.Singleton(
-        BankManager,
-        data_dir="/data",
-    )
+    # Resolves data_dir at resolution time so the DATA_DIR env (e.g. Docker ENV)
+    # or the relative ./data default is honored instead of a baked-in /data.
+    bank_manager = providers.Singleton(_build_bank_manager)
 
     memory_bank_router = providers.Singleton(
         MemoryBankRouter,

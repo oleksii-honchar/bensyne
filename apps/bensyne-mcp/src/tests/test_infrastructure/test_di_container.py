@@ -38,6 +38,15 @@ class TestProductionContainerSingletons:
         bm2 = container.bank_manager()
         assert bm1 is bm2
 
+    def test_bank_manager_honors_data_dir_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """BankManager provider resolves data_dir from the DATA_DIR env var."""
+        monkeypatch.setenv("DATA_DIR", "/env/bank")
+        # Reset any cached singleton so the provider rebuilds with the current env.
+        ProductionContainer.bank_manager.reset()
+        container = ProductionContainer()
+        bm = container.bank_manager()
+        assert str(bm.data_dir) == "/env/bank"
+
     def test_memory_bank_router_is_singleton(self) -> None:
         """MemoryBankRouter provider returns the same instance on repeated calls."""
         from unittest.mock import patch
