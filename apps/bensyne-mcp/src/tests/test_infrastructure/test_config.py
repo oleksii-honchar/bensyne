@@ -30,7 +30,7 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data/mnemosyne/data"
+  data_dir: "/data"
   default_bank: "default"
 """
     )
@@ -82,13 +82,18 @@ class TestInstancePoolConfig:
         cfg = InstancePoolConfig(
             max_instances=50,
             eviction_timeout=300,
-            data_dir="/data/mnemosyne/data",
+            data_dir="/data",
             default_bank="default",
         )
         assert cfg.max_instances == 50
         assert cfg.eviction_timeout == 300
-        assert cfg.data_dir == "/data/mnemosyne/data"
+        assert cfg.data_dir == "/data"
         assert cfg.default_bank == "default"
+
+    def test_instance_pool_config_default_data_dir_is_data_root(self):
+        """InstancePoolConfig bakes the single fixed container data root /data."""
+        cfg = InstancePoolConfig()
+        assert cfg.data_dir == "/data"
 
 
 class TestAppConfig:
@@ -124,7 +129,7 @@ class TestConfigManager:
 
         assert cfg.instance_pool.max_instances == 50
         assert cfg.instance_pool.eviction_timeout == 300
-        assert cfg.instance_pool.data_dir == "/data/mnemosyne/data"
+        assert cfg.instance_pool.data_dir == "/data"
         assert cfg.instance_pool.default_bank == "default"
 
     def test_env_var_overrides_yaml_values(self, config_dir: Path, monkeypatch: pytest.MonkeyPatch):
@@ -156,7 +161,7 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data/mnemosyne/data"
+  data_dir: "/data"
   default_bank: "default"
 """
         )
@@ -197,7 +202,7 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data/mnemosyne/data"
+  data_dir: "/data"
   default_bank: "default"
 """
         )

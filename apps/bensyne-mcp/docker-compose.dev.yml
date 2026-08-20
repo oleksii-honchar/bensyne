@@ -17,7 +17,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./config:/app/config
-      - ./data:/data/mnemosyne/data
+      - ./data:/data
     environment:
       - PYTHONPATH=/app/src
       - LOG_LEVEL=DEBUG

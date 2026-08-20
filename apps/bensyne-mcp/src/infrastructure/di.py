@@ -147,7 +147,7 @@ class Container(containers.DeclarativeContainer):
 
     bank_manager = providers.Singleton(
         BankManager,
-        data_dir="/data/mnemosyne",
+        data_dir="/data",
     )
 
     memory_bank_router = providers.Singleton(

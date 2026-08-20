@@ -93,14 +93,14 @@ class TestInstanceInfo:
 
         info = InstanceInfo(
             memory_bank="obsidian-vault",
-            db_path="/data/mnemosyne/data/banks/obsidian-vault/mnemosyne.db",
+            db_path="/data/banks/obsidian-vault/mnemosyne.db",
             status="active",
             created_at=created_at,
             last_accessed=last_accessed,
         )
 
         assert info.memory_bank == "obsidian-vault"
-        assert info.db_path == "/data/mnemosyne/data/banks/obsidian-vault/mnemosyne.db"
+        assert info.db_path == "/data/banks/obsidian-vault/mnemosyne.db"
         assert info.status == "active"
         assert info.created_at == created_at
         assert info.last_accessed == last_accessed
@@ -109,20 +109,20 @@ class TestInstanceInfo:
         """InstanceInfo can be created for default memory bank."""
         info = InstanceInfo(
             memory_bank="default",
-            db_path="/data/mnemosyne/data/mnemosyne.db",
+            db_path="/data/mnemosyne.db",
             status="active",
             created_at=1722326400.0,
             last_accessed=1722326400.0,
         )
 
         assert info.memory_bank == "default"
-        assert info.db_path == "/data/mnemosyne/data/mnemosyne.db"
+        assert info.db_path == "/data/mnemosyne.db"
 
     def test_instance_info_serialization(self):
         """InstanceInfo can be serialized to dict."""
         info = InstanceInfo(
             memory_bank="test",
-            db_path="/data/mnemosyne/data/banks/test/mnemosyne.db",
+            db_path="/data/banks/test/mnemosyne.db",
             status="active",
             created_at=1722326400.0,
             last_accessed=1722326500.0,
@@ -132,7 +132,7 @@ class TestInstanceInfo:
 
         assert data == {
             "memory_bank": "test",
-            "db_path": "/data/mnemosyne/data/banks/test/mnemosyne.db",
+            "db_path": "/data/banks/test/mnemosyne.db",
             "status": "active",
             "created_at": 1722326400.0,
             "last_accessed": 1722326500.0,

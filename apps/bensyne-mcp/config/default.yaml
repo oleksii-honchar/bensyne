@@ -13,5 +13,5 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data/mnemosyne/data"
+  data_dir: "/data"
   default_bank: "default"

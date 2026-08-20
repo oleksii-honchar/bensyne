@@ -27,7 +27,7 @@ class MnemosyneClient:
     with Result-based error handling.
     """
 
-    def __init__(self, memory_bank: str, data_dir: str = "/data/mnemosyne") -> None:
+    def __init__(self, memory_bank: str, data_dir: str = "/data") -> None:
         self.memory_bank = memory_bank
         self.created_at = time.time()
         self.last_accessed = time.time()

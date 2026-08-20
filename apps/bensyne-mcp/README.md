@@ -68,7 +68,7 @@ Bensyne replaces the traditional mcp-proxy → stdio bridge architecture with a 
 docker run -d \
    --name bensyne \
   -p 3000:3000 \
-  -v /data/mnemosyne/data:/data/mnemosyne/data \
+  -v /data:/data \
    tuiteraz/bensyne:latest
 
 # Verify health
@@ -142,7 +142,7 @@ docker build -t bensyne .
 
 ```bash
 # Basic run with data volume
-docker run -p 3000:3000 -v ./data:/data/mnemosyne/data bensyne
+docker run -p 3000:3000 -v ./data:/data bensyne
 
 # With custom port and log level
 docker run -p 3001:3000 bensyne python main.py --port 3000 --log-level DEBUG
@@ -161,7 +161,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /data/mnemosyne/data:/data/mnemosyne/data
+      - /data:/data
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:
@@ -323,7 +323,7 @@ logging:
 instance_pool:
   max_instances: 50
   eviction_timeout: 300
-  data_dir: "/data/mnemosyne/data"
+  data_dir: "/data"
   default_bank: "default"
 ```
 
@@ -334,7 +334,7 @@ Arguments passed to `main.py` override YAML config:
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--port` | Port to listen on | `3000` (from config) |
-| `--data-dir` | Data directory for SQLite databases | `/data/mnemosyne/data` (from config) |
+| `--data-dir` | Data directory for SQLite databases | `/data` (from config) |
 | `--log-level` | Log level (DEBUG, INFO, WARNING, ERROR) | `INFO` (from config) |
 
 Example:
@@ -466,11 +466,11 @@ python main.py --port 3001
 **Fix:**
 ```bash
 # Ensure data directory exists and is writable
-mkdir -p /data/mnemosyne/data
-chmod 755 /data/mnemosyne/data
+mkdir -p /data
+chmod 755 /data
 
 # In Docker, ensure volume mount has correct permissions
-docker run -v $(pwd)/data:/data/mnemosyne/data bensyne
+docker run -v $(pwd)/data:/data bensyne
 ```
 
 ### Server Not Responding

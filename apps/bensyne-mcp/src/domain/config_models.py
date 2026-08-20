@@ -30,7 +30,7 @@ class InstancePoolConfig:
 
     max_instances: int = 50
     eviction_timeout: int = 300
-    data_dir: str = "/data/mnemosyne/data"
+    data_dir: str = "/data"
     default_bank: str = "default"
 
 

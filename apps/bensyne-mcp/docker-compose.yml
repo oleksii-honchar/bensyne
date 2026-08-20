@@ -10,7 +10,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /data/mnemosyne/data:/data/mnemosyne/data
+      - ./data:/data
     environment:
       - MNEMOSYNE_EMBEDDING_MODEL=puma-embed-qwen3-4b
       - MNEMOSYNE_EMBEDDING_API_URL=https://lite-llm.lan/v1

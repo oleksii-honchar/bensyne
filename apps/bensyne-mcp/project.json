@@ -35,10 +35,10 @@
     },
     "start:docker": {
       "executor": "nx:run-commands",
-      "description": "Run the tuiteraz/bensyne image (tag from pyproject.toml) with port 18300 mapped to container 3000 and a temp data dir mounted at /data/mnemosyne/data. Exact invocation: docker run -d --name bensyne-smoke -p 18300:3000 -v <tmpdir>:/data/mnemosyne/data tuiteraz/bensyne:<version>. Cleanup: docker rm -f bensyne-smoke.",
+      "description": "Run the tuiteraz/bensyne image (tag from pyproject.toml) with port 18300 mapped to container 3000 and a temp data dir mounted at /data. Exact invocation: docker run -d --name bensyne-smoke -p 18300:3000 -v <tmpdir>:/data tuiteraz/bensyne:<version>. Cleanup: docker rm -f bensyne-smoke.",
       "options": {
         "cwd": "apps/bensyne-mcp",
-        "command": "VERSION=$(node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\") && TMPDIR_DATA=$(mktemp -d /tmp/bensyne-data-XXXXXX) && docker rm -f bensyne-smoke 2>/dev/null; docker run -d --name bensyne-smoke -p 18300:3000 -v ${TMPDIR_DATA}:/data/mnemosyne/data tuiteraz/bensyne:${VERSION}"
+        "command": "VERSION=$(node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\") && TMPDIR_DATA=$(mktemp -d /tmp/bensyne-data-XXXXXX) && docker rm -f bensyne-smoke 2>/dev/null; docker run -d --name bensyne-smoke -p 18300:3000 -v ${TMPDIR_DATA}:/data tuiteraz/bensyne:${VERSION}"
       }
     },
     "bump-version": {

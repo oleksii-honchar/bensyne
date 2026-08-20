@@ -76,6 +76,12 @@ class TestMnemosyneClientConstructor:
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs["data_dir"] == "/custom/data"
 
+    def test_default_data_dir_is_data_root(self, mock_mnemosyne_instance: MagicMock) -> None:
+        """When no data_dir is given, the client bakes the single fixed /data root."""
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock_mnemosyne_instance) as mock_create:
+            MnemosyneClient(memory_bank="test")
+        assert mock_create.call_args.kwargs["data_dir"] == "/data"
+
 
 # ---------------------------------------------------------------------------
 # remember
