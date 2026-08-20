@@ -5,10 +5,31 @@ import fs from 'fs';
 import path from 'path';
 import { PrismaClient } from '../../generated/prisma/client';
 
+/**
+ * Resolves the racochu project root — the directory containing prisma/schema.prisma —
+ * by walking up from startDir. Works both in dev (src/...) and compiled (dist/src/...)
+ * layouts, where a fixed relative depth would resolve to the wrong directory.
+ */
+export function findProjectRoot(startDir: string): string {
+  let dir = startDir;
+  for (;;) {
+    if (fs.existsSync(path.join(dir, 'prisma', 'schema.prisma'))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      // No schema found up to the filesystem root — keep the legacy resolution
+      // so failures surface where they always did.
+      return path.resolve(startDir, '../../../');
+    }
+    dir = parent;
+  }
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
-    const dataDir = path.resolve(__dirname, '../../../data');
+    const dataDir = path.join(findProjectRoot(__dirname), 'data');
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -22,7 +43,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   private ensureSchema(): void {
-    const projectRoot = path.resolve(__dirname, '../../../');
+    const projectRoot = findProjectRoot(__dirname);
     try {
       execSync('npx prisma db push --accept-data-loss', {
         cwd: projectRoot,

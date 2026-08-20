@@ -1,8 +1,11 @@
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 import { execSync } from 'child_process';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { PrismaClient } from '../../generated/prisma/client';
+
+import { findProjectRoot } from './prisma.service';
 
 const projectRoot = resolve(__dirname, '../../../');
 const testDbPath = join(projectRoot, 'data', 'test-prisma.db');
@@ -163,5 +166,47 @@ describe('PrismaService.ensureSchema', () => {
         });
       }).toThrow();
     });
+  });
+});
+
+describe('findProjectRoot', () => {
+  let fixtureRoot: string;
+
+  beforeEach(() => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'racochu-prisma-root-'));
+    mkdirSync(join(fixtureRoot, 'prisma'), { recursive: true });
+    writeFileSync(join(fixtureRoot, 'prisma', 'schema.prisma'), 'generator client { }\n');
+  });
+
+  afterEach(() => {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  it('resolves the root from a shallow (src/dev) location', () => {
+    const srcDir = join(fixtureRoot, 'src', 'infrastructure', 'prisma');
+
+    expect(findProjectRoot(srcDir)).toBe(fixtureRoot);
+  });
+
+  it('resolves the root from a deep (dist) location', () => {
+    const distDir = join(fixtureRoot, 'dist', 'src', 'infrastructure', 'prisma');
+
+    expect(findProjectRoot(distDir)).toBe(fixtureRoot);
+  });
+
+  it('prefers the nearest directory containing prisma/schema.prisma', () => {
+    // A nested project root must win over any schema living higher up.
+    const nested = join(fixtureRoot, 'inner', 'app');
+    mkdirSync(join(nested, 'prisma'), { recursive: true });
+    writeFileSync(join(nested, 'prisma', 'schema.prisma'), 'generator client { }\n');
+    const fromNested = join(nested, 'dist', 'src', 'infrastructure', 'prisma');
+
+    expect(findProjectRoot(fromNested)).toBe(nested);
+  });
+
+  it('falls back to the legacy ../../../ resolution when no schema is found', () => {
+    const isolated = join(tmpdir(), 'racochu-isolated', 'a', 'b', 'c');
+
+    expect(findProjectRoot(isolated)).toBe(resolve(isolated, '../../../'));
   });
 });

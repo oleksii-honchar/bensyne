@@ -3,17 +3,17 @@
   "version": "1.0.0",
   "description": "DDD-based NestJS CLI server for semantic content chunking before Mnemosyne MCP ingestion",
   "bin": {
-    "racochu": "dist/main.js"
+    "racochu": "dist/src/main.js"
   },
   "engines": {
     "node": ">=26.0.0",
     "npm": ">=11.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/src/generated && cp -r src/generated/prisma dist/src/generated/prisma",
-    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && mkdir -p dist/src/generated && cp -r src/generated/prisma dist/src/generated/prisma",
+    "start": "node dist/src/main.js",
     "start:dev": "nodemon",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main.js",
     "ts-node": "dotenvx run -- node -r ts-node/register -r tsconfig-paths/register src/main.ts",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -83,6 +83,7 @@
     "source-map-support": "0.5.21",
     "ts-jest": "^29.4.12",
     "ts-node": "10.9.2",
+    "tsc-alias": "^1.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "8.66.0"
