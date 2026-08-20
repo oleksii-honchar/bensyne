@@ -12,6 +12,14 @@ import { z } from 'zod';
 type MastraChunkStrategy = 'markdown' | 'recursive' | 'json' | 'sentence';
 type MastraDocumentType = 'markdown' | 'json' | 'html' | 'text';
 
+/**
+ * Derive the LLM whole-file summary word cap from the enrichment `docMaxTokens` config.
+ * clamp(floor(docMaxTokens/200), 20, 120); default 16000 → 80 words.
+ */
+export function deriveSummaryMaxWords(docMaxTokens: number): number {
+  return Math.max(20, Math.min(120, Math.floor(docMaxTokens / 200)));
+}
+
 @Injectable()
 export class MastraChunkingService {
   /**
@@ -21,6 +29,7 @@ export class MastraChunkingService {
   private static readonly enrichmentSchema = z.object({
     title: z.string(),
     keywords: z.string(),
+    summary: z.string(),
   });
 
   constructor(
@@ -64,6 +73,7 @@ export class MastraChunkingService {
       // Document-level enrichment via custom LLM
       let enrichedDoc = document;
       const enrichmentConfig = this.configService.getEnrichmentConfig();
+      const summaryMaxWords = deriveSummaryMaxWords(enrichmentConfig.docMaxTokens);
 
       if (enrichmentConfig.enabled && enrichmentConfig.llmUrl && enrichmentConfig.apiKey) {
         this.logger.info('[enrichment] Attempting enrichment', {
@@ -99,6 +109,7 @@ export class MastraChunkingService {
 Extract the following fields from the document:
 - title: A concise title describing the content
 - keywords: Comma-separated keywords
+- summary: A concise whole-file summary of the document, at most ${summaryMaxWords} words
 
 Respond in this format:
 {
@@ -117,12 +128,14 @@ Do not include any other text, explanations, or markdown formatting.`,
             const enrichmentData = firstChunk?.metadata?.enrichment as Record<string, unknown> | undefined;
             const hasTitle = typeof enrichmentData?.title === 'string';
             const hasKeywords = typeof enrichmentData?.keywords === 'string';
+            const hasSummary = typeof enrichmentData?.summary === 'string';
 
             this.logger.info(
-              `[enrichment] Extracted metadata; hasTitle=${hasTitle}, hasKeywords=${hasKeywords}`,
+              `[enrichment] Extracted metadata; hasTitle=${hasTitle}, hasKeywords=${hasKeywords}, hasSummary=${hasSummary}`,
               {
                 hasTitle,
                 hasKeywords,
+                hasSummary,
                 filePath,
               },
             );
@@ -346,12 +359,17 @@ Do not include any other text, explanations, or markdown formatting.`,
       const enrichmentTitle = typeof enrichmentData?.title === 'string' ? enrichmentData.title : undefined;
       const enrichmentKeywords =
         typeof enrichmentData?.keywords === 'string' ? enrichmentData.keywords : undefined;
+      const enrichmentSummary =
+        typeof enrichmentData?.summary === 'string' ? enrichmentData.summary : undefined;
 
       if (enrichmentTitle) {
         metadata.mastraDocTitle = enrichmentTitle;
       }
       if (enrichmentKeywords) {
         metadata.mastraDocKeywords = enrichmentKeywords;
+      }
+      if (enrichmentSummary) {
+        metadata.mastraDocSummary = enrichmentSummary;
       }
 
       const chunkResult = ContentChunk.of({

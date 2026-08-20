@@ -17,7 +17,7 @@
     "language": "markdown",
     "file_hash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
     "chunk_hash": "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c",
-    "summary": null,
+    "summary": "Findings from the bensyne file metadata materialization session, documenting implementation details and design decisions.",
     "parent_unit": {
       "ref": "session-260811-0000",
       "summary": "Session investigating bensyne file metadata materialization"
@@ -64,6 +64,7 @@
       "sourceType": "agent-sessions",
       "fileHash": "ed8feb0ec28dad93b0c1e85377908f07367164d374d3d329e1bde6668591cc17",
       "chunkHash": "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c",
+      "mastraDocSummary": "Findings from the bensyne file metadata materialization session, documenting implementation details and design decisions.",
       "session.id": "260811-0000",
       "session.status": "Session investigating bensyne file metadata materialization",
       "note.tags": "[\"architecture\",\"contract\"]"

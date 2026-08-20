@@ -15,7 +15,7 @@ import { MastraChunkingService } from './mastra-chunking.service';
 
 /** Companion artifact names present in a session root (top-level entries). */
 const COMPANION_FILE = 'session.md';
-const COMPANION_DIRS = ['specifications', 'findings', 'decisions', 'plans', 'materials'] as const;
+const COMPANION_DIRS = ['specifications', 'findings', 'decisions', 'plans'] as const;
 
 /** Canonical file name within each companion directory (deterministic edge target). */
 const COMPANION_DIR_FILES: Record<string, string> = {
@@ -23,7 +23,6 @@ const COMPANION_DIR_FILES: Record<string, string> = {
   findings: 'findings.md',
   decisions: 'decisions.md',
   plans: 'implementation-plan.md',
-  materials: 'unified-chunk-contract.md',
 };
 
 /**

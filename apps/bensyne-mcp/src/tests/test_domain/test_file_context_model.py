@@ -55,7 +55,10 @@ class TestFullValidV1Payload:
         assert context.chunk_hash == (
             "aee858233038e696cb0c90d0d65a312c308454104a6bd4bbb53554f7816b322c"
         )
-        assert context.summary is None
+        assert context.summary == (
+            "Findings from the bensyne file metadata materialization session, "
+            "documenting implementation details and design decisions."
+        )
         assert context.parent_unit is not None
         assert context.parent_unit.ref == "session-260811-0000"
         assert context.parent_unit.summary == "Session investigating bensyne file metadata materialization"
@@ -90,7 +93,7 @@ class TestFixtureParity:
         raw = (FIXTURES_DIR / "file_context_contract_v1.json").read_bytes()
 
         assert hashlib.sha256(raw).hexdigest() == (
-            "b0b6f7f967c3da353f9396414f92128a96315ddb798abe1c7587fc5b8ab22603"
+            "aa60627d4f8184bdc458d44a01237db78fe02fea58f70b04332877d94dbf73c0"
         )
 
     def test_chunk_hash_is_sha256_of_exact_content_string(self):

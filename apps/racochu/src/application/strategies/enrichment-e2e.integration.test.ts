@@ -140,6 +140,7 @@ describe('Enrichment E2E Integration', () => {
 Extract the following fields from the document:
 - title: A concise title describing the content
 - keywords: Comma-separated keywords
+- summary: A concise whole-file summary of the document, at most 80 words
 
 Respond in this format:
 {

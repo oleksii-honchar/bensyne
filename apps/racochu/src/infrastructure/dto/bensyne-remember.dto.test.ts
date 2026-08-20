@@ -340,12 +340,68 @@ describe('BensyneRememberDto', () => {
     });
   });
 
+  describe('fromChunk — mastraDocSummary mapping (D44 spec §2.4)', () => {
+    it('maps metadata.mastraDocSummary to the wire metadata.summary value', () => {
+      const chunk = aContentChunk({
+        metadata: { filePath: '/vault/notes/meeting.md', mastraDocSummary: 'A concise whole-file summary.' },
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata.summary).toBe('A concise whole-file summary.');
+    });
+
+    it('keeps metadata.summary null when the chunk carries no mastraDocSummary (regression)', () => {
+      const chunk = aContentChunk({
+        metadata: { filePath: '/vault/notes/meeting.md' },
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata.summary).toBeNull();
+    });
+
+    it('does not leak mastraDocSummary into metadata.extra', () => {
+      const chunk = aContentChunk({
+        metadata: { filePath: '/vault/notes/meeting.md', mastraDocSummary: 'A concise whole-file summary.' },
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata.extra ?? {}).not.toHaveProperty('mastraDocSummary');
+      // Consumed internal key must not appear anywhere in the wire metadata
+      expect(dto.metadata).not.toHaveProperty('mastraDocSummary');
+    });
+
+    it('keeps other source-specific keys landing in extra (passthrough unchanged)', () => {
+      const chunk = aContentChunk({
+        metadata: {
+          filePath: '/vault/notes/deep.md',
+          sourceType: 'agent-sessions',
+          mastraDocSummary: 'A concise whole-file summary.',
+          'session.id': '260811-0000',
+          'session.status': 'in-progress',
+          'note.aliases': '["Deep Dive"]',
+        },
+      });
+
+      const dto = BensyneRememberDto.fromChunk(chunk);
+
+      expect(dto.metadata.summary).toBe('A concise whole-file summary.');
+      expect(dto.metadata.extra).toEqual({
+        'session.id': '260811-0000',
+        'session.status': 'in-progress',
+        'note.aliases': '["Deep Dive"]',
+      });
+    });
+  });
+
   describe('contract parity (spec §7.4)', () => {
     it('pins the fixture file bytes to the recorded parity sha256', () => {
       const raw = readFileSync(join(__dirname, 'fixtures', 'unified-chunk-contract-v1.json'));
 
       expect(createHash('sha256').update(raw).digest('hex')).toBe(
-        'b0b6f7f967c3da353f9396414f92128a96315ddb798abe1c7587fc5b8ab22603',
+        'aa60627d4f8184bdc458d44a01237db78fe02fea58f70b04332877d94dbf73c0',
       );
     });
 

@@ -256,6 +256,10 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
                 "source_type": f.source_type.value,
                 "relation_type": rel.relation_type.value,
                 "strength": rel.strength,
+                # Additive (D44 spec §3.2): target whole-file summary + the
+                # traversed relation's own description.
+                "summary": f.summary,
+                "description": rel.description,
             }
 
         return list(resolved.values())

@@ -158,11 +158,12 @@ class FileEnrichmentService:
         return ordered[:limit]
 
     def _relation_block(self, relation: FileRelation) -> dict:
-        """Compact relation row (id + type + strength) for the enrichment block."""
+        """Compact relation row (id + type + strength + description) for the enrichment block."""
         return {
             "id": relation.id,
             "relation_type": relation.relation_type.value,
             "strength": relation.strength,
+            "description": relation.description,
         }
 
     def _resolve_related_files(self, relations: list[FileRelation], source_file_id: str) -> list[dict]:
@@ -187,6 +188,7 @@ class FileEnrichmentService:
                     "path": target.path,
                     "summary": target.summary,
                     "relation": relation.relation_type.value,
+                    "description": relation.description,
                 }
             )
         return resolved

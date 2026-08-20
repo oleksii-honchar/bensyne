@@ -186,12 +186,21 @@ class ExpandFileRelationsUseCase(BaseUseCase[dict, dict]):
                             "language": f.language,
                         },
                         "chunks_count": 0,
+                        "description": rel.description,
                     }
                 )
             else:
                 output = to_dict_result.value
-                chunks_count = output.get("chunks_count", 0)
-                expanded.append(output)
+                if output is not None:
+                    chunks_count = output.get("chunks_count", 0)
+                    # Use-case-level enrichment: the traversed relation's description
+                    # is not part of the aggregate's to_dict output (spec §3.3).
+                    output["description"] = rel.description
+                    expanded.append(output)
+                else:
+                    # Defensive: to_dict() returns a dict on success, but the value
+                    # type is Optional (mypy). Skip the entry rather than crash.
+                    chunks_count = 0
 
             self.logger.info(
                 "Related file expanded",

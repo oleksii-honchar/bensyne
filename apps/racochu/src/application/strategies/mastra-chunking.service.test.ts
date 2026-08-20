@@ -6,7 +6,7 @@ import { ConfigurationService } from '../../infrastructure/config/configuration.
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 
 import { MDocument } from '@mastra/rag';
-import { MastraChunkingService } from './mastra-chunking.service';
+import { deriveSummaryMaxWords, MastraChunkingService } from './mastra-chunking.service';
 
 const mockedMDocument = MDocument as jest.Mocked<typeof MDocument>;
 
@@ -18,6 +18,7 @@ const createMockConfigService = (overrides?: {
   enrichmentEnabled?: boolean;
   enrichmentApiKey?: string | null;
   enrichmentLlmUrl?: string | null;
+  docMaxTokens?: number;
 }) => {
   return {
     getEnhancementConfig: jest.fn().mockReturnValue({
@@ -37,10 +38,33 @@ const createMockConfigService = (overrides?: {
       llmModel: 'puma-qwopus3.5-9b',
       maxConcurrency: 1,
       timeoutMs: 15000,
-      docMaxTokens: 16000,
+      docMaxTokens: overrides?.docMaxTokens ?? 16000,
     }),
   } as unknown as ConfigurationService;
 };
+
+describe('deriveSummaryMaxWords', () => {
+  it.each([
+    [16000, 80],
+    [2000, 20],
+    [4000, 20],
+    [24000, 120],
+    [1000, 20],
+    [0, 20],
+    [50000, 120],
+  ])('docMaxTokens=%i maps to summaryMaxWords=%i', (docMaxTokens, expected) => {
+    expect(deriveSummaryMaxWords(docMaxTokens)).toBe(expected);
+  });
+
+  it('always stays within [20, 120] and is an integer across a wide range of docMaxTokens', () => {
+    for (let docMaxTokens = 0; docMaxTokens <= 100000; docMaxTokens += 137) {
+      const summaryMaxWords = deriveSummaryMaxWords(docMaxTokens);
+      expect(summaryMaxWords).toBeGreaterThanOrEqual(20);
+      expect(summaryMaxWords).toBeLessThanOrEqual(120);
+      expect(Number.isInteger(summaryMaxWords)).toBe(true);
+    }
+  });
+});
 
 describe('MastraChunkingService', () => {
   let service: MastraChunkingService;
@@ -761,6 +785,7 @@ describe('MastraChunkingService', () => {
 Extract the following fields from the document:
 - title: A concise title describing the content
 - keywords: Comma-separated keywords
+- summary: A concise whole-file summary of the document, at most 80 words
 
 Respond in this format:
 {
@@ -933,6 +958,190 @@ Do not include any other text, explanations, or markdown formatting.`,
       expect(chunk.metadata?.mastraDocTitle).toBe('Enriched Title');
       expect(chunk.metadata?.mastraDocKeywords).toBe('enriched,keywords');
     });
+
+    it('should include summary in the enrichment schema passed to extractMetadata', async () => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'content',
+              metadata: {
+                enrichment: { title: 'T', keywords: 'k', summary: 'Whole-file summary of the document.' },
+              },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      const callArg = mockDoc.extractMetadata.mock.calls[0][0];
+      // The schema must expose `summary` so the LLM output carries it end-to-end
+      expect(callArg.schema.schema.shape.summary).toBeDefined();
+      const parsed = callArg.schema.schema.safeParse({
+        title: 'T',
+        keywords: 'k',
+        summary: 'Whole-file summary of the document.',
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.data.summary).toBe('Whole-file summary of the document.');
+    });
+
+    it('should include the exact derived word cap in the extraction instructions (default 16000 → 80 words)', async () => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      const callArg = mockDoc.extractMetadata.mock.calls[0][0];
+      expect(callArg.schema.instructions).toContain('at most 80 words');
+    });
+
+    it.each([
+      [2000, 'at most 20 words'],
+      [24000, 'at most 120 words'],
+    ])('should instruct the LLM with the derived cap for docMaxTokens=%i', async (docMaxTokens, expectedPhrase) => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+        docMaxTokens,
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      const callArg = mockDoc.extractMetadata.mock.calls[0][0];
+      expect(callArg.schema.instructions).toContain(expectedPhrase);
+    });
+  });
+
+  describe('mapToDomainChunks — mastraDocSummary stamping', () => {
+    it('should stamp mastraDocSummary on EVERY chunk of a multi-chunk document when enrichment returns a summary', async () => {
+      const wholeFileSummary = 'A concise whole-file summary of the multi-chunk document.';
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'Chunk 1 content',
+              metadata: { enrichment: { title: 'T', keywords: 'k', summary: wholeFileSummary } },
+            },
+            {
+              text: 'Chunk 2 content',
+              metadata: { enrichment: { title: 'T', keywords: 'k', summary: wholeFileSummary } },
+            },
+            {
+              text: 'Chunk 3 content',
+              metadata: { enrichment: { title: 'T', keywords: 'k', summary: wholeFileSummary } },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title\n\nA\n\nB\n\nC', 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks).toHaveLength(3);
+      for (const chunk of chunks) {
+        expect(chunk.metadata?.mastraDocSummary).toBe(wholeFileSummary);
+      }
+    });
+
+    it('should NOT stamp mastraDocSummary when enrichment summary is absent', async () => {
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'Extracted Title', keywords: 'keyword1,keyword2' } },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.mastraDocSummary).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(chunk.metadata ?? {}, 'mastraDocSummary')).toBe(false);
+    });
+
+    it('should NOT stamp mastraDocSummary on chunks produced without Mastra enrichment (enrichment disabled)', async () => {
+      configService = createMockConfigService({ enrichmentEnabled: false });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const mockDoc = {
+        extractMetadata: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.mastraDocSummary).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(chunk.metadata ?? {}, 'mastraDocSummary')).toBe(false);
+      expect(mockDoc.extractMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should stamp mastraDocSummary on a single-chunk document (uniformity, not first-chunk-only)', async () => {
+      const wholeFileSummary = 'A concise whole-file summary of a single-chunk document.';
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'T', keywords: 'k', summary: wholeFileSummary } },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.mastraDocSummary).toBe(wholeFileSummary);
+    });
   });
 
   describe('enrichment logging', () => {
@@ -1085,7 +1294,13 @@ Do not include any other text, explanations, or markdown formatting.`,
           getDocs: jest.fn().mockReturnValue([
             {
               text: 'content',
-              metadata: { enrichment: { title: 'Enriched Title', keywords: 'enriched,keywords' } },
+              metadata: {
+                enrichment: {
+                  title: 'Enriched Title',
+                  keywords: 'enriched,keywords',
+                  summary: 'Whole-file summary of the document.',
+                },
+              },
             },
           ]),
         }),
@@ -1096,10 +1311,81 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Extracted metadata; hasTitle=true, hasKeywords=true',
+        '[enrichment] Extracted metadata; hasTitle=true, hasKeywords=true, hasSummary=true',
         expect.objectContaining({
           hasTitle: true,
           hasKeywords: true,
+          hasSummary: true,
+          filePath: 'README.md',
+        }),
+      );
+    });
+
+    it('should log hasSummary=true in the Extracted metadata payload when enrichment includes a summary', async () => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const enrichedDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'content',
+              metadata: {
+                enrichment: { title: 'T', keywords: 'k', summary: 'Whole-file summary.' },
+              },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
+
+      await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('[enrichment] Extracted metadata'),
+        expect.objectContaining({
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: true,
+          filePath: 'README.md',
+        }),
+      );
+    });
+
+    it('should log hasSummary=false in the Extracted metadata payload when enrichment lacks a summary', async () => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const enrichedDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([
+            {
+              text: 'content',
+              metadata: { enrichment: { title: 'T', keywords: 'k' } },
+            },
+          ]),
+        }),
+        chunkMarkdown: jest.fn(),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
+
+      await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('[enrichment] Extracted metadata'),
+        expect.objectContaining({
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: false,
           filePath: 'README.md',
         }),
       );

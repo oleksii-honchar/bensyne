@@ -103,6 +103,7 @@ def _a_relation(
     target_file_id: str = "f2",
     relation_type: RelationType = RelationType.SIBLING,
     strength: float = 0.5,
+    description: Optional[str] = None,
 ) -> FileRelation:
     return FileRelation(
         id=id,
@@ -111,7 +112,7 @@ def _a_relation(
         relation_type=relation_type,
         strength=strength,
         direction=Direction.UNIDIRECTIONAL,
-        description=None,
+        description=description,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -595,3 +596,85 @@ class TestHashSurfacing:
         results = service.enrich([_a_memory(id="mem_pure")])
 
         assert results[0]["file_enrichment"] is None
+
+
+# ---------------------------------------------------------------------------
+# AC 8 — D44 edges population: relations[] + related_files[] carry description
+# ---------------------------------------------------------------------------
+
+
+class TestRelationDescriptionSurfacing:
+    """D44 (spec §3.1): every relation surfaced on retrieval gains the
+    relation's own `description` — additive-only, both the compact
+    `relations[]` block and the sibling `related_files[]` entries."""
+
+    def test_relations_block_carries_relation_description_when_set(self) -> None:
+        """A relation WITH a description ⇒ its relations[] entry carries
+        `description` equal to it."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(id="r_desc", target_file_id="f2", strength=0.9,
+                        description="Shared context between A and B"),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/b.md")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+        block = enrichment["relations"][0]
+
+        assert block["id"] == "r_desc"
+        assert block["description"] == "Shared context between A and B"
+
+    def test_relations_block_carries_none_description_when_unset(self) -> None:
+        """A relation WITHOUT a description (None) ⇒ its relations[] entry
+        carries `description: None` (additive key always present)."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(id="r_none", target_file_id="f2", strength=0.9, description=None),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/b.md")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+        block = enrichment["relations"][0]
+
+        assert block["id"] == "r_none"
+        assert "description" in block
+        assert block["description"] is None
+
+    def test_related_files_entries_carry_traversed_relation_description(self) -> None:
+        """related_files[] entries carry the traversed relation's `description`."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(id="r_desc", target_file_id="f2", strength=0.9,
+                        description="Target B links to A"),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/b.md", summary="File B summary")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+        related = enrichment["related_files"][0]
+
+        assert related["id"] == "f2"
+        assert related["relation"] == "sibling"
+        assert related["description"] == "Target B links to A"
+
+    def test_related_files_entries_carry_none_description_when_unset(self) -> None:
+        """related_files[] entry for a relation with no description carries
+        `description: None` (additive key always present)."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(id="r_none", target_file_id="f2", strength=0.9, description=None),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/b.md")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+        related = enrichment["related_files"][0]
+
+        assert "description" in related
+        assert related["description"] is None

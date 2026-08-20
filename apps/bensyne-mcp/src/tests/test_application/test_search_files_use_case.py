@@ -100,6 +100,7 @@ def _a_relation(
     source_file_id: str = "f1",
     target_file_id: str = "f2",
     relation_type=None,
+    description: str | None = "",
 ) -> FileRelation:
     return FileRelation(
         id=id,
@@ -108,7 +109,7 @@ def _a_relation(
         relation_type=relation_type or RelationType.SIBLING,
         strength=1.0,
         direction=Direction.UNIDIRECTIONAL,
-        description="",
+        description=description,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -940,3 +941,220 @@ class TestSearchFilesEnrichmentHashDelegation:
 
         r = result.value["results"][0]
         assert r["file_enrichment"] is None
+
+
+# ---------------------------------------------------------------------------
+# AC 9 — D44 edges population: searchFiles related_files[] carry
+# summary + description (additive-only)
+# ---------------------------------------------------------------------------
+
+
+class TestRelatedFilesSummaryDescriptionSurfacing:
+    """D44 (spec §3.2): searchFiles related_files[] entries gain the target
+    File's whole-file `summary` + the traversed relation's `description` —
+    additive-only, existing keys (id/path/source_type/relation_type/strength)
+    untouched."""
+
+    def test_related_files_entries_carry_target_summary_when_set(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """Target File WITH a summary ⇒ related_files[] entry carries `summary`
+        equal to it."""
+        file = _a_file(id="f1", path="/tmp/test.txt")
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1")
+        relation = _a_relation(source_file_id="f1", target_file_id="f2", description="Link from A to B")
+        related_file = _a_file(id="f2", path="/tmp/related.txt", summary="Summary of file B")
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.5, "relevance_score": 0.8},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_related_file_by_id.side_effect = (
+            lambda fid: Result.ok(related_file) if fid == "f2" else Result.ok(file)
+        )
+        file_service.get_relations_by_file_id.return_value = Result.ok([relation])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
+
+        assert result.is_ok is True
+        r = result.value["results"][0]
+        rf = r["related_files"][0]
+        assert rf["id"] == "f2"
+        assert rf["summary"] == "Summary of file B"
+
+    def test_related_files_entries_carry_none_summary_when_target_has_no_summary(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """Target File WITHOUT a summary ⇒ related_files[] entry carries
+        `summary: None` (additive key always present)."""
+        file = _a_file(id="f1", path="/tmp/test.txt")
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1")
+        relation = _a_relation(source_file_id="f1", target_file_id="f2")
+        related_file = _a_file(id="f2", path="/tmp/related.txt", summary=None)
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.5, "relevance_score": 0.8},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_related_file_by_id.side_effect = (
+            lambda fid: Result.ok(related_file) if fid == "f2" else Result.ok(file)
+        )
+        file_service.get_relations_by_file_id.return_value = Result.ok([relation])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
+
+        assert result.is_ok is True
+        rf = result.value["results"][0]["related_files"][0]
+        assert "summary" in rf
+        assert rf["summary"] is None
+
+    def test_related_files_entries_carry_traversed_relation_description(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """related_files[] entries carry the traversed relation's `description`."""
+        file = _a_file(id="f1", path="/tmp/test.txt")
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1")
+        relation = _a_relation(source_file_id="f1", target_file_id="f2", description="Related by shared context")
+        related_file = _a_file(id="f2", path="/tmp/related.txt")
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.5, "relevance_score": 0.8},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_related_file_by_id.side_effect = (
+            lambda fid: Result.ok(related_file) if fid == "f2" else Result.ok(file)
+        )
+        file_service.get_relations_by_file_id.return_value = Result.ok([relation])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
+
+        assert result.is_ok is True
+        rf = result.value["results"][0]["related_files"][0]
+        assert rf["id"] == "f2"
+        assert rf["description"] == "Related by shared context"
+
+    def test_related_files_entries_carry_none_description_when_unset(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """related_files[] entry for a relation with no description (None)
+        carries `description: None` (additive key always present)."""
+        file = _a_file(id="f1", path="/tmp/test.txt")
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1")
+        relation = _a_relation(source_file_id="f1", target_file_id="f2", description=None)
+        related_file = _a_file(id="f2", path="/tmp/related.txt")
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.5, "relevance_score": 0.8},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_related_file_by_id.side_effect = (
+            lambda fid: Result.ok(related_file) if fid == "f2" else Result.ok(file)
+        )
+        file_service.get_relations_by_file_id.return_value = Result.ok([relation])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
+
+        assert result.is_ok is True
+        rf = result.value["results"][0]["related_files"][0]
+        assert "description" in rf
+        assert rf["description"] is None
+
+    def test_related_files_regression_existing_keys_intact(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """Regression: existing related_files keys (id/path/source_type/
+        relation_type/strength) remain intact alongside the new keys."""
+        file = _a_file(id="f1", path="/tmp/test.txt", source_type=SourceType.AGENT_SESSIONS)
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1")
+        # Custom relation: non-default strength + real description (helper defaults
+        # to strength=1.0, description="")
+        relation = FileRelation(
+            id="r_regr",
+            source_file_id="f1",
+            target_file_id="f2",
+            relation_type=RelationType.SIBLING,
+            strength=0.75,
+            direction=Direction.UNIDIRECTIONAL,
+            description="Extends base spec",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        related_file = _a_file(id="f2", path="/tmp/related.txt", source_type=SourceType.VAULT, summary="Spec file B")
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.5, "relevance_score": 0.8},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_related_file_by_id.side_effect = (
+            lambda fid: Result.ok(related_file) if fid == "f2" else Result.ok(file)
+        )
+        file_service.get_relations_by_file_id.return_value = Result.ok([relation])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute(
+            {
+                "query": "search term",
+                "memory_bank": "my_bank",
+                "include_relations": True,
+            }
+        )
+
+        assert result.is_ok is True
+        rf = result.value["results"][0]["related_files"][0]
+        # Existing keys — unchanged contract
+        assert rf["id"] == "f2"
+        assert rf["path"] == "/tmp/related.txt"
+        assert rf["source_type"] == "vault"
+        assert rf["relation_type"] == "sibling"
+        assert rf["strength"] == 0.75
+        # New additive keys coexist
+        assert rf["summary"] == "Spec file B"
+        assert rf["description"] == "Extends base spec"

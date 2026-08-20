@@ -77,7 +77,12 @@ Expand from `findings_id` (which has outgoing `parent_child` → session.md and 
   - `file.relation_type` — non-empty string (e.g. `"parent_child"`, `"sibling"`, `"backlink"`)
   - `content` — non-empty string when the related file is chunked and has content
   - `chunks_count` — integer ≥ 1 for chunked files
+  - `description` — present (the traversed relation's own description; may be null/empty when the relation was produced without one)
+  - `summary` — present (the target file's whole-file summary)
 - **PASS — `file.id` matches a real file:** for the entry whose `file.relation_type == "parent_child"`, `file.id` == `session_id` (confirms the relation target is correctly resolved).
+- **PASS — edges carry the relation's `description`:** for the entry whose `file.relation_type == "parent_child"` (findings → session.md), the `description` key is **present** on the entry (the producer's traversed-relation description; null is acceptable only when the edge was produced without one — the key must not be absent).
+- **PASS — target's whole-file `summary` present:** for the same `parent_child` entry (target `session.md`), the `summary` field is **present** (a non-null value when enrichment/summary has run for the target; the field must not be absent from the entry).
+- **FAIL signature:** an expanded entry is missing the `description` or `summary` key ⇒ additive read-path contract regression (edges must surface the relation's `description` + the target's whole-file `summary`).
 
 #### Step 3: `relation_types` filter isolation
 

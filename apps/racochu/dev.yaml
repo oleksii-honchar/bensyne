@@ -39,7 +39,7 @@ chunking:
 enrichment:
   enabled: true
   llmUrl: https://lite-llm.lan/v1
-  llmModel: qwopus3.6-27b-instruct
+  llmModel: qwen3.8-27b-low
   apiKey: $LLM_API_KEY
   maxConcurrency: 1
   timeoutMs: 15000

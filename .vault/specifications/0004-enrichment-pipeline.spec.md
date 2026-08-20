@@ -6,7 +6,7 @@ title: "Enrichment Pipeline Specification"
 kind: feature
 status: in-progress
 createdAt: "2026-08-01T07:30:00Z"
-updatedAt: "2026-08-01T07:30:00Z"
+updatedAt: "2026-08-20T13:49:01Z"
 tags: [enrichment, mnemosyne, mastra-rag]
 see_also: [
   "specifications/0003-enhancement-specification.spec.md",
@@ -16,7 +16,8 @@ see_also: [
   "decisions/0022-importance-scoring-algorithm.decision.md",
   "decisions/0023-hybrid-tag-generation.decision.md",
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",
-  "decisions/0043-non-fatal-enrichment-graceful-degradation.decision.md"
+  "decisions/0043-non-fatal-enrichment-graceful-degradation.decision.md",
+  "decisions/0059-llm-summary-producer-edges-population.decision.md"
 ]
 ---
 
@@ -150,7 +151,9 @@ interface EnrichedChunk {
 - [x] 712 tests passing (including 7 factory tests, 9 E2E tests)
 - [ ] LLM-based tag refinement (future)
 - [ ] LLM-based importance scoring refinement (future)
-- [ ] Chunk summarization for oversized prose (future)
+- [x] Chunk summarization (whole-file LLM summary, 2026-08-20, DEC-0059) — per-document
+      `summary` field in the enrichment call; stamped `mastraDocSummary` on every chunk;
+      80-word cap by default (`summaryMaxWords = clamp(floor(docMaxTokens/200), 20, 120)`)
 
 ## Success Criteria
 

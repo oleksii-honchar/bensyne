@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-19"
+updatedAt: "2026-08-20"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0058). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0059). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -16,6 +16,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0002-namespace-parameter-enforcement]] — Memory Bank Parameter Enforcement
 - [[0003-in-memory-namespace-registry]] — In-Memory Memory Bank Registry
 - [[0048-dual-hash-wire-contract]] — Dual-Hash Wire Contract — snake_case Naming, chunk_hash + file_hash in metadata (+ D29 source-type axis)
+- [[0059-llm-summary-producer-edges-population]] — LLM Whole-File Summary Producer + Edges Population
 
 ### bensyne-mcp
 

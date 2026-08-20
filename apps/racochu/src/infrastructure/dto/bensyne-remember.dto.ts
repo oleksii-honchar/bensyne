@@ -81,7 +81,8 @@ export class BensyneRememberDto {
         key === 'chunkHash' ||
         key === 'filePath' ||
         key === 'sourceId' ||
-        key === 'sourceType'
+        key === 'sourceType' ||
+        key === 'mastraDocSummary'
       )
         continue;
       extra[key] = value;
@@ -105,7 +106,7 @@ export class BensyneRememberDto {
         ...(chunk.language !== undefined && { language: chunk.language }),
         ...(fileHash !== undefined && { file_hash: fileHash }),
         ...(chunkHash !== undefined && { chunk_hash: chunkHash }),
-        summary: null,
+        summary: metadata.mastraDocSummary ?? null,
         ...this.parentUnitField(metadata),
         ...(chunk.edges !== undefined && { edges: chunk.edges }),
         tags: chunk.tags,

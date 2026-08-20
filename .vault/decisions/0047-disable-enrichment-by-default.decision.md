@@ -5,13 +5,14 @@ system: racochu
 title: "Disable Enrichment Pipeline by Default"
 status: accepted
 createdAt: "2026-08-09T19:30:00Z"
-updatedAt: "2026-08-09T19:30:00Z"
+updatedAt: "2026-08-20T13:49:01Z"
 tags: [enrichment, search, performance, config]
 supersedes: []
 superseded_by: []
 see_also: [
   "decisions/0042-custom-llm-provider-mastra-llm-parameter.decision.md",
   "decisions/0043-non-fatal-enrichment-graceful-degradation.decision.md",
+  "decisions/0059-llm-summary-producer-edges-population.decision.md",
   "concepts/0021-llm-enrichment.concept.md",
   "memories/0019-enrichment-metadata-not-indexed.memory.md"
 ]
@@ -57,3 +58,13 @@ This is **not** a permanent decision — the enrichment infrastructure is sound,
 - ⚠️ **Unverified:** Whether `enrichment.enabled` default is currently `true` or `false` in the running config — the config schema and runtime behavior need a code-level check
 - ✅ The enrichment pipeline is gated by `enabled && llmUrl && apiKey` AND guard in MastraChunkingService
 - ✅ Non-fatal error handling: enrichment failure logs warning, chunks proceed (DEC-0043)
+
+## Reconciliation Note (2026-08-20, DEC-0059)
+
+The **"dead data" caveat is scoped to Mnemosyne `metadata_json` search** — the bensyne-mcp
+**file layer consumer is unaffected** and now consumes the LLM whole-file summary
+(`files.summary` column, `summary_chain`, `related_files[].summary`, `summary_only`).
+This decision's default (`enabled: false`) remains the shipped default; dev runs with
+`enrichment.enabled: true` (dev.yaml) and the enrichment call now produces a real summary
+per document (DEC-0059). Re-evaluation trigger unchanged for Mnemosyne-side metadata search.
+See [[0059-llm-summary-producer-edges-population]].

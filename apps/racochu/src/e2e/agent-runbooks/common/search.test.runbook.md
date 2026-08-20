@@ -6,7 +6,7 @@
 
 ### Test Objective
 
-Verify `searchFiles` — keyword recall, bank-scoping isolation (D39), `source_type` filter demotion, `limit`, `include_relations`, and the `file_enrichment`/`traversal` handle contract.
+Verify `searchFiles` — keyword recall, bank-scoping isolation (D39), `source_type` filter demotion, `limit`, `include_relations` (including the additive `related_files[]` `summary` + `description` keys), and the `file_enrichment`/`traversal` handle contract.
 
 ### Fixtures
 
@@ -23,10 +23,24 @@ cat > tmp/obsidian/search-rb-obs-note.md <<'EOF'
 # Search Obsidian Note
 
 RB_SEARCH_OBSIDIAN unique token. Body text for obsidian bank search.
+
+See [[RB_SEARCH_OBS_TARGET]] for the wikilink-backed search edge.
 EOF
 ```
 
 Wait ≥3s for debounce + chunking + ingestion.
+
+Then create the wikilink target note so the obsidian note's `backlink` edge resolves to a real file (Step 7's `related_files[]` is non-empty only when the target exists + is ingested):
+
+```bash
+cat > tmp/obsidian/RB_SEARCH_OBS_TARGET.md <<'EOF'
+# Search Obsidian Target
+
+RB_SEARCH_OBS_TARGET. Target note resolving the obsidian note's wikilink edge.
+EOF
+```
+
+Wait ≥3s for debounce + chunking + ingestion (so the target has a real `file_id` and the edge resolves).
 
 ### Test Steps
 
@@ -67,10 +81,15 @@ Wait ≥3s for debounce + chunking + ingestion.
 
 - Call `searchFiles("RB_SEARCH_OBSIDIAN", memory_bank="tmp-obsidian", limit=5, include_relations=true)`
 - **PASS:** file-backed group has `related_files` (array, may be empty) and numeric `related_files_count`; group also carries `summary` (string) and `source_type_enrichment` (object).
+- **PASS — `related_files[]` carries `summary` + `description`:** the obsidian note's wikilink resolves, so `related_files` contains an entry whose `id` matches the target note's `file.id` (the `RB_SEARCH_OBS_TARGET.md` group). **Every** `related_files[]` entry carries **both** a `summary` field (the target file's whole-file summary) and a `description` field (the traversed relation's description) — the keys must be present on each entry (values may be null/empty; the keys must not be absent).
+- **FAIL signature:** a `related_files[]` entry is missing `summary` or `description` ⇒ additive read-path contract regression (the D44 edges-population keys are not surfaced on search).
 
 ### Cleanup
 
-- Delete both fixture files:
+- Delete all fixture files:
   - `tmp/vault/search-rb-vault-note.md`
   - `tmp/obsidian/search-rb-obs-note.md`
+  - `tmp/obsidian/RB_SEARCH_OBS_TARGET.md`
+- Wait ≥3s for debounce + forget.
 - Verify with `ls tmp/vault/ tmp/obsidian/` that the files are gone.
+- Call `searchFiles("RB_SEARCH_OBSIDIAN", memory_bank="tmp-obsidian", limit=5)` → 0 results (memories cleaned).

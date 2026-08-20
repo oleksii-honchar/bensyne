@@ -97,6 +97,7 @@ def _a_relation(
     target_file_id: str = "f2",
     relation_type: RelationType = RelationType.SIBLING,
     strength: float = 1.0,
+    description: str | None = None,
 ) -> FileRelation:
     return FileRelation(
         id=id,
@@ -105,7 +106,7 @@ def _a_relation(
         relation_type=relation_type,
         strength=strength,
         direction=Direction.UNIDIRECTIONAL,
-        description=None,
+        description=description,
         created_at=NOW,
         updated_at=NOW,
     )
@@ -654,6 +655,282 @@ class TestExpandFileRelationsSummary:
         rf = result.value["related_files"][0]
         assert rf["content"] == "Chunk content"
         assert rf["summary"] is None
+
+
+# ---------------------------------------------------------------------------
+# Relation description on expanded entries (success + fallback)
+# ---------------------------------------------------------------------------
+
+
+class TestExpandFileRelationsDescription:
+    """Each expanded related-file entry carries the traversed relation's description.
+
+    Spec §3.3: description is applied at the use-case level (not in the aggregate's
+    to_dict output) so it survives both the success path and the fallback path.
+    """
+
+    def test_success_path_entry_carries_traversed_relation_description(
+        self,
+        use_case: ExpandFileRelationsUseCase,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+    ) -> None:
+        """Success path: expanded entry description == traversed relation's description."""
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt", summary="A summary of the related file")
+        rel = _a_relation(
+            source_file_id="f1",
+            target_file_id="f2",
+            description="Explains why f1 and f2 are related",
+        )
+
+        source_agg = _a_aggregate(source)
+        related_agg = _a_aggregate(related)
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(related_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["file"]["id"] == "f2"
+        assert rf["description"] == "Explains why f1 and f2 are related"
+
+    def test_success_path_entry_description_none_when_unset(
+        self,
+        use_case: ExpandFileRelationsUseCase,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+    ) -> None:
+        """Success path: description is None when the relation has no description."""
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt")
+        rel = _a_relation(source_file_id="f1", target_file_id="f2")  # description=None
+
+        source_agg = _a_aggregate(source)
+        related_agg = _a_aggregate(related)
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(related_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["description"] is None
+
+    def test_fallback_path_entry_carries_traversed_relation_description(
+        self,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+        logger: MagicMock,
+    ) -> None:
+        """Fallback path: hand-built entry also carries the relation's description.
+
+        The aggregate's to_dict() is forced to fail to exercise the fallback branch.
+        """
+        use_case = ExpandFileRelationsUseCase(
+            mnemosyne_client=mnemosyne_client,
+            file_service=file_service,
+            relation_repository=relation_repo,
+            logger=logger,
+        )
+
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt", summary="Related file summary")
+        rel = _a_relation(
+            source_file_id="f1",
+            target_file_id="f2",
+            description="Fallback relation description",
+        )
+
+        source_agg = _a_aggregate(source)
+
+        # Force the related-file aggregate's to_dict to fail -> fallback branch
+        failing_agg = MagicMock()
+        failing_agg.file = related
+        failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(failing_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["file"]["id"] == "f2"
+        assert rf["description"] == "Fallback relation description"
+
+    def test_fallback_path_entry_description_none_when_unset(
+        self,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+        logger: MagicMock,
+    ) -> None:
+        """Fallback path: description is None when the relation has no description."""
+        use_case = ExpandFileRelationsUseCase(
+            mnemosyne_client=mnemosyne_client,
+            file_service=file_service,
+            relation_repository=relation_repo,
+            logger=logger,
+        )
+
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt")
+        rel = _a_relation(source_file_id="f1", target_file_id="f2")  # description=None
+
+        source_agg = _a_aggregate(source)
+
+        failing_agg = MagicMock()
+        failing_agg.file = related
+        failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(failing_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["description"] is None
+
+    def test_success_path_summary_still_populated_with_description(
+        self,
+        use_case: ExpandFileRelationsUseCase,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+    ) -> None:
+        """Regression: summary is populated in the success path alongside description."""
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt", summary="A summary of the related file")
+        rel = _a_relation(
+            source_file_id="f1",
+            target_file_id="f2",
+            description="Success relation description",
+        )
+
+        source_agg = _a_aggregate(source)
+        related_agg = _a_aggregate(related)
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(related_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["summary"] == "A summary of the related file"
+        assert rf["description"] == "Success relation description"
+
+    def test_fallback_path_summary_still_populated_with_description(
+        self,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+        logger: MagicMock,
+    ) -> None:
+        """Regression: summary is populated in the fallback path alongside description."""
+        use_case = ExpandFileRelationsUseCase(
+            mnemosyne_client=mnemosyne_client,
+            file_service=file_service,
+            relation_repository=relation_repo,
+            logger=logger,
+        )
+
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(id="f2", path="/tmp/related.txt", summary="Related file summary")
+        rel = _a_relation(
+            source_file_id="f1",
+            target_file_id="f2",
+            description="Fallback relation description",
+        )
+
+        source_agg = _a_aggregate(source)
+
+        failing_agg = MagicMock()
+        failing_agg.file = related
+        failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(failing_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        assert rf["summary"] == "Related file summary"
+        assert rf["description"] == "Fallback relation description"
+
+    def test_summary_only_content_omitted_but_summary_and_description_present(
+        self,
+        use_case: ExpandFileRelationsUseCase,
+        file_service: MagicMock,
+        relation_repo: MagicMock,
+        mnemosyne_client: MagicMock,
+    ) -> None:
+        """summary_only=True: content omitted, but summary and description are present."""
+        source = _a_file(id="f1", path="/tmp/source.txt")
+        related = _a_file(
+            id="f2",
+            path="/tmp/related.txt",
+            summary="Summary of related file",
+        )
+        rel = _a_relation(
+            source_file_id="f1",
+            target_file_id="f2",
+            description="Summary-only relation description",
+        )
+
+        chunks = [
+            _a_chunk(id="c1", file_id="f2", memory_id="mem_1", chunk_index=0),
+        ]
+
+        source_agg = _a_aggregate(source)
+        related_agg = _a_aggregate(related, chunks=chunks)
+
+        file_service.get_file.side_effect = [
+            Result.ok(source_agg),
+            Result.ok(related_agg),
+        ]
+        relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
+
+        result = use_case.execute(
+            {
+                "file_id": "f1",
+                "memory_bank": "bank",
+                "summary_only": True,
+            }
+        )
+        assert result.is_ok is True
+
+        rf = result.value["related_files"][0]
+        # Content is just the summary (chunks not composed)
+        assert rf["content"] == "Summary of related file"
+        assert rf["summary"] == "Summary of related file"
+        assert rf["description"] == "Summary-only relation description"
+        # Mnemosyne should NOT have been called — no chunk content fetched
+        assert mnemosyne_client.call_count == 0
 
 
 # ---------------------------------------------------------------------------

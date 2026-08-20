@@ -167,7 +167,10 @@ class TestMaterializeFullContract:
         assert file_result.is_ok and file_result.value is not None
         file = file_result.value
         assert file.status == FileStatus.INDEXED
-        assert file.summary is None
+        assert file.summary == (
+            "Findings from the bensyne file metadata materialization session, "
+            "documenting implementation details and design decisions."
+        )
         assert file.language == "markdown"
         assert file.hash == CONTRACT_HASH
         assert file.source_type == SourceType.AGENT_SESSIONS
