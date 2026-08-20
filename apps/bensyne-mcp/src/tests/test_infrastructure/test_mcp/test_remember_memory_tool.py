@@ -34,6 +34,35 @@ def _mock_mnemosyne_instance() -> MagicMock:
     return mock
 
 
+def _introspect_tool_parameters(tool_name: str) -> dict:
+    """Introspect the real MCP tool registry and return the JSON-schema parameters dict
+    for the named tool (properties, types, descriptions).
+
+    Verifies the tool signature via the generated MCP schema rather than source text, so
+    the param names/types are checked at the same layer agents see (robust to the
+    signatures being annotated with `Annotated[...]` descriptions)."""
+    from fastmcp import FastMCP
+
+    from src.app import register_tools
+
+    mcp = FastMCP(name="introspect-test")
+    register_tools(mcp, MagicMock(), None)
+
+    async def _collect() -> dict:
+        tools = await mcp.list_tools()
+        by_name = {t.name: t for t in tools}
+        return by_name[tool_name].parameters
+
+    return asyncio.run(_collect())
+
+
+def _param_types(param_schema: dict) -> set:
+    """Return the non-null JSON-schema types for a param (handles `anyOf` unions)."""
+    if "anyOf" in param_schema:
+        return {s.get("type") for s in param_schema["anyOf"] if s.get("type") != "null"}
+    return {param_schema.get("type")}
+
+
 @pytest.fixture
 def router(tmp_path: Path) -> MemoryBankRouter:
     """Create a MemoryBankRouter with mocked mnemosyne."""
@@ -190,17 +219,17 @@ class TestRememberMemoryToolRegistration:
         ]
         assert len(remember_memory_calls) == 1
 
-        # Inspect the source of app.py to verify the remember function signature
-        import inspect
-        from src.app import register_tools as _register_tools
-
-        source = inspect.getsource(_register_tools)
+        # Verify the remember function params via the generated MCP schema (the same
+        # layer agents see), rather than brittle source-text matching.
+        props = _introspect_tool_parameters("rememberMemory")["properties"]
         # The remember function should have content, memory_bank, and optional params
-        assert "content: str" in source
-        assert "memory_bank: str" in source
-        assert "importance: float" in source
-        assert "source: str" in source
-        assert "scope: str" in source
+        assert _param_types(props["content"]) == {"string"}
+        assert _param_types(props["memory_bank"]) == {"string"}
+        # importance is float | None -> number (union with null)
+        assert "number" in _param_types(props["importance"])
+        # source / scope are str | None -> string (union with null)
+        assert _param_types(props["source"]) == {"string"}
+        assert _param_types(props["scope"]) == {"string"}
 
 
 # ---------------------------------------------------------------------------

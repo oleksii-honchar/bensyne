@@ -34,6 +34,28 @@ def _mock_mnemosyne_instance() -> MagicMock:
     return mock
 
 
+def _introspect_tool_parameters(tool_name: str) -> dict:
+    """Introspect the real MCP tool registry and return the JSON-schema parameters dict
+    for the named tool (properties, types, descriptions).
+
+    Verifies the tool signature via the generated MCP schema rather than source text, so
+    the param names/types are checked at the same layer agents see (robust to the
+    signatures being annotated with `Annotated[...]` descriptions)."""
+    from fastmcp import FastMCP
+
+    from src.app import register_tools
+
+    mcp = FastMCP(name="introspect-test")
+    register_tools(mcp, MagicMock(), None)
+
+    async def _collect() -> dict:
+        tools = await mcp.list_tools()
+        by_name = {t.name: t for t in tools}
+        return by_name[tool_name].parameters
+
+    return asyncio.run(_collect())
+
+
 @pytest.fixture
 def router(tmp_path: Path) -> MemoryBankRouter:
     """Create a MemoryBankRouter with mocked mnemosyne."""
@@ -156,18 +178,9 @@ class TestRecallMemoryToolRegistration:
 
     def test_recall_memory_tool_exposes_optional_enrich_limit(self) -> None:
         """recallMemory tool signature exposes optional enrich_limit (int, default 5)."""
-        from src.app import register_tools
-
-        mock_mcp = MagicMock()
-        mock_router = MagicMock()
-
-        register_tools(mock_mcp, mock_router)
-
-        import inspect
-        from src.app import register_tools as _register_tools
-
-        source = inspect.getsource(_register_tools)
-        assert "enrich_limit: int" in source
+        props = _introspect_tool_parameters("recallMemory")["properties"]
+        assert props["enrich_limit"]["type"] == "integer"
+        assert props["enrich_limit"].get("default") == 5
 
     def test_recall_memory_tool_accepts_query_and_limit(self) -> None:
         """recallMemory tool should accept query (str), memory_bank (str), and limit (int)."""
@@ -184,18 +197,12 @@ class TestRecallMemoryToolRegistration:
         ]
         assert len(recall_memory_calls) == 1
 
-        # The decorator factory mcp.tool(name="recallMemory") returns a decorator
-        # that then wraps the inner async function. The inner function is passed
-        # to the returned decorator, not to tool() itself. So we inspect the
-        # source of app.py to verify the recall function signature.
-        import inspect
-        from src.app import register_tools as _register_tools
-
-        source = inspect.getsource(_register_tools)
-        # The recall function should have query, memory_bank, and limit params
-        assert "query: str" in source
-        assert "memory_bank: str" in source
-        assert "limit: int" in source
+        # Verify the param names/types via the generated MCP schema (the same layer
+        # agents see), rather than brittle source-text matching.
+        props = _introspect_tool_parameters("recallMemory")["properties"]
+        assert props["query"]["type"] == "string"
+        assert props["memory_bank"]["type"] == "string"
+        assert props["limit"]["type"] == "integer"
 
     def test_tool_registry_still_exactly_11_tools(self) -> None:
         """Adding enrich_limit must NOT add a new tool — registry stays at exactly 11."""
@@ -441,6 +448,7 @@ class TestFetchFileNeighborParams:
     """fetchFile tool exposes optional center_chunk_index + adjacent_chunks."""
 
     def test_fetch_file_tool_exposes_neighbor_params(self) -> None:
+        """fetchFile exposes optional center_chunk_index + adjacent_chunks (default 1)."""
         from src.app import register_tools
 
         mock_mcp = MagicMock()
@@ -451,12 +459,11 @@ class TestFetchFileNeighborParams:
         fetch_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "fetchFile"]
         assert len(fetch_calls) == 1
 
-        import inspect
-        from src.app import register_tools as _register_tools
-
-        source = inspect.getsource(_register_tools)
-        assert "center_chunk_index: int | None = None" in source
-        assert "adjacent_chunks: int = 1" in source
+        # Verify neighbor params via the generated MCP schema (the same layer agents see).
+        props = _introspect_tool_parameters("fetchFile")["properties"]
+        assert "center_chunk_index" in props
+        assert "adjacent_chunks" in props
+        assert props["adjacent_chunks"].get("default") == 1
 
     def test_fetch_file_tool_passes_neighbor_params_to_handler(self) -> None:
         """center_chunk_index/adjacent_chunks are forwarded to handle_fetch_file."""
