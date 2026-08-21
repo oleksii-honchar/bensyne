@@ -37,9 +37,18 @@
     },
     "start": {
       "executor": "nx:run-commands",
+      "description": "Run the compiled dist entrypoint (node dist/src/main.js). Resolves config to the global ~/.config/racochu.yaml unless -c/--config or APP_CONFIG_PATH is set.",
       "options": {
         "cwd": "apps/racochu",
         "command": "npm run start"
+      }
+    },
+    "start:dev": {
+      "executor": "nx:run-commands",
+      "description": "Run via nodemon (ts-node dev loop) with the local dev config: APP_CONFIG_PATH=dev.yaml is set ONLY by the start:dev script, never in .env.",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run start:dev"
       }
     },
     "start:docker": {

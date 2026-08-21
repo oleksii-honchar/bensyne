@@ -72,7 +72,7 @@ ProcessFileUseCase
 
 ## Configuration
 
-**File:** `~/.config/racochu.yaml` (production) or `dev.yaml` (development via `APP_CONFIG_PATH` env var)
+**File:** `~/.config/racochu.yaml` (global default — dist runs via `nx run racochu:start`) or `dev.yaml` (dev runs via `nx run racochu:start:dev`, which sets `APP_CONFIG_PATH=dev.yaml` only for that target)
 
 **Env override:** `APP_CONFIG_PATH=/path/to/config.yaml`
 
