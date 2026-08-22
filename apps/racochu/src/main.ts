@@ -60,11 +60,13 @@ async function bootstrap(): Promise<void> {
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
-  const mode = args.forceReprocess
-    ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
-    : args.processOnly
-      ? 'process-only'
-      : 'watch';
+  const mode = args.resume
+    ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
+    : args.forceReprocess
+      ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
+      : args.processOnly
+        ? 'process-only'
+        : 'watch';
   logger.info(
     `racochu starting: mode="${mode}", verbose=${args.verbose}, config="${args.config}"${args.source ? `, source="${args.source}"` : ''}`,
   );
@@ -77,6 +79,25 @@ async function bootstrap(): Promise<void> {
 
   const mcpConfig = configurationService.getMcpConfig();
   logger.info(`MCP endpoint: ${mcpConfig.url}`);
+
+  // Handle resume (re-ingest only files with missing chunks)
+  if (args.resume) {
+    if (args.source) {
+      logger.info(`Resuming missing chunks for source: ${args.source}`);
+      await forceReprocessService.resumeSource(args.source, sources);
+    } else {
+      logger.info('Resuming missing chunks for all sources');
+      await forceReprocessService.resumeAll(sources);
+    }
+
+    // If --process-only with --resume, wait for queue then exit
+    if (args.processOnly) {
+      await processingQueue.waitForEmpty();
+      logger.info('Resume complete, exiting');
+      await app.close();
+      process.exit(0);
+    }
+  }
 
   // Handle force-reprocess
   if (args.forceReprocess) {
@@ -97,8 +118,8 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  // Handle process-only (no force-reprocess)
-  if (args.processOnly && !args.forceReprocess) {
+  // Handle process-only (no force-reprocess and no resume)
+  if (args.processOnly && !args.forceReprocess && !args.resume) {
     logger.info('Process-only mode: processing existing files without watching');
     if (args.source) {
       await forceReprocessService.forceReprocessSource(args.source, sources);

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
+import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
 
@@ -14,6 +15,7 @@ export class ForceReprocessService {
   constructor(
     private readonly processFileUseCase: ProcessFileUseCase,
     private readonly processingQueue: FileProcessingQueue,
+    private readonly fileMemoryTrackerService: FileMemoryTrackerService,
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'ForceReprocessService' });
@@ -37,6 +39,74 @@ export class ForceReprocessService {
     }
 
     await this.processSource(source);
+  }
+
+  async resumeAll(sources: WatchSourceConfig[]): Promise<void> {
+    this.logger.info(`Resuming missing chunks for all sources: count=${sources.length}`);
+
+    for (const source of sources) {
+      await this.resumeSourceInternal(source);
+    }
+  }
+
+  async resumeSource(sourceId: string, sources: WatchSourceConfig[]): Promise<void> {
+    this.logger.info(`Resuming missing chunks for source; id="${sourceId}"`);
+
+    const source = sources.find(s => s.id === sourceId);
+    if (!source) {
+      this.logger.error(`Source not found; id="${sourceId}"`);
+      return;
+    }
+
+    await this.resumeSourceInternal(source);
+  }
+
+  private async resumeSourceInternal(source: WatchSourceConfig): Promise<void> {
+    try {
+      const files = await this.getFiles(source);
+      this.logger.info(
+        `Files found for resume: source="${source.id}", path="${source.path}", count=${files.length}`,
+      );
+
+      for (const file of files) {
+        let memoryIds: string[];
+        try {
+          memoryIds = await this.fileMemoryTrackerService.getMemoryIds(file);
+        } catch (error) {
+          this.logger.warn(
+            `Skipping file for resume; failed to read stored memory count: path="${file}", error="${error instanceof Error ? error.message : String(error)}"`,
+          );
+          continue;
+        }
+
+        // Pure tracker lookup: a file that already has memories is treated as
+        // complete and skipped. No file read, no chunking, no bensyne call.
+        if (memoryIds.length > 0) {
+          this.logger.debug(
+            `Skipping tracked file for resume: path="${file}", memories="${memoryIds.length}"`,
+          );
+          continue;
+        }
+
+        this.logger.info(`Resuming untracked file: path="${file}"`);
+
+        const result = await this.processFileUseCase.execute({
+          filePath: file,
+          eventType: 'add',
+          sourceId: source.id,
+          memoryBank: source.memoryBank,
+          sourceConfig: source,
+        });
+
+        if (result.isKo()) {
+          this.logger.error(`File resume failed: path="${file}", error="${result.getFormattedErrors()}"`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to resume source: id="${source.id}", error="${error instanceof Error ? error.message : String(error)}"`,
+      );
+    }
   }
 
   private async processSource(source: WatchSourceConfig): Promise<void> {

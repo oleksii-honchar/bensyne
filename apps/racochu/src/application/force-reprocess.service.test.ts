@@ -6,6 +6,8 @@ import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
+import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
+import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { aFileProcessingQueueService } from '../infrastructure/services/file-processing-queue.test-utils';
 import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
@@ -21,15 +23,18 @@ describe('ForceReprocessService', () => {
   let service: ForceReprocessService;
   let processFileUseCase: ReturnType<typeof aProcessFileUseCase>;
   let processingQueue: ReturnType<typeof aFileProcessingQueueService>;
+  let fileMemoryTrackerService: ReturnType<typeof aFileMemoryTrackerService>;
   let logger: ReturnType<typeof aLogger>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     fsMock.stat.mockReset();
     fsMock.readdir.mockReset();
+    fsMock.readFile.mockReset();
 
     processFileUseCase = aProcessFileUseCase();
     processingQueue = aFileProcessingQueueService();
+    fileMemoryTrackerService = aFileMemoryTrackerService();
     logger = aLogger();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -37,6 +42,7 @@ describe('ForceReprocessService', () => {
         ForceReprocessService,
         { provide: ProcessFileUseCase, useValue: processFileUseCase },
         { provide: FileProcessingQueue, useValue: processingQueue },
+        { provide: FileMemoryTrackerService, useValue: fileMemoryTrackerService },
         { provide: BasePinoLogger, useValue: logger },
       ],
     }).compile();
@@ -228,6 +234,145 @@ describe('ForceReprocessService', () => {
       await service.forceReprocessAll([source]);
 
       expect(fsMock.stat).toHaveBeenCalledWith(expect.stringContaining(path.resolve('./relative')));
+    });
+  });
+
+  describe('resumeAll (tracker-only heuristic)', () => {
+    it('should skip a file that already has memories', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should process a file that has no memories', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/test/untracked.md',
+        eventType: 'add',
+        sourceId: 'test',
+        memoryBank: 'test',
+        sourceConfig: source,
+      });
+    });
+
+    it('should only process files without memories in a mixed set', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false), mockDirent('untracked.md', false)]);
+      // First file has memories (skip), second has none (process).
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValueOnce(['mem-1']).mockResolvedValueOnce([]);
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/test/untracked.md',
+        eventType: 'add',
+        sourceId: 'test',
+        memoryBank: 'test',
+        sourceConfig: source,
+      });
+    });
+
+    it('should not read the file or chunk it for the decision', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      // The decision must be a pure tracker lookup — no file read for the decision.
+      expect(fsMock.readFile).not.toHaveBeenCalled();
+    });
+
+    it('should process untracked files from all sources via direct execute calls', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
+        aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
+      ];
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll(sources);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(processFileUseCase.execute).toHaveBeenNthCalledWith(1, {
+        filePath: '/tmp/source-1/untracked.md',
+        eventType: 'add',
+        sourceId: 'source-1',
+        memoryBank: 'source-1',
+        sourceConfig: sources[0],
+      });
+      expect(processFileUseCase.execute).toHaveBeenNthCalledWith(2, {
+        filePath: '/tmp/source-2/untracked.md',
+        eventType: 'add',
+        sourceId: 'source-2',
+        memoryBank: 'source-2',
+        sourceConfig: sources[1],
+      });
+    });
+
+    it('should skip a file when the tracker read throws', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('error.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockRejectedValue(new Error('tracker error'));
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resumeSource', () => {
+    it('should process untracked files from the requested source by id', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
+        aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
+      ];
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeSource('source-2', sources);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/source-2/untracked.md',
+        eventType: 'add',
+        sourceId: 'source-2',
+        memoryBank: 'source-2',
+        sourceConfig: sources[1],
+      });
+    });
+
+    it('should not execute when the source is not found', async () => {
+      const sources = [aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' })];
+
+      await service.resumeSource('non-existent', sources);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
     });
   });
 });

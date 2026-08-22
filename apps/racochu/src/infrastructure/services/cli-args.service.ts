@@ -13,6 +13,7 @@ export interface ParsedCliArgs {
   watch: boolean;
   forceReprocess: boolean;
   processOnly: boolean;
+  resume: boolean;
   source: string | null;
 }
 
@@ -33,7 +34,8 @@ Options:
   --watch                   Watch for file changes (default mode)
   --process-only            Process files once and exit (no watching)
   -f, --force-reprocess     Force re-process all sources
-  -s, --source <id>         Specify source ID to process (use with --force-reprocess or --process-only)
+  -r, --resume              Resume missing chunks: re-process only files with missing stored chunks
+  -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, or --process-only)
 `;
 
   private static readonly VERSION = packageJson.version;
@@ -55,6 +57,7 @@ Options:
       watch: true,
       forceReprocess: false,
       processOnly: false,
+      resume: false,
       source: null,
     };
 
@@ -91,6 +94,10 @@ Options:
         case '-f':
         case '--force-reprocess':
           result.forceReprocess = true;
+          break;
+        case '-r':
+        case '--resume':
+          result.resume = true;
           break;
         case '-s':
         case '--source':

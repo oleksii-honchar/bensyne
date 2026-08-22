@@ -36,6 +36,7 @@ describe('CliArgsService', () => {
         watch: true,
         forceReprocess: false,
         processOnly: false,
+        resume: false,
         source: null,
       });
     });
@@ -119,6 +120,18 @@ describe('CliArgsService', () => {
       expect(result.forceReprocess).toBe(true);
     });
 
+    it('should enable resume with --resume', () => {
+      const result = service.parse(['--resume']);
+
+      expect(result.resume).toBe(true);
+    });
+
+    it('should enable resume with -r', () => {
+      const result = service.parse(['-r']);
+
+      expect(result.resume).toBe(true);
+    });
+
     it('should set source with --source', () => {
       const result = service.parse(['--source', 'obsidian-vault']);
 
@@ -140,6 +153,15 @@ describe('CliArgsService', () => {
       expect(result.processOnly).toBe(true);
       expect(result.watch).toBe(false);
     });
+
+    it('should handle resume with source and process-only together', () => {
+      const result = service.parse(['-r', '-s', 'agent-sessions', '--process-only']);
+
+      expect(result.resume).toBe(true);
+      expect(result.source).toBe('agent-sessions');
+      expect(result.processOnly).toBe(true);
+      expect(result.watch).toBe(false);
+    });
   });
 
   describe('showHelp', () => {
@@ -155,6 +177,7 @@ describe('CliArgsService', () => {
       expect(output).toContain('--help');
       expect(output).toContain('--version');
       expect(output).toContain('--force-reprocess');
+      expect(output).toContain('--resume');
       expect(output).toContain('--source');
       expect(output).toContain('--process-only');
       writeSpy.mockRestore();
