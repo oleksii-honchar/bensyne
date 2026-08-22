@@ -14,6 +14,7 @@ import { aFileMemoryTrackerService } from '../infrastructure/services/file-memor
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { aFileProcessingQueueService } from '../infrastructure/services/file-processing-queue.test-utils';
 import { HardwareIdDetectorService } from '../infrastructure/services/hardware-id-detector.service';
+import { guardBase64Content } from '../utils/base64-guard';
 import { Result } from '../utils/result';
 import { ChunkContentUseCase } from './chunk-content.use-case';
 import { aChunkContentUseCase } from './chunk-content.use-case.test-utils';
@@ -1172,6 +1173,98 @@ describe('ProcessFileUseCase', () => {
       expect(fs.readFile).toHaveBeenCalledWith(filePath, 'utf-8');
       expect(mockChunkContentUseCase.execute).toHaveBeenCalled();
       expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+  });
+
+  describe('base64 blob guard wiring', () => {
+    const filePath = '/path/to/base64-file.json';
+    const sourceId = 'test-source';
+    const memoryBank = 'test-memoryBank';
+    const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
+    const chunks = [aContentChunk()];
+
+    beforeEach(() => {
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+    });
+
+    it('sanitizes a whole-file base64 blob (envelope) before chunking', async () => {
+      const blob = `{"result":"${'YWFh'.repeat(50)}"}`;
+      (fs.readFile as jest.Mock).mockResolvedValue(blob);
+
+      await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      const expected = guardBase64Content(blob);
+      // The guard must flag this as a blob.
+      expect(expected.sanitized).toBe(true);
+      // Chunking receives the placeholder, not the raw blob.
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expected.content }),
+      );
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalledWith(
+        expect.objectContaining({ content: blob }),
+      );
+    });
+
+    it('sanitizes a whole-file pure base64 blob before chunking', async () => {
+      const blob = 'YWFh'.repeat(60); // 240 chars, pure base64
+      (fs.readFile as jest.Mock).mockResolvedValue(blob);
+
+      await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ content: guardBase64Content(blob).content }),
+      );
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalledWith(
+        expect.objectContaining({ content: blob }),
+      );
+    });
+
+    it('leaves non-blob file content unchanged when chunking', async () => {
+      const normal = '# My Note\n\nThis is regular markdown content, not base64.';
+      (fs.readFile as jest.Mock).mockResolvedValue(normal);
+
+      await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ content: normal }),
+      );
+    });
+
+    it('leaves short base64 (< 64 chars) unchanged when chunking', async () => {
+      const shortB64 = 'aGVsbG8gd29ybGQ=';
+      (fs.readFile as jest.Mock).mockResolvedValue(shortB64);
+
+      await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ content: shortB64 }),
+      );
     });
   });
 

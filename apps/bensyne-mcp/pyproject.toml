@@ -5,7 +5,10 @@ description = "Multi-tenant namespace-aware MCP server for mnemosyne-oss"
 requires-python = ">=3.12"
 dependencies = [
   "fastmcp==3.4.7",
-  "mnemosyne-memory[mcp]>=3.14.0,<4.0.0",
+  # mnemosyne 3.15.1 core (ReDoS regex fix). No [mcp] extra: its [mcp] extra
+  # requires mcp>=2.0.0, which breaks fastmcp==3.4.7 (needs mcp<2.0). Bensyne
+  # uses only mnemosyne.core.memory (which imports no mcp), so core is enough.
+  "mnemosyne-memory>=3.15.1,<4.0.0",
   "numpy>=1.26.0,<2.0.0",
   "python-dotenv>=1.0.0,<2.0.0",
   "pyyaml>=6.0.2,<7.0.0",

@@ -18,6 +18,7 @@ import { FileMemoryTrackerService } from '../infrastructure/services/file-memory
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { HardwareIdDetectorService } from '../infrastructure/services/hardware-id-detector.service';
 import { BaseUseCase } from '../utils/base-use-case';
+import { guardBase64Content } from '../utils/base64-guard';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
 import { ChunkContentUseCase } from './chunk-content.use-case';
@@ -259,6 +260,18 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
           filePath: params.filePath,
         }),
       ]);
+    }
+
+    // Guard against whole-file base64 blobs (ReDoS prevention): mnemosyne's
+    // fact extractor catastrophically backtracks on long whitespace-free
+    // base64 runs, so replace detected blobs with a placeholder before
+    // chunking. The placeholder is what flows downstream (into mnemosyne).
+    const guarded = guardBase64Content(content);
+    if (guarded.sanitized) {
+      this.logger.warn(
+        `Whole-file base64 blob detected, replaced with placeholder: path="${params.filePath}", bytes="${content.length}"`,
+      );
+      content = guarded.content;
     }
 
     // Compute file hash (non-fatal)
