@@ -46,23 +46,22 @@ export class ForceReprocessService {
         `Files found for reprocessing: source="${source.id}", path="${source.path}", count=${files.length}`,
       );
 
-      // Add each file to processing queue (sequential)
+      // Execute directly — execute() → executeInternal() → addToQueue() already
+      // serializes via the queue. Awaiting keeps processing strictly sequential.
       for (const file of files) {
-        this.processingQueue.addToQueue(async () => {
-          const result = await this.processFileUseCase.execute({
-            filePath: file,
-            eventType: 'add',
-            sourceId: source.id,
-            memoryBank: source.memoryBank,
-            sourceConfig: source,
-          });
-
-          if (result.isKo()) {
-            this.logger.error(
-              `File reprocessing failed: path="${file}", error="${result.getFormattedErrors()}"`,
-            );
-          }
+        const result = await this.processFileUseCase.execute({
+          filePath: file,
+          eventType: 'add',
+          sourceId: source.id,
+          memoryBank: source.memoryBank,
+          sourceConfig: source,
         });
+
+        if (result.isKo()) {
+          this.logger.error(
+            `File reprocessing failed: path="${file}", error="${result.getFormattedErrors()}"`,
+          );
+        }
       }
     } catch (error) {
       this.logger.error(

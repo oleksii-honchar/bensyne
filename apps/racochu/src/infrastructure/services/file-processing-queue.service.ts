@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 
 @Injectable()
 export class FileProcessingQueue {
   private readonly logger: BasePinoLogger;
+  private readonly inTaskStorage = new AsyncLocalStorage<boolean>();
   private queue: {
     task: () => Promise<void>;
     resolve: () => void;
@@ -15,6 +17,11 @@ export class FileProcessingQueue {
   }
 
   async addToQueue(task: () => Promise<void>): Promise<void> {
+    if (this.inTaskStorage.getStore() === true) {
+      throw new Error(
+        'FileProcessingQueue.addToQueue called from inside a running queued task — this deadlocks the queue. Call it from outside the worker.',
+      );
+    }
     return new Promise<void>(resolve => {
       this.queue.push({ task, resolve });
       this.processQueue();
@@ -31,7 +38,7 @@ export class FileProcessingQueue {
         if (!item) continue;
 
         try {
-          await item.task();
+          await this.inTaskStorage.run(true, () => item.task());
         } catch (error) {
           this.logger.error(
             `Task failed in processing queue: ${error instanceof Error ? error.message : String(error)}`,

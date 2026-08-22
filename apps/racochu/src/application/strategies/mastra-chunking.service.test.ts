@@ -1021,28 +1021,31 @@ Do not include any other text, explanations, or markdown formatting.`,
     it.each([
       [2000, 'at most 20 words'],
       [24000, 'at most 120 words'],
-    ])('should instruct the LLM with the derived cap for docMaxTokens=%i', async (docMaxTokens, expectedPhrase) => {
-      configService = createMockConfigService({
-        enrichmentEnabled: true,
-        enrichmentApiKey: 'test-key',
-        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
-        docMaxTokens,
-      });
-      service = new MastraChunkingService(configService, mockLogger);
+    ])(
+      'should instruct the LLM with the derived cap for docMaxTokens=%i',
+      async (docMaxTokens, expectedPhrase) => {
+        configService = createMockConfigService({
+          enrichmentEnabled: true,
+          enrichmentApiKey: 'test-key',
+          enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+          docMaxTokens,
+        });
+        service = new MastraChunkingService(configService, mockLogger);
 
-      const mockDoc = {
-        extractMetadata: jest.fn().mockResolvedValue({
-          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
-        }),
-        chunkMarkdown: jest.fn(),
-      };
-      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+        const mockDoc = {
+          extractMetadata: jest.fn().mockResolvedValue({
+            getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+          }),
+          chunkMarkdown: jest.fn(),
+        };
+        mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
 
-      await service.chunkFile('# Title', 'README.md', 'test-source');
+        await service.chunkFile('# Title', 'README.md', 'test-source');
 
-      const callArg = mockDoc.extractMetadata.mock.calls[0][0];
-      expect(callArg.schema.instructions).toContain(expectedPhrase);
-    });
+        const callArg = mockDoc.extractMetadata.mock.calls[0][0];
+        expect(callArg.schema.instructions).toContain(expectedPhrase);
+      },
+    );
   });
 
   describe('mapToDomainChunks — mastraDocSummary stamping', () => {

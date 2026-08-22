@@ -111,4 +111,61 @@ describe('FileProcessingQueue', () => {
     await longTaskDone;
     expect(queue.isProcessing()).toBe(false);
   });
+
+  it('should reject addToQueue called from inside a running queued task (guard)', async () => {
+    let nestedRejected = false;
+    let nestedErrorMessage = '';
+
+    await queue.addToQueue(async () => {
+      // Simulates a running queued task that submits a nested task via addToQueue.
+      // We attach a .catch instead of awaiting so the outer task does not block on
+      // the nested promise (which would itself deadlock on the broken implementation).
+      const nestedPromise = queue.addToQueue(async () => {
+        // nested task body — intentionally empty
+      });
+      nestedPromise.catch((error: Error) => {
+        nestedRejected = true;
+        nestedErrorMessage = error.message;
+      });
+    });
+
+    // The nested submission must have been rejected by the guard.
+    expect(nestedRejected).toBe(true);
+    expect(nestedErrorMessage).toMatch(/inside|nested/i);
+
+    // Round-trip: after the outer task completes, a new external call must succeed
+    // (no context leak / no stuck "processing" flag).
+    let externalCompleted = false;
+    await queue.addToQueue(async () => {
+      externalCompleted = true;
+    });
+    expect(externalCompleted).toBe(true);
+  });
+
+  it('should not deadlock when a running task awaits a nested addToQueue', async () => {
+    // Mimics ProcessFileUseCase.executeInternal: a task that itself calls
+    // addToQueue and awaits the result (nested submission). On the broken
+    // implementation this deadlocks the single-worker queue, so the outer
+    // promise never resolves and the race timer wins.
+    const outerPromise = queue.addToQueue(async () => {
+      await queue.addToQueue(async () => {
+        // nested task body — intentionally empty
+      });
+    });
+
+    const TIMEOUT_MS = 3000;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race<string>([
+      outerPromise.then(() => 'completed'),
+      new Promise<string>(resolve => {
+        timeoutHandle = setTimeout(() => resolve('timeout'), TIMEOUT_MS);
+      }),
+    ]).finally(() => {
+      // Clear the race timer so it cannot outlive the test run
+      // (prevents "Jest did not exit one second after the test run has completed").
+      clearTimeout(timeoutHandle);
+    });
+
+    expect(result).toBe('completed');
+  });
 });

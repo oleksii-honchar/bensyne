@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-20"
+updatedAt: "2026-08-22"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0059). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -77,3 +77,4 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0056-vault-note-metadata-reuse]] — Vault Note Metadata Reuse — YAML Frontmatter Parsed Once
 - [[0057-cross-file-traversal-any-file-targets]] — Cross-File Traversal Targets Any In-Bank File
 - [[0058-obsidian-wikilink-edge-gating]] — Obsidian Wikilink Edge Gating — hasExt-Based Source Detection
+- [[0060-sequential-file-processing]] — Sequential File Processing — Remove Double-Queueing in Force-Reprocess

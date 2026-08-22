@@ -114,7 +114,9 @@ describe('Racochu config resolution — dist global / dev.yaml via start:dev onl
       const undo = applyDotEnvLikeNx('.env');
       try {
         expect(new CliArgsService(aLogger()).parse(['-c', '/custom.yaml']).config).toBe('/custom.yaml');
-        expect(new CliArgsService(aLogger()).parse(['--config', '/custom2.yaml']).config).toBe('/custom2.yaml');
+        expect(new CliArgsService(aLogger()).parse(['--config', '/custom2.yaml']).config).toBe(
+          '/custom2.yaml',
+        );
       } finally {
         undo();
       }

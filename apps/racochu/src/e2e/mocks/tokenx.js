@@ -1,4 +1,4 @@
-/* eslint-disable no-undef */
+ 
 module.exports = {
   estimateTokenCount: jest.fn(str => Math.ceil(str.length / 4)),
   isWithinTokenLimit: jest.fn(() => true),

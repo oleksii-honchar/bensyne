@@ -45,7 +45,7 @@ describe('ForceReprocessService', () => {
   });
 
   describe('forceReprocessAll', () => {
-    it('should process files from all sources', async () => {
+    it('should process files from all sources via direct execute calls', async () => {
       const sources = [aWatchSourceConfig({ id: 'source-1' }), aWatchSourceConfig({ id: 'source-2' })];
 
       fsMock.stat.mockResolvedValue(mockDirStats());
@@ -53,11 +53,12 @@ describe('ForceReprocessService', () => {
 
       await service.forceReprocessAll(sources);
 
-      // 2 sources × 1 file each = 2 queue entries
-      expect(processingQueue.addToQueue).toHaveBeenCalledTimes(2);
+      // 2 sources × 1 file each = 2 direct execute calls (not via the queue)
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
 
-    it('should queue files found in each source', async () => {
+    it('should call execute for each file found in each source', async () => {
       const sources = [aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' })];
 
       fsMock.stat.mockResolvedValue(mockDirStats());
@@ -65,12 +66,13 @@ describe('ForceReprocessService', () => {
 
       await service.forceReprocessAll(sources);
 
-      expect(processingQueue.addToQueue).toHaveBeenCalledTimes(2);
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
   });
 
   describe('forceReprocessSource', () => {
-    it('should process files from specific source by id', async () => {
+    it('should process files from specific source by id via direct execute', async () => {
       const sources = [
         aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
         aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
@@ -81,14 +83,16 @@ describe('ForceReprocessService', () => {
 
       await service.forceReprocessSource('source-1', sources);
 
-      expect(processingQueue.addToQueue).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
 
-    it('should skip when source not found', async () => {
+    it('should not execute when source not found', async () => {
       const sources = [aWatchSourceConfig({ id: 'source-1' })];
 
       await service.forceReprocessSource('non-existent', sources);
 
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
       expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
   });
@@ -109,53 +113,51 @@ describe('ForceReprocessService', () => {
       expect(fsMock.readdir).toHaveBeenCalledWith('/tmp/test/subdir', { withFileTypes: true });
     });
 
-    it('should not queue files when path is not a directory', async () => {
+    it('should not execute files when path is not a directory', async () => {
       const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
       fsMock.stat.mockResolvedValue(mockFileStats());
 
       await service.forceReprocessAll([source]);
 
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
       expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
 
-    it('should not queue files when stat fails', async () => {
+    it('should not execute files when stat fails', async () => {
       const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
       fsMock.stat.mockRejectedValue(new Error('ENOENT'));
 
       await service.forceReprocessAll([source]);
 
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
+    });
+
+    it('should not execute files for an empty source', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
       expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
   });
 
-  describe('queue population', () => {
-    it('should add each file to processing queue', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false), mockDirent('file2.md', false)]);
-
-      await service.forceReprocessAll([source]);
-
-      expect(processingQueue.addToQueue).toHaveBeenCalledTimes(2);
-    });
-
-    it('should call processFileUseCase for each queued file', async () => {
+  describe('direct execution (new contract)', () => {
+    it('should call execute directly for each file with correct args', async () => {
       const source = aWatchSourceConfig({ id: 'my-source', path: '/tmp/test' });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false)]);
 
-      processFileUseCase.execute.mockResolvedValue(Result.ok(undefined as unknown as void));
-
       await service.forceReprocessAll([source]);
 
-      // Extract the task function and execute it
-      const task = processingQueue.addToQueue.mock.calls[0][0] as () => Promise<void>;
-      await task();
-
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
       expect(processFileUseCase.execute).toHaveBeenCalledWith({
         filePath: '/tmp/test/file1.md',
         eventType: 'add',
@@ -163,9 +165,35 @@ describe('ForceReprocessService', () => {
         memoryBank: 'my-source',
         sourceConfig: source,
       });
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
 
-    it('should handle file reprocessing failure gracefully', async () => {
+    it('should call execute sequentially — file N+1 only after file N resolves', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false), mockDirent('file2.md', false)]);
+
+      // Track the order in which execute resolves for each file.
+      // file1 is made slower than file2: if the service fired both in parallel
+      // (without awaiting each), file2 could resolve first.
+      const resolutionOrder: string[] = [];
+      processFileUseCase.execute.mockImplementation(async params => {
+        const filePath = (params as { filePath: string }).filePath;
+        const delay = filePath.includes('file1.md') ? 30 : 5;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        resolutionOrder.push(filePath);
+        return Result.ok(undefined as unknown as void);
+      });
+
+      await service.forceReprocessAll([source]);
+
+      // Sequential await guarantees file1 resolves before file2 starts.
+      expect(resolutionOrder).toEqual(['/tmp/test/file1.md', '/tmp/test/file2.md']);
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
+    });
+
+    it('should handle file reprocessing failure gracefully without throwing', async () => {
       const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
@@ -173,11 +201,9 @@ describe('ForceReprocessService', () => {
 
       processFileUseCase.execute.mockResolvedValue(Result.ko([new Error('Processing failed')]));
 
-      await service.forceReprocessAll([source]);
-
-      const task = processingQueue.addToQueue.mock.calls[0][0] as () => Promise<void>;
-      // Task should not throw — it swallows errors via logging
-      await expect(task()).resolves.not.toThrow();
+      // A Result.ko from execute must not throw — the service logs and continues.
+      await expect(service.forceReprocessAll([source])).resolves.not.toThrow();
+      expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
   });
 
