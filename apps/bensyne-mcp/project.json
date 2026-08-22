@@ -68,6 +68,14 @@
         "cwd": "apps/bensyne-mcp",
         "command": ".venv/bin/python -m black src/"
       }
+    },
+    "data:wipe": {
+      "executor": "nx:run-commands",
+      "description": "Delete all files in the data folder (mnemosyne.db, etc.)",
+      "options": {
+        "cwd": "apps/bensyne-mcp",
+        "command": "rm -rf data/*"
+      }
     }
   }
 }

@@ -2,7 +2,9 @@
   "name": "@org/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "data:wipe": "nx run-many -t data:wipe"
+  },
   "private": true,
   "devDependencies": {
     "@nx/eslint": "^23.1.1",

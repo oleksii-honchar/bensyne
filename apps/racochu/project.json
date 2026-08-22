@@ -72,6 +72,14 @@
         "cwd": "apps/racochu",
         "command": "npm run lint"
       }
+    },
+    "data:wipe": {
+      "executor": "nx:run-commands",
+      "description": "Delete all files in the data folder (racochu.db, etc.)",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "rm -rf data/*"
+      }
     }
   }
 }
