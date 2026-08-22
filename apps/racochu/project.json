@@ -59,6 +59,14 @@
         "command": "npm run start:dev:reprocess"
       }
     },
+    "start:dev:resume": {
+      "executor": "nx:run-commands",
+      "description": "Run via nodemon with --resume flag (recover missing chunks for sources in dev.yaml without re-sending complete files)",
+      "options": {
+        "cwd": "apps/racochu",
+        "command": "npm run start:dev:resume"
+      }
+    },
     "start:docker": {
       "executor": "nx:run-commands",
       "description": "Run the tuiteraz/racochu image (tag from package.json). Racochu is a file-watcher CLI with no HTTP server — there is no request to answer; the most useful smoke is verifying the built entrypoint loads and the process stays alive. Exact invocation: docker run -d --name racochu-smoke -v <tmpdir>:/data/racochu tuiteraz/racochu:<version>; verify via docker inspect (Running) + logs, then docker rm -f racochu-smoke.",
