@@ -140,8 +140,13 @@ def tmp_bank_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None, None]:
-    """Create a FileMetadataConnectionManager backed by a fresh database."""
+    """Create a FileMetadataConnectionManager backed by a fresh database.
+
+    Materializes on first use (lazy contract): bootstrap schema tests need a
+    live DB, so the fixture triggers initialization explicitly.
+    """
     mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+    mgr.create_tables()
     yield mgr
     mgr.close()
 
@@ -414,6 +419,7 @@ class TestBootstrapIdempotency:
 
     def test_second_manager_on_same_db_succeeds(self, tmp_bank_dir: Path) -> None:
         first = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        first.create_tables()
         first.close()
         second = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
         try:
@@ -428,6 +434,7 @@ class TestBootstrapIdempotency:
 
     def test_second_bootstrap_leaves_schema_byte_identical(self, tmp_bank_dir: Path) -> None:
         first = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        first.create_tables()
         first.close()
         before = _schema_objects(tmp_bank_dir / "file_metadata.db")
 
@@ -454,6 +461,7 @@ class TestBootstrapIdempotency:
     def test_bootstrap_remains_usable_after_second_run(self, tmp_bank_dir: Path) -> None:
         """Rows inserted between the two bootstraps survive the second run."""
         first = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        first.create_tables()
         _insert_file(first.db_path, "survivor", "unknown")
         first.close()
 

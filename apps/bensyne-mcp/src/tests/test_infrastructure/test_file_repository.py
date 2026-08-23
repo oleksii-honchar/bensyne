@@ -34,8 +34,13 @@ def tmp_bank_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None, None]:
-    """Create a FileMetadataConnectionManager backed by a temporary directory."""
+    """Create a FileMetadataConnectionManager backed by a temporary directory.
+
+    Materializes on first use (lazy contract): repo tests need a live DB, so
+    the fixture triggers initialization explicitly via create_tables().
+    """
     mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+    mgr.create_tables()
     yield mgr
     mgr.close()
 
@@ -658,6 +663,7 @@ class TestErrorHandling:
         """If the DB is corrupted, save_file returns Result.ko."""
         # Create a manager, then corrupt the DB by writing garbage
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        mgr.create_tables()
         repo = FileRepository(mgr)
 
         # Corrupt the DB
@@ -677,6 +683,7 @@ class TestErrorHandling:
     def test_get_file_by_id_returns_ko_on_db_error(self, tmp_bank_dir: Path) -> None:
         """If the DB is corrupted, get_file_by_id returns Result.ko."""
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        mgr.create_tables()
         repo = FileRepository(mgr)
 
         # Corrupt the DB
@@ -695,6 +702,7 @@ class TestErrorHandling:
     def test_list_files_returns_ko_on_db_error(self, tmp_bank_dir: Path) -> None:
         """If the DB is corrupted, list_files returns Result.ko."""
         mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        mgr.create_tables()
         repo = FileRepository(mgr)
 
         # Corrupt the DB

@@ -23,8 +23,13 @@ def tmp_bank_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None, None]:
-    """Create a FileMetadataConnectionManager backed by a temporary directory."""
+    """Create a FileMetadataConnectionManager backed by a temporary directory.
+
+    Materializes on first use (lazy contract): schema tests need a live DB, so
+    the fixture triggers initialization explicitly via create_tables().
+    """
     mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+    mgr.create_tables()
     yield mgr
     mgr.close()
 
@@ -77,20 +82,87 @@ class TestMigrations:
         assert isinstance(m.description, str)
 
 
-class TestConnectionInitialization:
-    """Manager creates the database and tables on initialization."""
+class TestLazyInitialization:
+    """Construction is side-effect-free; the DB materializes only on first use.
 
-    def test_db_file_created_on_init(self, tmp_bank_dir: Path) -> None:
+    Option A contract (ad-hoc round): constructing a connection manager performs
+    NO filesystem writes — no mkdir, no db file, no schema. The db materializes
+    (mkdir + migrations) on the first write-triggered operation (get_connection /
+    get_session / create_tables / engine access). Reads on an absent db short-
+    circuit to empty results and never materialize (guarded at repo level).
+    """
+
+    def test_construction_creates_no_dir_or_db_file(self, tmp_path: Path) -> None:
+        bank_dir = tmp_path / "lazy_bank"
+        assert not bank_dir.exists()
+
+        mgr = FileMetadataConnectionManager(bank_dir=bank_dir)
+        try:
+            assert not bank_dir.exists()
+            assert not mgr.db_path.exists()
+        finally:
+            mgr.close()
+
+    def test_construction_is_closable_without_initialization(self, tmp_path: Path) -> None:
+        """close() before any use must not raise (no engine/pool to tear down)."""
+        mgr = FileMetadataConnectionManager(bank_dir=tmp_path / "never_used")
+        mgr.close()
+        mgr.close()  # idempotent
+
+    def test_get_connection_materializes_db_and_dir(self, tmp_path: Path) -> None:
+        bank_dir = tmp_path / "materialized"
+        mgr = FileMetadataConnectionManager(bank_dir=bank_dir)
+        try:
+            conn = mgr.get_connection()
+            conn.close()
+            assert bank_dir.exists()
+            assert mgr.db_path.exists()
+        finally:
+            mgr.close()
+
+    def test_engine_access_materializes_db(self, tmp_path: Path) -> None:
+        bank_dir = tmp_path / "engine_materialized"
+        mgr = FileMetadataConnectionManager(bank_dir=bank_dir)
+        try:
+            _ = mgr.engine
+            assert mgr.db_path.exists()
+        finally:
+            mgr.close()
+
+    def test_create_tables_materializes_db(self, tmp_path: Path) -> None:
+        bank_dir = tmp_path / "create_tables_materialized"
+        mgr = FileMetadataConnectionManager(bank_dir=bank_dir)
+        try:
+            mgr.create_tables()
+            assert mgr.db_path.exists()
+        finally:
+            mgr.close()
+
+
+class TestConnectionInitialization:
+    """Manager creates the database and tables on first use (lazy, Option A)."""
+
+    def test_db_file_created_on_first_use(self, tmp_bank_dir: Path) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"
         assert not db_path.exists()
-        FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
-        assert db_path.exists()
+        mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+        try:
+            assert not db_path.exists()  # construction is side-effect-free
+            mgr.get_connection().close()  # first use materializes
+            assert db_path.exists()
+        finally:
+            mgr.close()
 
-    def test_parent_directory_created_if_missing(self, tmp_path: Path) -> None:
+    def test_parent_directory_created_on_first_use(self, tmp_path: Path) -> None:
         deep_dir = tmp_path / "a" / "b" / "c"
         assert not deep_dir.exists()
-        FileMetadataConnectionManager(bank_dir=deep_dir)
-        assert (deep_dir / "file_metadata.db").exists()
+        mgr = FileMetadataConnectionManager(bank_dir=deep_dir)
+        try:
+            assert not deep_dir.exists()  # construction is side-effect-free
+            mgr.get_connection().close()  # first use materializes
+            assert (deep_dir / "file_metadata.db").exists()
+        finally:
+            mgr.close()
 
     def test_wal_mode_enabled(self, manager: FileMetadataConnectionManager, tmp_bank_dir: Path) -> None:
         db_path = tmp_bank_dir / "file_metadata.db"

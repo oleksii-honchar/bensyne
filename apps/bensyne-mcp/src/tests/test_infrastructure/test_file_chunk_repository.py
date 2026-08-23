@@ -37,8 +37,13 @@ def tmp_bank_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def manager(tmp_bank_dir: Path) -> Generator[FileMetadataConnectionManager, None, None]:
-    """Create a FileMetadataConnectionManager backed by a temporary directory."""
+    """Create a FileMetadataConnectionManager backed by a temporary directory.
+
+    Materializes on first use (lazy contract): repo tests need a live DB, so
+    the fixture triggers initialization explicitly via create_tables().
+    """
     mgr = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
+    mgr.create_tables()
     yield mgr
     mgr.close()
 
