@@ -375,4 +375,121 @@ describe('ForceReprocessService', () => {
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
     });
   });
+
+  describe('forceReprocess log queue position [idx/totalFilesInQueue] (DEC-0068)', () => {
+    describe('processSource', () => {
+      it('logs Processing file [i/totalFilesInQueue] before each execute (1-based)', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false), mockDirent('file2.md', false)]);
+
+        await service.forceReprocessAll([source]);
+
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Processing file [1/2]: path="/tmp/test/file1.md"'),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Processing file [2/2]: path="/tmp/test/file2.md"'),
+        );
+      });
+
+      it('verifies 1-based indexing — first file is [1/N], not [0/N]', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('only.md', false)]);
+
+        await service.forceReprocessAll([source]);
+
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Processing file [1/1]: path="/tmp/test/only.md"'),
+        );
+        expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Processing file [0/1]'));
+      });
+
+      it('logs File reprocessing failed [i/totalFilesInQueue] on execute failure', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false)]);
+
+        processFileUseCase.execute.mockResolvedValue(Result.ko([new Error('Processing failed')]));
+
+        await service.forceReprocessAll([source]);
+
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('File reprocessing failed [1/1]: path="/tmp/test/file1.md"'),
+        );
+      });
+
+      it('logs execute in sequential 1-based order [1/2] then [2/2]', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false), mockDirent('file2.md', false)]);
+
+        await service.forceReprocessAll([source]);
+
+        const processingLogs = logger.info.mock.calls
+          .map(call => (call[0] as string).includes('Processing file [')
+            ? (call[0] as string)
+            : null)
+          .filter((entry): entry is string => entry !== null);
+
+        expect(processingLogs).toEqual([
+          'Processing file [1/2]: path="/tmp/test/file1.md"',
+          'Processing file [2/2]: path="/tmp/test/file2.md"',
+        ]);
+      });
+    });
+
+    describe('resumeSourceInternal', () => {
+      it('logs Resuming untracked file [i/totalFilesInQueue] before execute', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+        await service.resumeAll([source]);
+
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Resuming untracked file [1/1]: path="/tmp/test/untracked.md"'),
+        );
+      });
+
+      it('logs Skipping tracked file for resume with the same bracket', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
+
+        await service.resumeAll([source]);
+
+        expect(logger.debug).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'Skipping tracked file for resume [1/1]: path="/tmp/test/tracked.md"',
+          ),
+        );
+      });
+
+      it('logs Skipping file for resume; failed to read stored memory count with the same bracket', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('error.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockRejectedValue(new Error('tracker error'));
+
+        await service.resumeAll([source]);
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'Skipping file for resume; failed to read stored memory count [1/1]: path="/tmp/test/error.md"',
+          ),
+        );
+      });
+    });
+  });
 });

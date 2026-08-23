@@ -68,13 +68,18 @@ export class ForceReprocessService {
         `Files found for resume: source="${source.id}", path="${source.path}", count=${files.length}`,
       );
 
-      for (const file of files) {
+      // [i/totalFilesInQueue] is the 1-based queue position (not a stored index).
+      const totalFilesInQueue = files.length;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const position = i + 1;
+
         let memoryIds: string[];
         try {
           memoryIds = await this.fileMemoryTrackerService.getMemoryIds(file);
         } catch (error) {
           this.logger.warn(
-            `Skipping file for resume; failed to read stored memory count: path="${file}", error="${error instanceof Error ? error.message : String(error)}"`,
+            `Skipping file for resume; failed to read stored memory count [${position}/${totalFilesInQueue}]: path="${file}", error="${error instanceof Error ? error.message : String(error)}"`,
           );
           continue;
         }
@@ -83,12 +88,12 @@ export class ForceReprocessService {
         // complete and skipped. No file read, no chunking, no bensyne call.
         if (memoryIds.length > 0) {
           this.logger.debug(
-            `Skipping tracked file for resume: path="${file}", memories="${memoryIds.length}"`,
+            `Skipping tracked file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
           );
           continue;
         }
 
-        this.logger.info(`Resuming untracked file: path="${file}"`);
+        this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
 
         const result = await this.processFileUseCase.execute({
           filePath: file,
@@ -118,7 +123,14 @@ export class ForceReprocessService {
 
       // Execute directly — execute() → executeInternal() → addToQueue() already
       // serializes via the queue. Awaiting keeps processing strictly sequential.
-      for (const file of files) {
+      // [i/totalFilesInQueue] is the 1-based queue position (not a stored index).
+      const totalFilesInQueue = files.length;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const position = i + 1;
+
+        this.logger.info(`Processing file [${position}/${totalFilesInQueue}]: path="${file}"`);
+
         const result = await this.processFileUseCase.execute({
           filePath: file,
           eventType: 'add',
@@ -129,7 +141,7 @@ export class ForceReprocessService {
 
         if (result.isKo()) {
           this.logger.error(
-            `File reprocessing failed: path="${file}", error="${result.getFormattedErrors()}"`,
+            `File reprocessing failed [${position}/${totalFilesInQueue}]: path="${file}", error="${result.getFormattedErrors()}"`,
           );
         }
       }

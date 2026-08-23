@@ -15,7 +15,10 @@ import { LlmClientFactory } from '../../application/services/llm-client-factory'
 import { FILE_ROLES } from '../../domain/content-chunk.entity';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
-import { MastraChunkingService } from './mastra-chunking.service';
+import {
+  ENRICHMENT_CORRECTIVE_RETRY_INSTRUCTION,
+  MastraChunkingService,
+} from './mastra-chunking.service';
 
 const mockedMDocument = MDocument as jest.Mocked<typeof MDocument>;
 
@@ -241,6 +244,63 @@ Do not include any other text, explanations, or markdown formatting.`,
 
       expect(result.isOk()).toBe(true);
       expect(result.getValue().length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should use the corrective retry output when the first extractMetadata attempt resolves with empty enrichment', async () => {
+      // Real Mastra SchemaExtractor contract (DEC-0069): a schema-validation error
+      // is swallowed and `extractMetadata` RESOLVES with an un-enriched doc. The
+      // first attempt therefore resolves with empty metadata; the corrective retry
+      // (exactly one more call) succeeds with valid enrichment.
+      const retryDoc = {
+        extractMetadata: jest
+          .fn()
+          .mockResolvedValueOnce({
+            getDocs: jest.fn().mockReturnValue([
+              { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
+            ]),
+          })
+          .mockResolvedValue({
+            getDocs: jest.fn().mockReturnValue([
+              {
+                text: 'Machine learning is a subset of artificial intelligence',
+                metadata: {
+                  enrichment: {
+                    title: 'Machine Learning Fundamentals',
+                    keywords: 'machine learning, artificial intelligence',
+                    summary: 'A concise summary of machine learning fundamentals.',
+                  },
+                },
+              },
+            ]),
+          }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
+        ]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(retryDoc as never);
+
+      const result = await service.chunkFile(TEST_DOCUMENT, 'test-doc.md', 'test-source');
+
+      // Chunking still succeeds (DEC-0043 non-fatal contract).
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      // The corrective retry output lands in the chunk metadata.
+      const chunk = chunks[0];
+      expect(chunk.metadata?.mastraDocTitle).toBe('Machine Learning Fundamentals');
+      expect(chunk.metadata?.mastraDocKeywords).toBe('machine learning, artificial intelligence');
+      expect(chunk.metadata?.mastraDocSummary).toBe(
+        'A concise summary of machine learning fundamentals.',
+      );
+
+      // Bounded retry: exactly one corrective attempt after the resolve-empty first attempt.
+      expect(retryDoc.extractMetadata).toHaveBeenCalledTimes(2);
+
+      // The corrective attempt carried the corrective retry instruction.
+      const correctiveCall = retryDoc.extractMetadata.mock.calls[1][0];
+      expect(correctiveCall.schema.instructions).toContain(ENRICHMENT_CORRECTIVE_RETRY_INSTRUCTION);
     });
   });
 

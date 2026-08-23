@@ -60,6 +60,52 @@ export const ENRICHMENT_CORRECTIVE_RETRY_INSTRUCTION =
   'The previous response failed validation. You MUST return all three fields: title, keywords, and summary. summary is required and must be a string.';
 
 /**
+ * Typed error for "extractMetadata resolved but carried no valid enrichment".
+ * `missingFields` lists the enrichment keys that were absent or not strings
+ * (or `['enrichment']` when the enrichment object itself is missing/invalid).
+ */
+export class EnrichmentValidationError extends Error {
+  readonly missingFields: string[];
+
+  constructor(missingFields: string[]) {
+    super(`Extracted enrichment is invalid; missing or invalid fields: ${missingFields.join(', ')}`);
+    this.name = 'EnrichmentValidationError';
+    this.missingFields = missingFields;
+  }
+}
+
+/**
+ * Mastra's SchemaExtractor swallows validation errors and RESOLVES with an
+ * empty object. Treat "resolved but invalid enrichment" as a failure so the
+ * corrective retry (T8) becomes reachable for schema-validation failures.
+ *
+ * Reads `enrichedDoc.getDocs()[0]?.metadata?.enrichment`; if it is not an
+ * object with string `title`/`keywords`/`summary`, throws
+ * `EnrichmentValidationError` listing the missing/invalid fields.
+ */
+export function assertExtractedEnrichment(enrichedDoc: MDocument): void {
+  const missingFields: string[] = [];
+  const enrichment: unknown = enrichedDoc.getDocs()[0]?.metadata?.enrichment;
+
+  if (enrichment === undefined || enrichment === null) {
+    missingFields.push('enrichment');
+  } else if (typeof enrichment !== 'object' || Array.isArray(enrichment)) {
+    missingFields.push('enrichment');
+  } else {
+    const candidate = enrichment as Record<string, unknown>;
+    for (const field of ['title', 'keywords', 'summary'] as const) {
+      if (typeof candidate[field] !== 'string') {
+        missingFields.push(field);
+      }
+    }
+  }
+
+  if (missingFields.length > 0) {
+    throw new EnrichmentValidationError(missingFields);
+  }
+}
+
+/**
  * Bounded retry budget for transient 429 `RateLimitError`s on a single per-chunk
  * enrichment call. `ENRICHMENT_429_MAX_RETRIES` additional attempts are allowed
  * after the initial one (so at most 3 LLM calls per chunk on the 429 path), each
@@ -95,6 +141,16 @@ export function isRateLimitError(error: unknown): boolean {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Per-chunk enrichment outcome returned by `enrichChunk` to the serial loop so the
+ * file-level aggregate can count enriched vs failed chunks and surface the first
+ * failure reason. On success the enrichment presence flags are carried up too —
+ * `hasTitle`/`hasKeywords`/`hasSummary` are true iff present on this enriched chunk.
+ */
+type EnrichmentChunkOutcome =
+  | { enriched: true; attempts: number; hasTitle: boolean; hasKeywords: boolean; hasSummary: boolean }
+  | { enriched: false; reason: string };
 
 @Injectable()
 export class MastraChunkingService {
@@ -194,6 +250,9 @@ Do not include any other text, explanations, or markdown formatting.`;
    * bounded at 3 attempts total, and exhausted retries never abort the remaining
    * chunks. Task 7 bounds still apply per attempt (timeout via
    * `withEnrichmentTimeout`).
+   *
+   * DEC-0068: returns the per-chunk outcome so the serial loop in `chunkFile`
+   * can build the file-level aggregate and log per-chunk observability events.
    */
   private async enrichChunk(
     chunk: { text: string; metadata?: Record<string, unknown> },
@@ -203,12 +262,31 @@ Do not include any other text, explanations, or markdown formatting.`;
     sourceId: string,
     summaryMaxWords: number,
     timeoutMs: number,
-  ): Promise<void> {
+    chunkIndex: number,
+    chunkCount: number,
+  ): Promise<EnrichmentChunkOutcome> {
+    const logChunkEnriched = (attempts: number): EnrichmentChunkOutcome => {
+      const enrichment = chunk.metadata?.enrichment as Record<string, unknown> | undefined;
+      const hasTitle = typeof enrichment?.title === 'string';
+      const hasKeywords = typeof enrichment?.keywords === 'string';
+      const hasSummary = typeof enrichment?.summary === 'string';
+      this.logger.info('[mastra-chunking:enrichment] Chunk enriched', {
+        chunkIndex,
+        chunkCount,
+        filePath,
+        attempts,
+        hasTitle,
+        hasKeywords,
+        hasSummary,
+      });
+      return { enriched: true, attempts, hasTitle, hasKeywords, hasSummary };
+    };
+
     const attempt = (instructions: string) =>
       this.withEnrichmentTimeout(
         (async () => {
           const singleChunkDoc = this.createDocument(chunk.text, docType, filePath, sourceId);
-          return singleChunkDoc.extractMetadata({
+          const enrichedDoc = await singleChunkDoc.extractMetadata({
             schema: {
               schema: MastraChunkingService.enrichmentSchema,
               llm,
@@ -216,6 +294,12 @@ Do not include any other text, explanations, or markdown formatting.`;
               metadataKey: 'enrichment',
             },
           });
+          // Post-validate the RESOLVED result (DEC-0069): Mastra's SchemaExtractor
+          // swallows validation errors and resolves with an empty object, so a
+          // resolved-but-invalid enrichment must throw — the throw lands in the
+          // existing catch and makes the corrective retry reachable.
+          assertExtractedEnrichment(enrichedDoc);
+          return enrichedDoc;
         })(),
         timeoutMs,
       );
@@ -226,16 +310,20 @@ Do not include any other text, explanations, or markdown formatting.`;
         attempt(this.buildEnrichmentInstructions(summaryMaxWords, false)),
       );
       this.applyEnrichmentToChunk(chunk, enrichedDoc);
+      return logChunkEnriched(1);
     } catch (error) {
       // All 429 backoff retries exhausted — transient, a corrective prompt would
       // not help. Leave the chunk un-enriched; the remaining chunks still enrich.
       if (isRateLimitError(error)) {
+        const message = error instanceof Error ? error.message : String(error);
         this.logger.warn('[mastra-chunking:enrichment] Rate limit retries exhausted', {
-          error: error instanceof Error ? error.message : String(error),
+          chunkIndex,
+          chunkCount,
+          error: message,
           retries: ENRICHMENT_429_MAX_RETRIES,
           filePath,
         });
-        return;
+        return { enriched: false, reason: message };
       }
       // Non-429 failure (e.g. schema-validation error) — retry ONCE with a
       // corrective instruction (Task 8). If that also fails, the chunk is left
@@ -243,13 +331,18 @@ Do not include any other text, explanations, or markdown formatting.`;
       try {
         const enrichedDoc = await attempt(this.buildEnrichmentInstructions(summaryMaxWords, true));
         this.applyEnrichmentToChunk(chunk, enrichedDoc);
+        return logChunkEnriched(2);
       } catch (error2) {
         const err = error2 instanceof Error ? error2 : new Error(String(error2));
         this.logger.warn('[mastra-chunking:enrichment] ExtractMetadata failed', {
+          chunkIndex,
+          chunkCount,
           error: err.message,
           stack: err.stack ?? 'no stack',
           filePath,
+          attempts: 2,
         });
+        return { enriched: false, reason: err.message };
       }
     }
   }
@@ -357,34 +450,55 @@ Do not include any other text, explanations, or markdown formatting.`;
 
             // One LLM call per chunk, strictly sequential. A failing chunk is left
             // un-enriched (after the corrective retry) and does not abort the rest.
-            for (const chunk of docDocs) {
-              await this.enrichChunk(
-                chunk,
+            const outcomes: EnrichmentChunkOutcome[] = [];
+            for (let i = 0; i < docDocs.length; i++) {
+              const outcome = await this.enrichChunk(
+                docDocs[i],
                 customLLM,
                 docType,
                 filePath,
                 sourceId,
                 summaryMaxWords,
                 enrichmentConfig.timeoutMs,
+                i,
+                docDocs.length,
               );
+              outcomes.push(outcome);
             }
 
-            // Verify enrichment was stored in chunk metadata under the 'enrichment' key
-            const firstChunk = docDocs[0];
-            const enrichmentData = firstChunk?.metadata?.enrichment as Record<string, unknown> | undefined;
-            const hasTitle = typeof enrichmentData?.title === 'string';
-            const hasKeywords = typeof enrichmentData?.keywords === 'string';
-            const hasSummary = typeof enrichmentData?.summary === 'string';
+            // File-level aggregate (DEC-0068): count enriched vs failed across
+            // ALL chunks and surface the first failure reason.
+            const enrichedOutcomes = outcomes.filter(
+              (o): o is Extract<EnrichmentChunkOutcome, { enriched: true }> => o.enriched,
+            );
+            const enrichedCount = enrichedOutcomes.length;
+            const failedCount = outcomes.length - enrichedCount;
+            const aggregateHasTitle = enrichedOutcomes.some(o => o.hasTitle);
+            const aggregateHasKeywords = enrichedOutcomes.some(o => o.hasKeywords);
+            const aggregateHasSummary = enrichedOutcomes.some(o => o.hasSummary);
 
             this.logger.info(
-              `[mastra-chunking:enrichment] Extracted metadata; hasTitle=${hasTitle}, hasKeywords=${hasKeywords}, hasSummary=${hasSummary}`,
+              `[mastra-chunking:enrichment] Extracted metadata; enriched=${enrichedCount}, failed=${failedCount}`,
               {
-                hasTitle,
-                hasKeywords,
-                hasSummary,
+                totalChunks: outcomes.length,
+                enrichedCount,
+                failedCount,
                 filePath,
+                hasTitle: aggregateHasTitle,
+                hasKeywords: aggregateHasKeywords,
+                hasSummary: aggregateHasSummary,
               },
             );
+
+            if (failedCount > 0) {
+              const firstFailure = outcomes.find(o => !o.enriched);
+              this.logger.warn('[mastra-chunking:enrichment] Some chunks failed enrichment', {
+                failedCount,
+                totalChunks: outcomes.length,
+                filePath,
+                firstFailureReason: firstFailure && !firstFailure.enriched ? firstFailure.reason : 'unknown',
+              });
+            }
           }
         } catch (error) {
           // Non-fatal — log warning, continue without enrichment

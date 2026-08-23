@@ -54,7 +54,8 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, IngestChu
       return Result.ok({ memoryIds: [] });
     }
 
-    let successCount = 0;
+    let storedCount = 0;
+    let deduplicatedCount = 0;
     let failureCount = 0;
     const errors: { chunkId: bigint; error: string }[] = [];
     const memoryIds: string[] = [];
@@ -64,7 +65,11 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, IngestChu
         const result = await this.bensyneClient.remember(chunk);
         if (result.isOk()) {
           const { memory_id, status } = result.getValue();
-          successCount++;
+          if (status === 'stored') {
+            storedCount++;
+          } else if (status === 'deduplicated') {
+            deduplicatedCount++;
+          }
           memoryIds.push(memory_id);
           this.logger.debug(
             `Chunk ingested; id="${chunk.id}", index=${chunk.chunkIndex}, memoryId="${memory_id}", status="${status}"`,
@@ -111,10 +116,10 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, IngestChu
     }
 
     this.logger.info(
-      `Chunk ingestion completed: source="${params.sourceId}", total=${params.chunks.length}, success=${successCount}, failed=${failureCount}`,
+      `Chunk ingestion completed: source="${params.sourceId}", total=${params.chunks.length}, stored=${storedCount}, deduplicated=${deduplicatedCount}, failed=${failureCount}`,
     );
 
-    if (failureCount > 0 && successCount === 0) {
+    if (failureCount > 0 && storedCount + deduplicatedCount === 0) {
       return Result.ko([
         new ErrorWithDetails(
           `Failed to ingest all ${failureCount} chunks: ${errors.map(e => e.error).join('; ')}`,

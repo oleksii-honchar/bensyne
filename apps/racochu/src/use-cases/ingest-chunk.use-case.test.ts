@@ -1,5 +1,6 @@
 import { ContentChunk } from '../domain/content-chunk.entity';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
+import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
 import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
@@ -20,13 +21,14 @@ describe('IngestChunkUseCase', () => {
   let useCase: IngestChunkUseCase;
   let mockBensyneClientService: ReturnType<typeof aBensyneClientService>;
   let mockFileMemoryTrackerService: ReturnType<typeof aFileMemoryTrackerService>;
+  let mockLogger: jest.Mocked<BasePinoLogger>;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     mockBensyneClientService = aBensyneClientService();
     mockFileMemoryTrackerService = aFileMemoryTrackerService();
-    const mockLogger = aLogger();
+    mockLogger = aLogger();
 
     useCase = new IngestChunkUseCase(
       mockBensyneClientService as never,
@@ -158,6 +160,115 @@ describe('IngestChunkUseCase', () => {
       expect(mockBensyneClientService.remember).toHaveBeenCalledTimes(2);
       expect(mockBensyneClientService.remember.mock.calls[0][0].memoryBank).toBe('ns1');
       expect(mockBensyneClientService.remember.mock.calls[1][0].memoryBank).toBe('ns2');
+    });
+  });
+
+  describe('ingest summary log (DEC-0068)', () => {
+    it('should log stored/deduplicated/failed breakdown for mixed case (3 chunks: 1 stored, 2 deduplicated)', async () => {
+      const chunk1 = aContentChunk({ chunkIndex: 0 });
+      const chunk2 = aContentChunk({ chunkIndex: 1 });
+      const chunk3 = aContentChunk({ chunkIndex: 2 });
+
+      mockBensyneClientService.remember
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-1', status: 'stored' }))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-2', status: 'deduplicated' }))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-3', status: 'deduplicated' }));
+
+      const result = await useCase.execute({
+        chunks: [chunk1, chunk2, chunk3],
+        sourceId: 'test-source',
+      });
+
+      expect(result.isOk()).toBe(true);
+
+      // Assert the summary log message
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunk ingestion completed: source="test-source", total=3, stored=1, deduplicated=2, failed=0',
+      );
+    });
+
+    it('should maintain S + D = N - F invariant for all-stored case', async () => {
+      const chunks = [aContentChunk({ chunkIndex: 0 }), aContentChunk({ chunkIndex: 1 })];
+      mockBensyneClientService.remember.mockResolvedValue(Result.ok({ memory_id: 'mem-1', status: 'stored' }));
+
+      const result = await useCase.execute({ chunks, sourceId: 'test-source' });
+
+      expect(result.isOk()).toBe(true);
+
+      // total=2, stored=2, deduplicated=0, failed=0 → S + D = N - F (2 + 0 = 2 - 0)
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunk ingestion completed: source="test-source", total=2, stored=2, deduplicated=0, failed=0',
+      );
+    });
+
+    it('should maintain S + D = N - F invariant for all-deduplicated case', async () => {
+      const chunks = [aContentChunk({ chunkIndex: 0 }), aContentChunk({ chunkIndex: 1 }), aContentChunk({ chunkIndex: 2 })];
+      mockBensyneClientService.remember.mockResolvedValue(Result.ok({ memory_id: 'mem-1', status: 'deduplicated' }));
+
+      const result = await useCase.execute({ chunks, sourceId: 'test-source' });
+
+      expect(result.isOk()).toBe(true);
+
+      // total=3, stored=0, deduplicated=3, failed=0 → S + D = N - F (0 + 3 = 3 - 0)
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunk ingestion completed: source="test-source", total=3, stored=0, deduplicated=3, failed=0',
+      );
+    });
+
+    it('should maintain S + D = N - F invariant for all-failed case', async () => {
+      const chunks = [aContentChunk({ chunkIndex: 0 }), aContentChunk({ chunkIndex: 1 })];
+      mockBensyneClientService.remember.mockResolvedValue(Result.ko([new Error('Connection refused')]));
+
+      const result = await useCase.execute({ chunks, sourceId: 'test-source' });
+
+      expect(result.isKo()).toBe(true);
+
+      // total=2, stored=0, deduplicated=0, failed=2 → S + D = N - F (0 + 0 = 2 - 2)
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunk ingestion completed: source="test-source", total=2, stored=0, deduplicated=0, failed=2',
+      );
+    });
+
+    it('should maintain S + D = N - F invariant for mixed with failures case', async () => {
+      const chunk1 = aContentChunk({ chunkIndex: 0 });
+      const chunk2 = aContentChunk({ chunkIndex: 1 });
+      const chunk3 = aContentChunk({ chunkIndex: 2 });
+      const chunk4 = aContentChunk({ chunkIndex: 3 });
+
+      mockBensyneClientService.remember
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-1', status: 'stored' }))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-2', status: 'deduplicated' }))
+        .mockResolvedValueOnce(Result.ko([new Error('Failed')]))
+        .mockResolvedValueOnce(Result.ok({ memory_id: 'mem-4', status: 'stored' }));
+
+      const result = await useCase.execute({
+        chunks: [chunk1, chunk2, chunk3, chunk4],
+        sourceId: 'test-source',
+      });
+
+      expect(result.isOk()).toBe(true);
+
+      // total=4, stored=2, deduplicated=1, failed=1 → S + D = N - F (2 + 1 = 4 - 1)
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunk ingestion completed: source="test-source", total=4, stored=2, deduplicated=1, failed=1',
+      );
+    });
+
+    it('should preserve per-chunk DEBUG log with status field', async () => {
+      const chunk = aContentChunk({ chunkIndex: 0 });
+      mockBensyneClientService.remember.mockResolvedValue(
+        Result.ok({ memory_id: 'mem-1', status: 'stored' }),
+      );
+
+      await useCase.execute({ chunks: [chunk], sourceId: 'test-source' });
+
+      // Assert per-chunk DEBUG log is preserved
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining(`Chunk ingested; id="`),
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining(`status="stored"`),
+      );
     });
   });
 

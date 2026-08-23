@@ -7,8 +7,10 @@ import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 
 import { MDocument } from '@mastra/rag';
 import {
+  assertExtractedEnrichment,
   deriveSummaryMaxWords,
   ENRICHMENT_429_MAX_RETRIES,
+  EnrichmentValidationError,
   MastraChunkingService,
   MAX_ENRICHMENT_KEYWORDS_LENGTH,
 } from './mastra-chunking.service';
@@ -1344,7 +1346,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       return mockDoc;
     };
 
-    it('should retry extractMetadata ONCE with the corrective instruction when the first attempt fails, and use the second attempt output', async () => {
+    it('should retry extractMetadata ONCE with the corrective instruction when the first attempt RESOLVES empty (real Mastra contract), and use the second attempt output', async () => {
       const enrichedChunk = {
         text: 'content',
         metadata: {
@@ -1354,7 +1356,11 @@ Do not include any other text, explanations, or markdown formatting.`,
       const mockDoc = setupDoc(
         jest
           .fn()
-          .mockRejectedValueOnce(new Error('summary: expected string, received undefined'))
+          // Real Mastra contract (R6): SchemaExtractor swallows validation errors and
+          // RESOLVES with an empty/un-enriched doc — it never rejects on schema failure.
+          .mockResolvedValueOnce({
+            getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+          })
           .mockResolvedValueOnce({ getDocs: jest.fn().mockReturnValue([enrichedChunk]) }),
         [enrichedChunk],
       );
@@ -1378,10 +1384,13 @@ Do not include any other text, explanations, or markdown formatting.`,
       expect(secondInstructions).toContain('previous response failed validation');
     });
 
-    it('should return Result.ok un-enriched chunks when both enrichment attempts fail — no throw, file processing continues', async () => {
-      const mockDoc = setupDoc(jest.fn().mockRejectedValue(new Error('LLM unavailable')), [
-        { text: 'content', metadata: {} },
-      ]);
+    it('should return Result.ok un-enriched chunks when BOTH attempts RESOLVE empty — no throw, file processing continues', async () => {
+      const mockDoc = setupDoc(
+        jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+        }),
+        [{ text: 'content', metadata: {} }],
+      );
 
       const result = await service.chunkFile('# Title', 'README.md', 'test-source');
 
@@ -1389,8 +1398,15 @@ Do not include any other text, explanations, or markdown formatting.`,
       expect(result.getValue()).toHaveLength(1);
       expect(result.getValue()[0].metadata?.mastraDocTitle).toBeUndefined();
 
-      // Exactly one retry — no unbounded loop (at most 2 LLM calls per file)
+      // Exactly one corrective retry — no unbounded loop (at most 2 LLM calls per chunk)
       expect(mockDoc.extractMetadata).toHaveBeenCalledTimes(2);
+
+      // Secondary: the both-fail WARN surfaces the validation error message
+      // (primary behavioral checks above: Result.ok, chunk un-enriched, loop continues).
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] ExtractMetadata failed',
+        expect.objectContaining({ error: expect.stringContaining('missing or invalid fields') }),
+      );
     });
 
     it('should not retry when the first enrichment attempt succeeds', async () => {
@@ -1417,6 +1433,77 @@ Do not include any other text, explanations, or markdown formatting.`,
       expect(mockDoc.extractMetadata).toHaveBeenCalledTimes(1);
       const instructions = mockDoc.extractMetadata.mock.calls[0][0].schema.instructions;
       expect(instructions).not.toContain('previous response failed validation');
+    });
+  });
+
+  describe('assertExtractedEnrichment (DEC-0069 — post-validate the RESOLVED result)', () => {
+    const docWithEnrichment = (enrichment: unknown): MDocument =>
+      ({
+        getDocs: () => [{ text: 'content', metadata: { enrichment } }],
+      }) as unknown as MDocument;
+
+    const docWithNoEnrichment = (): MDocument =>
+      ({ getDocs: () => [{ text: 'content', metadata: {} }] }) as unknown as MDocument;
+
+    const expectMissingFields = (doc: MDocument, expected: string[]): void => {
+      expect(() => assertExtractedEnrichment(doc)).toThrow(EnrichmentValidationError);
+      try {
+        assertExtractedEnrichment(doc);
+        throw new Error('expected assertExtractedEnrichment to throw');
+      } catch (error) {
+        expect((error as EnrichmentValidationError).missingFields).toEqual(expected);
+      }
+    };
+
+    it('does not throw when enrichment is an object with string title/keywords/summary', () => {
+      expect(() =>
+        assertExtractedEnrichment(docWithEnrichment({ title: 'T', keywords: 'k', summary: 'S' })),
+      ).not.toThrow();
+    });
+
+    it('throws with missingFields ["enrichment"] when the enrichment object is missing', () => {
+      expectMissingFields(docWithNoEnrichment(), ['enrichment']);
+    });
+
+    it('throws with missingFields ["enrichment"] when the document has no docs at all', () => {
+      expectMissingFields(({ getDocs: () => [] }) as unknown as MDocument, ['enrichment']);
+    });
+
+    it('throws with missingFields ["enrichment"] when enrichment is not an object (string)', () => {
+      expectMissingFields(docWithEnrichment('not-an-object'), ['enrichment']);
+    });
+
+    it('throws with missingFields ["enrichment"] when enrichment is an array', () => {
+      expectMissingFields(docWithEnrichment([]), ['enrichment']);
+    });
+
+    it('throws with missingFields ["title"] when title is missing', () => {
+      expectMissingFields(docWithEnrichment({ keywords: 'k', summary: 'S' }), ['title']);
+    });
+
+    it('throws with missingFields ["keywords"] when keywords is missing', () => {
+      expectMissingFields(docWithEnrichment({ title: 'T', summary: 'S' }), ['keywords']);
+    });
+
+    it('throws with missingFields ["summary"] when summary is missing', () => {
+      expectMissingFields(docWithEnrichment({ title: 'T', keywords: 'k' }), ['summary']);
+    });
+
+    it('throws with missingFields ["title"] when a field value is not a string', () => {
+      expectMissingFields(docWithEnrichment({ title: 42, keywords: 'k', summary: 'S' }), ['title']);
+    });
+
+    it('lists every missing/invalid field when the enrichment object is empty', () => {
+      expectMissingFields(docWithEnrichment({}), ['title', 'keywords', 'summary']);
+    });
+
+    it('exposes the missing fields via the error message (surfaces in the ExtractMetadata failed WARN)', () => {
+      try {
+        assertExtractedEnrichment(docWithNoEnrichment());
+        throw new Error('expected assertExtractedEnrichment to throw');
+      } catch (error) {
+        expect((error as Error).message).toContain('missing or invalid fields');
+      }
     });
   });
 
@@ -2082,8 +2169,11 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[mastra-chunking:enrichment] Extracted metadata; hasTitle=true, hasKeywords=true, hasSummary=true',
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=1, failed=0',
         expect.objectContaining({
+          totalChunks: 1,
+          enrichedCount: 1,
+          failedCount: 0,
           hasTitle: true,
           hasKeywords: true,
           hasSummary: true,
@@ -2126,8 +2216,11 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('[mastra-chunking:enrichment] Extracted metadata'),
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=1, failed=0',
         expect.objectContaining({
+          totalChunks: 1,
+          enrichedCount: 1,
+          failedCount: 0,
           hasTitle: true,
           hasKeywords: true,
           hasSummary: true,
@@ -2136,7 +2229,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       );
     });
 
-    it('should log hasSummary=false in the Extracted metadata payload when enrichment lacks a summary', async () => {
+    it('should log aggregate has* false when every chunk fails enrichment validation (summary required)', async () => {
       configService = createMockConfigService({
         enrichmentEnabled: true,
         enrichmentApiKey: 'test-key',
@@ -2144,7 +2237,10 @@ Do not include any other text, explanations, or markdown formatting.`,
       });
       service = new MastraChunkingService(configService, mockLogger);
 
-      const enrichedDoc = {
+      // Real Mastra contract (R6): extractMetadata RESOLVES with a partial
+      // enrichment object (missing summary). `assertExtractedEnrichment` treats it
+      // as invalid on BOTH attempts, so the chunk is left un-enriched.
+      const mockDoc = {
         extractMetadata: jest.fn().mockResolvedValue({
           getDocs: jest.fn().mockReturnValue([
             {
@@ -2154,25 +2250,325 @@ Do not include any other text, explanations, or markdown formatting.`,
           ]),
         }),
         chunkMarkdown: jest.fn(),
-        getDocs: jest.fn().mockReturnValue([
-          {
-            text: 'content',
-            metadata: { enrichment: { title: 'T', keywords: 'k' } },
-          },
-        ]),
+        getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
       };
-      mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
 
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
+      // No chunk is enriched, so the aggregate has* flags are all false.
       expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('[mastra-chunking:enrichment] Extracted metadata'),
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=0, failed=1',
         expect.objectContaining({
-          hasTitle: true,
-          hasKeywords: true,
+          totalChunks: 1,
+          enrichedCount: 0,
+          failedCount: 1,
+          hasTitle: false,
+          hasKeywords: false,
           hasSummary: false,
           filePath: 'README.md',
         }),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Some chunks failed enrichment',
+        expect.objectContaining({
+          failedCount: 1,
+          totalChunks: 1,
+          filePath: 'README.md',
+          firstFailureReason: expect.stringContaining('missing or invalid fields'),
+        }),
+      );
+    });
+  });
+
+  describe('enrichment per-chunk observability + file-level aggregate (DEC-0068)', () => {
+    const enableEnrichment = (): void => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+    };
+
+    const enrichedChunk = (
+      title: string,
+      keywords = 'k',
+      summary = 'S',
+    ): { text: string; metadata: Record<string, unknown> } => ({
+      text: 'content',
+      metadata: { enrichment: { title, keywords, summary } },
+    });
+
+    it('emits Chunk enriched INFO (attempts=1, 0-based chunkIndex) and all-enriched aggregate without a failure WARN', async () => {
+      enableEnrichment();
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([enrichedChunk('T')]),
+        }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([enrichedChunk('T')]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      // Behavioral: the enriched chunk carries the enrichment metadata.
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.mastraDocTitle).toBe('T');
+      expect(chunk.metadata?.mastraDocKeywords).toBe('k');
+      expect(chunk.metadata?.mastraDocSummary).toBe('S');
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Chunk enriched',
+        expect.objectContaining({
+          chunkIndex: 0,
+          chunkCount: 1,
+          filePath: 'README.md',
+          attempts: 1,
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: true,
+        }),
+      );
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=1, failed=0',
+        expect.objectContaining({
+          totalChunks: 1,
+          enrichedCount: 1,
+          failedCount: 0,
+          filePath: 'README.md',
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: true,
+        }),
+      );
+
+      expect(mockLogger.warn).not.toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Some chunks failed enrichment',
+        expect.anything(),
+      );
+    });
+
+    it('emits Chunk enriched INFO with attempts=2 when the corrective retry succeeds', async () => {
+      enableEnrichment();
+
+      const mockDoc = {
+        extractMetadata: jest
+          .fn()
+          .mockResolvedValueOnce({
+            getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+          })
+          .mockResolvedValueOnce({ getDocs: jest.fn().mockReturnValue([enrichedChunk('Retried')]) }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([enrichedChunk('Retried')]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      // Behavioral: corrective attempt output lands in chunk metadata, bounded to 2 calls.
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()[0].metadata?.mastraDocTitle).toBe('Retried');
+      expect(mockDoc.extractMetadata).toHaveBeenCalledTimes(2);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Chunk enriched',
+        expect.objectContaining({
+          chunkIndex: 0,
+          chunkCount: 1,
+          filePath: 'README.md',
+          attempts: 2,
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: true,
+        }),
+      );
+
+      // The chunk still counts as enriched in the aggregate (no corrective-fail WARN).
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=1, failed=0',
+        expect.objectContaining({ totalChunks: 1, enrichedCount: 1, failedCount: 0 }),
+      );
+    });
+
+    it('emits WARN ExtractMetadata failed with chunkIndex/chunkCount/attempts/error/stack when both attempts fail', async () => {
+      enableEnrichment();
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockRejectedValue(new Error('LLM unavailable')),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      // Behavioral: chunk un-enriched, Result.ok, loop continues.
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()[0].metadata?.mastraDocTitle).toBeUndefined();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] ExtractMetadata failed',
+        expect.objectContaining({
+          chunkIndex: 0,
+          chunkCount: 1,
+          filePath: 'README.md',
+          attempts: 2,
+          error: 'LLM unavailable',
+        }),
+      );
+      const warnCall = (mockLogger.warn as jest.Mock).mock.calls.find(
+        (call: unknown[]) => call[0] === '[mastra-chunking:enrichment] ExtractMetadata failed',
+      );
+      expect(typeof (warnCall?.[1] as { stack?: unknown }).stack).toBe('string');
+
+      // File-level aggregate reflects the failure and surfaces the reason.
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=0, failed=1',
+        expect.objectContaining({
+          totalChunks: 1,
+          enrichedCount: 0,
+          failedCount: 1,
+          filePath: 'README.md',
+          hasTitle: false,
+          hasKeywords: false,
+          hasSummary: false,
+        }),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Some chunks failed enrichment',
+        expect.objectContaining({
+          failedCount: 1,
+          totalChunks: 1,
+          filePath: 'README.md',
+          firstFailureReason: 'LLM unavailable',
+        }),
+      );
+    });
+
+    it('emits WARN Rate limit retries exhausted with chunkIndex/chunkCount/error/retries when 429s are exhausted', async () => {
+      const sleepMock = jest.fn().mockResolvedValue(undefined);
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger, sleepMock);
+
+      const rateLimitError = (): Error =>
+        Object.assign(new Error('429 Too Many Requests'), { statusCode: 429 });
+      const mockDoc = {
+        extractMetadata: jest.fn().mockRejectedValue(rateLimitError()),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source');
+
+      // Behavioral: chunk un-enriched, bounded to 1 initial + ENRICHMENT_429_MAX_RETRIES calls.
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()[0].metadata?.mastraDocTitle).toBeUndefined();
+      expect(mockDoc.extractMetadata).toHaveBeenCalledTimes(1 + ENRICHMENT_429_MAX_RETRIES);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Rate limit retries exhausted',
+        expect.objectContaining({
+          chunkIndex: 0,
+          chunkCount: 1,
+          filePath: 'README.md',
+          error: '429 Too Many Requests',
+          retries: ENRICHMENT_429_MAX_RETRIES,
+        }),
+      );
+    });
+
+    it('emits file-level aggregate enriched=1, failed=1 with has* true from the enriched chunk plus the failure WARN', async () => {
+      enableEnrichment();
+
+      const mockDoc = {
+        extractMetadata: jest
+          .fn()
+          .mockResolvedValueOnce({ getDocs: jest.fn().mockReturnValue([enrichedChunk('Title A')]) })
+          .mockRejectedValueOnce(new Error('second chunk boom'))
+          .mockRejectedValueOnce(new Error('second chunk boom')),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          { text: 'Chunk A', metadata: {} },
+          { text: 'Chunk B', metadata: {} },
+        ]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title\n\nA\n\nB', 'README.md', 'test-source');
+
+      // Behavioral: chunk A enriched, chunk B un-enriched, both returned, Result.ok.
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0].metadata?.mastraDocTitle).toBe('Title A');
+      expect(chunks[1].metadata?.mastraDocTitle).toBeUndefined();
+
+      // Per-chunk log uses 0-based chunkIndex and total chunk count.
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Chunk enriched',
+        expect.objectContaining({ chunkIndex: 0, chunkCount: 2, filePath: 'README.md', attempts: 1 }),
+      );
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=1, failed=1',
+        expect.objectContaining({
+          totalChunks: 2,
+          enrichedCount: 1,
+          failedCount: 1,
+          filePath: 'README.md',
+          hasTitle: true,
+          hasKeywords: true,
+          hasSummary: true,
+        }),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Some chunks failed enrichment',
+        expect.objectContaining({
+          failedCount: 1,
+          totalChunks: 2,
+          filePath: 'README.md',
+          firstFailureReason: 'second chunk boom',
+        }),
+      );
+    });
+
+    it('does NOT emit Some chunks failed enrichment when all chunks are enriched', async () => {
+      enableEnrichment();
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([enrichedChunk('T')]),
+        }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          { text: 'A', metadata: {} },
+          { text: 'B', metadata: {} },
+        ]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title\n\nA\n\nB', 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toHaveLength(2);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Extracted metadata; enriched=2, failed=0',
+        expect.objectContaining({ totalChunks: 2, enrichedCount: 2, failedCount: 0 }),
+      );
+      expect(mockLogger.warn).not.toHaveBeenCalledWith(
+        '[mastra-chunking:enrichment] Some chunks failed enrichment',
+        expect.anything(),
       );
     });
   });
