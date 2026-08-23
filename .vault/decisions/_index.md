@@ -8,7 +8,7 @@ tags: []
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0067; per-folder filenames 0061–0066 map to DEC-0062..0067). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0069; per-folder filenames 0061–0068 map to DEC-0062..0069). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -84,3 +84,5 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0064-unified-list-memory-banks]] — Unified listMemoryBanks — Filesystem ∪ Pool ∪ Registry
 - [[0065-get-stats-banks-scan-phantom-cleanup]] — get_stats Banks List via Bensyne Scan + Phantom Cleanup
 - [[0066-ddd-bank-layering]] — DDD Bank Layering Around the Existing MemoryBank Aggregate
+- [[0067-per-chunk-enrichment-observability]] — Per-Chunk Enrichment Observability — Progress, Failure Position, Aggregate Summary
+- [[0068-reachable-corrective-retry]] — Reachable Corrective Retry via Post-Validation of Resolved Result
