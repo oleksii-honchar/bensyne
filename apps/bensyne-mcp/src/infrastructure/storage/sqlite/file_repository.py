@@ -95,10 +95,18 @@ class FileRepository:
 
     Args:
         connection_manager: FileMetadataConnectionManager for Session management.
+
+    Lazy contract (Option A): read paths short-circuit to empty results when the
+    bank has no file_metadata.db (``db_path`` absent) — they never materialize
+    the DB. Write paths (``save_file``) materialize it on first use.
     """
 
     def __init__(self, connection_manager: FileMetadataConnectionManager) -> None:
         self._conn_manager = connection_manager
+
+    def _db_exists(self) -> bool:
+        """True when the bank's file_metadata.db already exists on disk."""
+        return self._conn_manager.db_path.exists()
 
     # ------------------------------------------------------------------
     # save_file
@@ -129,6 +137,8 @@ class FileRepository:
 
     def get_file_by_id(self, file_id: str) -> Result[File | None]:
         """Find a file by its id."""
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = session.get(FileORM, file_id)
@@ -146,6 +156,8 @@ class FileRepository:
 
     def get_file_by_path(self, path: str) -> Result[File | None]:
         """Find a file by its path."""
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = session.query(FileORM).filter(FileORM.path == path).first()
@@ -163,6 +175,8 @@ class FileRepository:
 
     def list_files(self) -> Result[list[File]]:
         """List all saved files."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             orms = session.query(FileORM).order_by(FileORM.created_at.desc()).all()
@@ -179,6 +193,8 @@ class FileRepository:
 
     def search_files_by_query(self, query: str) -> Result[list[File]]:
         """Search files by query across path, keywords, and tags using FTS5."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             # FTS5 requires raw SQL — SQLAlchemy doesn't have native FTS5 support
@@ -210,6 +226,8 @@ class FileRepository:
 
     def delete_file(self, file_id: str) -> Result[bool]:
         """Delete a file by id, returning True if it existed."""
+        if not self._db_exists():
+            return Result.ok(False)
         session = self._conn_manager.get_session()
         try:
             orm = session.get(FileORM, file_id)

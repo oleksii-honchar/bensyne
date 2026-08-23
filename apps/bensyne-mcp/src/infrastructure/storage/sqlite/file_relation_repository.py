@@ -67,6 +67,10 @@ class FileRelationRepository:
     def __init__(self, connection_manager: FileMetadataConnectionManager) -> None:
         self._conn_manager = connection_manager
 
+    def _db_exists(self) -> bool:
+        """True when the bank's file_metadata.db already exists on disk."""
+        return self._conn_manager.db_path.exists()
+
     # ------------------------------------------------------------------
     # save_relation
     # ------------------------------------------------------------------
@@ -94,6 +98,8 @@ class FileRelationRepository:
 
     def get_relation_by_id(self, relation_id: str) -> Result[FileRelation | None]:
         """Find a relation by its id."""
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = session.query(FileRelationORM).filter(FileRelationORM.id == relation_id).first()
@@ -111,6 +117,8 @@ class FileRelationRepository:
 
     def get_relations_by_file_id(self, file_id: str) -> Result[list[FileRelation]]:
         """Find all relations where the given file is either source or target."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             orms = (
@@ -131,6 +139,8 @@ class FileRelationRepository:
 
     def get_relations_by_type(self, relation_type: RelationType) -> Result[list[FileRelation]]:
         """Find all relations of a given type."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             orms = session.query(FileRelationORM).filter(FileRelationORM.relation_type == relation_type.value).all()
@@ -158,6 +168,8 @@ class FileRelationRepository:
         converge them to the canonical fr_{source}_{target}_{type} id at
         persist time. Absent pair returns Result.ok(None) — no exception.
         """
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = (
@@ -192,6 +204,8 @@ class FileRelationRepository:
         relations are recreated from incoming contract edges.
         Returns Result.ok(True) when at least one row was deleted, else False.
         """
+        if not self._db_exists():
+            return Result.ok(False)
         session = self._conn_manager.get_session()
         try:
             deleted = (
@@ -216,6 +230,8 @@ class FileRelationRepository:
 
     def delete_relation(self, relation_id: str) -> Result[bool]:
         """Delete a relation by id, returning True if it existed."""
+        if not self._db_exists():
+            return Result.ok(False)
         session = self._conn_manager.get_session()
         try:
             orm = session.query(FileRelationORM).filter(FileRelationORM.id == relation_id).first()

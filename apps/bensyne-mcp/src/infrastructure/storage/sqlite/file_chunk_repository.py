@@ -77,6 +77,10 @@ class FileChunkRepository:
     def __init__(self, connection_manager: FileMetadataConnectionManager) -> None:
         self._conn_manager = connection_manager
 
+    def _db_exists(self) -> bool:
+        """True when the bank's file_metadata.db already exists on disk."""
+        return self._conn_manager.db_path.exists()
+
     # ------------------------------------------------------------------
     # save_chunk
     # ------------------------------------------------------------------
@@ -104,6 +108,8 @@ class FileChunkRepository:
 
     def get_chunk_by_id(self, chunk_id: str) -> Result[FileChunk | None]:
         """Find a chunk by its id."""
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = session.query(FileChunkORM).filter(FileChunkORM.id == chunk_id).first()
@@ -121,6 +127,8 @@ class FileChunkRepository:
 
     def get_chunks_by_file_id(self, file_id: str) -> Result[list[FileChunk]]:
         """Find all chunks belonging to a file, ordered by chunk_index."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             orms = (
@@ -147,6 +155,8 @@ class FileChunkRepository:
         made deterministic on (chunk_index, file_id) so the lookup is stable
         regardless of row insertion order.
         """
+        if not self._db_exists():
+            return Result.ok(None)
         session = self._conn_manager.get_session()
         try:
             orm = (
@@ -169,6 +179,8 @@ class FileChunkRepository:
 
     def get_chunks_by_memory_id(self, memory_id: str) -> Result[list[FileChunk]]:
         """Find all chunks by their associated memory id."""
+        if not self._db_exists():
+            return Result.ok([])
         session = self._conn_manager.get_session()
         try:
             orms = session.query(FileChunkORM).filter(FileChunkORM.memory_id == memory_id).all()
@@ -195,6 +207,8 @@ class FileChunkRepository:
         An empty exclude set deletes every chunk of the file.
         Returns Result.ok(True) on success (no-op when nothing matches).
         """
+        if not self._db_exists():
+            return Result.ok(False)
         session = self._conn_manager.get_session()
         try:
             query = session.query(FileChunkORM).filter(FileChunkORM.file_id == file_id)
@@ -215,6 +229,8 @@ class FileChunkRepository:
 
     def delete_chunk(self, chunk_id: str) -> Result[bool]:
         """Delete a chunk by id, returning True if it existed."""
+        if not self._db_exists():
+            return Result.ok(False)
         session = self._conn_manager.get_session()
         try:
             orm = session.query(FileChunkORM).filter(FileChunkORM.id == chunk_id).first()

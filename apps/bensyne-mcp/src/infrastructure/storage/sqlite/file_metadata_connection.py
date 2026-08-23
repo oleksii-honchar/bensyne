@@ -35,6 +35,10 @@ class FileMetadataConnectionManager:
     Args:
         bank_dir: Directory containing the memory bank's data files.
         pool_size: Maximum number of concurrent connections (default 5).
+
+    Construction is side-effect-free (lazy contract, Option A): no mkdir, no db
+    file, no schema. The DB materializes only on the first write-triggered
+    operation via ``_ensure_initialized()`` (mkdir + migrations + engine).
     """
 
     def __init__(self, bank_dir: Path, pool_size: int = 5) -> None:
@@ -45,6 +49,32 @@ class FileMetadataConnectionManager:
         self._active_count = 0
         self._lock = threading.Lock()
         self._closed = False
+        self._initialized = False
+
+        # Lazy contract: NO filesystem side effects here. The bank dir and db
+        # file materialize on first write-triggered use (_ensure_initialized),
+        # so a plain-remember bank never gains a file_metadata.db and stays
+        # "pure_memories" for the bank_type_checker file-existence heuristic.
+        self._engine: Engine | None = None
+        self._session_factory: sessionmaker | None = None
+
+    # ------------------------------------------------------------------
+    # Lazy initialization
+    # ------------------------------------------------------------------
+
+    def _ensure_initialized(self) -> None:
+        """Materialize the DB (mkdir + migrations + engine) on first use.
+
+        Idempotent: the work runs once per manager. All write-triggered paths
+        (``get_session`` / ``get_connection`` / ``create_tables`` /
+        ``check_migrations`` / ``engine``) funnel through here; read paths that
+        must not materialize short-circuit at the repository level on
+        ``db_path.exists()`` BEFORE calling into this manager.
+        """
+        if self._initialized:
+            return
+        if self._closed:
+            raise RuntimeError("Connection manager is closed")
 
         # Ensure parent directory exists
         self.bank_dir.mkdir(parents=True, exist_ok=True)
@@ -55,6 +85,7 @@ class FileMetadataConnectionManager:
         # SQLAlchemy Engine and Session factory
         self._engine = self._create_engine()
         self._session_factory = sessionmaker(bind=self._engine)
+        self._initialized = True
 
     # ------------------------------------------------------------------
     # Migration internals
@@ -155,6 +186,8 @@ class FileMetadataConnectionManager:
         if self._closed:
             raise RuntimeError("Connection manager is closed")
 
+        self._ensure_initialized()
+
         with self._lock:
             # Try to get an existing connection from the pool
             if self._pool:
@@ -227,9 +260,10 @@ class FileMetadataConnectionManager:
         """Create all tables if they don't exist.
 
         This is idempotent — calling it multiple times is safe.
-        Re-applies migrations to ensure schema is up to date.
+        Re-applies migrations to ensure schema is up to date. Materializes the
+        DB (mkdir + migrations + engine) on first call (lazy contract).
         """
-        self._apply_migrations()
+        self._ensure_initialized()
 
     def check_migrations(self) -> int:
         """Check the current schema version and apply any pending migrations.
@@ -237,14 +271,8 @@ class FileMetadataConnectionManager:
         Returns:
             The current schema version after applying any pending migrations.
         """
-        current_version = self._get_current_version()
-
-        for migration in MIGRATIONS:
-            if migration.version > current_version:
-                self._execute_migration(migration)
-                current_version = migration.version
-
-        return current_version
+        self._ensure_initialized()
+        return self._get_current_version()
 
     # ------------------------------------------------------------------
     # SQLAlchemy Session API
@@ -261,7 +289,10 @@ class FileMetadataConnectionManager:
         """
         if self._closed:
             raise RuntimeError("Connection manager is closed")
-        return self._session_factory()
+        self._ensure_initialized()
+        session_factory = self._session_factory
+        assert session_factory is not None
+        return session_factory()
 
     def close_session(self, session: Session) -> None:
         """Close a SQLAlchemy Session.
@@ -276,5 +307,11 @@ class FileMetadataConnectionManager:
 
     @property
     def engine(self) -> Engine:
-        """Return the SQLAlchemy Engine for this database."""
-        return self._engine
+        """Return the SQLAlchemy Engine for this database.
+
+        Materializes the DB on first access (lazy contract).
+        """
+        self._ensure_initialized()
+        engine = self._engine
+        assert engine is not None
+        return engine
