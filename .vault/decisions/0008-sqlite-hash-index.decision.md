@@ -7,7 +7,10 @@ status: accepted
 createdAt: "2026-08-07T18:01:00Z"
 updatedAt: "2026-08-23T14:33:06Z"
 tags: [deduplication, hash-index, sqlite]
-see_also: [concepts/0001-hash-index.concept.md, decisions/0048-dual-hash-wire-contract.decision.md]
+see_also:
+  - decisions/0061-canonical-bank-data-layout.decision.md
+  - concepts/0001-hash-index.concept.md
+  - decisions/0048-dual-hash-wire-contract.decision.md
 ---
 
 # DEC-0008: Use SQLite HashIndex for File Hash Deduplication

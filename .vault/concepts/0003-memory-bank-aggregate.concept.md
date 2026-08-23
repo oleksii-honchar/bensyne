@@ -9,6 +9,8 @@ see_also:
   - concepts/0002-memory-domain.concept.md
   - decisions/0011-result-pattern-error-handling.decision.md
   - specifications/0001-bensyne-ddd-migration.spec.md
+  - decisions/0062-persistent-bank-registry.decision.md
+  - decisions/0066-ddd-bank-layering.decision.md
 ---
 
 # Concept: MemoryBank Aggregate

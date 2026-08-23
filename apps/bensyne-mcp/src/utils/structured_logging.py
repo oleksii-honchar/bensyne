@@ -138,7 +138,7 @@ def init_structlog() -> None:
             add_logger_name,
             StackInfoRenderer(),
             PositionalArgumentsFormatter(),
-            TimeStamper(fmt="iso"),
+            TimeStamper(fmt="iso", utc=False),
             structlog.processors.JSONRenderer(),
         ]
     else:
@@ -149,7 +149,7 @@ def init_structlog() -> None:
             add_logger_name,
             StackInfoRenderer(),
             PositionalArgumentsFormatter(),
-            TimeStamper(fmt="iso"),
+            TimeStamper(fmt="iso", utc=False),
             ConsoleRenderer(),
         ]
 
@@ -178,7 +178,7 @@ def init_structlog() -> None:
         add_logger_name,
         StackInfoRenderer(),
         PositionalArgumentsFormatter(),
-        TimeStamper(fmt="iso"),
+        TimeStamper(fmt="iso", utc=False),
         structlog.processors.JSONRenderer(),
     ]
     wrapped_file_logger = structlog.wrap_logger(

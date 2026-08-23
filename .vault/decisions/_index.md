@@ -8,7 +8,7 @@ tags: []
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0067; per-folder filenames 0061–0066 map to DEC-0062..0067). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -78,3 +78,9 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0057-cross-file-traversal-any-file-targets]] — Cross-File Traversal Targets Any In-Bank File
 - [[0058-obsidian-wikilink-edge-gating]] — Obsidian Wikilink Edge Gating — hasExt-Based Source Detection
 - [[0060-sequential-file-processing]] — Sequential File Processing — Remove Double-Queueing in Force-Reprocess
+- [[0061-canonical-bank-data-layout]] — Canonical Bank Data Layout — data/banks/<bank>/ for All DB Files
+- [[0062-persistent-bank-registry]] — Persistent Bank Registry — memory_banks.db, Persisting the MemoryBank Aggregate (supersedes DEC-0003/0006)
+- [[0063-layered-bank-components]] — Layered Bank Components — Application MemoryBankService + Infrastructure MemoryBankRouter
+- [[0064-unified-list-memory-banks]] — Unified listMemoryBanks — Filesystem ∪ Pool ∪ Registry
+- [[0065-get-stats-banks-scan-phantom-cleanup]] — get_stats Banks List via Bensyne Scan + Phantom Cleanup
+- [[0066-ddd-bank-layering]] — DDD Bank Layering Around the Existing MemoryBank Aggregate

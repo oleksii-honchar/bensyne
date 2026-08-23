@@ -9,6 +9,7 @@ createdAt: "2026-08-16"
 updatedAt: "2026-08-23T14:33:06Z"
 tags: [memory-bank, mcp, protocol, infrastructure]
 see_also:
+  - decisions/0062-persistent-bank-registry.decision.md
   - decisions/0006-in-memory-namespace-registry.decision.md
   - decisions/0031-in-memory-namespace-registry.decision.md
   - decisions/0001-namespace-registration-protocol.decision.md

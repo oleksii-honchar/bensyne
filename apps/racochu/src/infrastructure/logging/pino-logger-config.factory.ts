@@ -15,6 +15,28 @@ function ensureLogDir(): void {
   }
 }
 
+/**
+ * Format a Date as an ISO-8601 timestamp in HOST LOCAL time.
+ *
+ * Unlike `Date.prototype.toISOString()` (always UTC, trailing `Z`), this
+ * builds the string from local date components plus the host UTC offset
+ * derived from `getTimezoneOffset()`, e.g. `2026-08-23T18:29:05.123+02:00`
+ * on a CEST host.
+ */
+export function formatLocalIsoTimestamp(date: Date): string {
+  const pad = (n: number, length = 2): string => String(n).padStart(length, '0');
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absOffset = Math.abs(offsetMinutes);
+  const offset = `${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
+
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `.${pad(date.getMilliseconds(), 3)}${offset}`
+  );
+}
+
 export function pinoLoggerConfigFactory(configService: ConfigService): Params {
   const serviceName = pkg.name;
 
@@ -42,7 +64,7 @@ export function pinoLoggerConfigFactory(configService: ConfigService): Params {
   } = {
     level: isLocalLogVerbose ? 'debug' : logLevel,
     messageKey: 'msg',
-    timestamp: () => `,"timestamp":"${new Date(Date.now()).toISOString()}"`,
+    timestamp: () => `,"timestamp":"${formatLocalIsoTimestamp(new Date())}"`,
     base: {
       environment,
       service: serviceName,
@@ -58,7 +80,7 @@ export function pinoLoggerConfigFactory(configService: ConfigService): Params {
       colorize: true,
       autoLogging: false,
       messageKey: 'message',
-      translateTime: 'yyyy-mm-dd HH:MM:ss',
+      translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
       singleLine: false,
       ignore: 'pid,hostname',
       ...(isLocalLogVerbose

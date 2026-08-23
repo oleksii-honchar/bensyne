@@ -8,7 +8,10 @@ superseded_by: [DEC-0063]
 createdAt: "2026-08-01T12:00:00Z"
 updatedAt: "2026-08-23T14:33:06Z"
 tags: [namespace, infrastructure]
-see_also: [decisions/0004-namespace-registration-tool.decision.md, decisions/0003-in-memory-namespace-registry.decision.md]
+see_also:
+  - decisions/0062-persistent-bank-registry.decision.md
+  - decisions/0004-namespace-registration-tool.decision.md
+  - decisions/0003-in-memory-namespace-registry.decision.md
 ---
 
 # DEC-0006: In-Memory Namespace Registry

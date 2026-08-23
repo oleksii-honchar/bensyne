@@ -3,9 +3,12 @@
 import json
 import logging
 import os
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from structlog.processors import TimeStamper
 
 from src.utils.structured_logging import (
     LoggerMock,
@@ -149,6 +152,94 @@ class TestInitStructlog:
         from src.utils.structured_logging import _is_production
 
         assert _is_production() is False
+
+
+class TestLocalTimeTimestamps:
+    """Timestamps are emitted in host LOCAL time, not UTC.
+
+    Regression: all three `TimeStamper(fmt="iso")` sites defaulted to
+    `utc=True`, producing ISO timestamps with a trailing `Z` (UTC) — 2h
+    behind the host on CEST. `utc=False` must be used everywhere so log
+    lines carry host local time.
+    """
+
+    def _timestampers(self) -> list[TimeStamper]:
+        from structlog import get_config
+
+        return [p for p in get_config().get("processors", []) if isinstance(p, TimeStamper)]
+
+    def test_production_processors_use_local_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Production JSON chain uses TimeStamper with utc=False."""
+        monkeypatch.setenv("BENSYNE_ENV", "production")
+        init_structlog()
+
+        timestampers = self._timestampers()
+        assert timestampers, "expected at least one TimeStamper in the production chain"
+        assert all(ts.utc is False for ts in timestampers)
+
+    def test_dev_processors_use_local_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Development console chain uses TimeStamper with utc=False."""
+        monkeypatch.setenv("BENSYNE_ENV", "development")
+        init_structlog()
+
+        timestampers = self._timestampers()
+        assert timestampers, "expected at least one TimeStamper in the dev chain"
+        assert all(ts.utc is False for ts in timestampers)
+
+    def test_file_logger_processors_use_local_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """JSONL file-logger chain uses TimeStamper with utc=False."""
+        monkeypatch.delenv("BENSYNE_ENV", raising=False)
+        monkeypatch.delenv("BENSYNE_LOG_FILE", raising=False)
+        init_structlog()
+
+        file_logger = get_file_logger()
+        timestampers = [p for p in file_logger._processors if isinstance(p, TimeStamper)]
+        assert timestampers, "expected at least one TimeStamper in the file chain"
+        assert all(ts.utc is False for ts in timestampers)
+
+    def test_emitted_timestamp_is_host_local_not_utc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The emitted ISO timestamp tracks host local time, NOT UTC.
+
+        A fixed instant produced by the chain must be within a small window
+        of `datetime.now()` (local) and offset from UTC by the host's
+        `tm_gmtoff` — never a trailing `Z`.
+        """
+        monkeypatch.setenv("BENSYNE_ENV", "production")
+        init_structlog()
+
+        event_dict: dict[str, Any] = {"event": "probe"}
+        for proc in self._timestampers():
+            event_dict = proc(None, None, event_dict)
+
+        timestamp = event_dict["timestamp"]
+        assert isinstance(timestamp, str)
+        assert not timestamp.endswith("Z"), f"timestamp is UTC, expected host local: {timestamp}"
+
+        parsed = datetime.fromisoformat(timestamp)
+        local_now = datetime.now()
+        assert abs((parsed - local_now).total_seconds()) < 5, (
+            f"timestamp {timestamp} is not host local time (local now {local_now.isoformat()})"
+        )
+
+        utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+        host_offset_seconds = time.localtime().tm_gmtoff
+        assert abs((parsed - utc_now).total_seconds() - host_offset_seconds) < 5, (
+            f"timestamp {timestamp} is not offset from UTC by the host offset "
+            f"({host_offset_seconds}s); parsed-utc delta="
+            f"{(parsed - utc_now).total_seconds()}"
+        )
+
+    def test_timestamper_utc_false_matches_local_iso(self) -> None:
+        """TimeStamper(fmt='iso', utc=False) == local datetime.now().isoformat()."""
+        local_before = datetime.now() - timedelta(seconds=1)
+        stamper = TimeStamper(fmt="iso", utc=False)
+        stamped = stamper(None, None, {"event": "probe"})["timestamp"]
+        local_after = datetime.now() + timedelta(seconds=1)
+
+        assert isinstance(stamped, str)
+        assert not stamped.endswith("Z")
+        parsed = datetime.fromisoformat(stamped)
+        assert local_before <= parsed <= local_after
 
 
 class TestGetLogger:
