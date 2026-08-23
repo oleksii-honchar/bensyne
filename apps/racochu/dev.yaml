@@ -7,6 +7,7 @@
 
 watchSources:
   - id: tmp-vault
+    description: Vault knowledge files — architecture, ADRs, and runbooks (recall-only, Racochu-managed)
     path: ./tmp/vault
     sourceType: vault
     exclude:
@@ -14,6 +15,7 @@ watchSources:
       - '**/.env*'
     debounceMs: 1000
   - id: tmp-obsidian
+    description: Obsidian notes and research (recall-only, Racochu-managed)
     path: ./tmp/obsidian
     sourceType: obsidian
     exclude:
@@ -21,6 +23,7 @@ watchSources:
       - '**/.env*'
     debounceMs: 1000
   - id: tmp-agent-sessions
+    description: Agent session history, decisions, and context (recall-only, Racochu-managed)
     path: ./tmp/agent-sessions
     sourceType: agent-sessions
     exclude:
