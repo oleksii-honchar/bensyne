@@ -109,14 +109,14 @@ class TestInstanceInfo:
         """InstanceInfo can be created for default memory bank."""
         info = InstanceInfo(
             memory_bank="default",
-            db_path="/data/mnemosyne.db",
+            db_path="/data/banks/default/mnemosyne.db",
             status="active",
             created_at=1722326400.0,
             last_accessed=1722326400.0,
         )
 
         assert info.memory_bank == "default"
-        assert info.db_path == "/data/mnemosyne.db"
+        assert info.db_path == "/data/banks/default/mnemosyne.db"
 
     def test_instance_info_serialization(self):
         """InstanceInfo can be serialized to dict."""

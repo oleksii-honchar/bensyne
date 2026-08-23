@@ -1,30 +1,58 @@
-"""Unit tests for ListBanksUseCase and RegisterBankUseCase."""
+"""Unit tests for ListBanksUseCase and RegisterBankUseCase.
 
+Task 7 rewire: business goes through ``MemoryBankService``, technical data
+(instance pool + filesystem scan) through the router. The use cases no longer
+touch ``router.registry`` / ``router.get_bank_description`` / ``router.register_bank``
+(removed in Task 3).
+"""
+
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
+from src.domain.memory_bank_aggregate import MemoryBank
 from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 
+def _bank(
+    name: str,
+    description: str = "desc",
+    status: str = "registered",
+    memory_count: int = 0,
+) -> MemoryBank:
+    """Build a MemoryBank aggregate directly (no factory side effects)."""
+    return MemoryBank(
+        name=name,
+        description=description,
+        status=status,
+        created_at=datetime.now(),
+        last_accessed=None,
+        memory_count=memory_count,
+        memories=[],
+    )
+
+
 class TestRegisterBankUseCase:
-    """Test RegisterBankUseCase validation and registration logic."""
+    """Test RegisterBankUseCase validation and registration logic (via service)."""
 
     @pytest.fixture
-    def router(self) -> MagicMock:
-        return MagicMock()
+    def memory_bank_service(self) -> MagicMock:
+        service = MagicMock()
+        service.register_memory_bank.return_value = Result.ok(_bank("my-bank"))
+        return service
 
     @pytest.fixture
     def logger(self) -> LoggerMock:
         return LoggerMock()
 
     @pytest.fixture
-    def use_case(self, router, logger) -> RegisterBankUseCase:
+    def use_case(self, memory_bank_service, logger) -> RegisterBankUseCase:
         return RegisterBankUseCase(
-            router=router,
+            memory_bank_service=memory_bank_service,
             logger=logger,
         )
 
@@ -68,12 +96,14 @@ class TestRegisterBankUseCase:
 
     # -- Execution --
 
-    def test_execute_registers_bank_via_router(self, use_case, router) -> None:
-        """Successful execution should call router.register_bank with name and description."""
+    def test_execute_calls_service_register_memory_bank(self, use_case, memory_bank_service) -> None:
+        """Successful execution should call memory_bank_service.register_memory_bank."""
         result = use_case.execute({"name": "my-bank", "description": "A test bank"})
 
         assert result.is_ok is True
-        router.register_bank.assert_called_once_with("my-bank", "A test bank")
+        memory_bank_service.register_memory_bank.assert_called_once_with(
+            "my-bank", "A test bank"
+        )
 
     def test_execute_returns_registered_status_and_name(self, use_case) -> None:
         """Result should contain status='registered' and the bank name."""
@@ -83,59 +113,58 @@ class TestRegisterBankUseCase:
         assert result.value["status"] == "registered"
         assert result.value["name"] == "my-bank"
 
-    def test_execute_returns_ko_when_name_empty(self, use_case) -> None:
-        """Execute with empty name should return Result.ko without calling router."""
+    def test_execute_propagates_service_ko(self, memory_bank_service, use_case) -> None:
+        """A service Result.ko (e.g. INVALID_MEMORY_BANK) propagates as use-case Result.ko."""
+        memory_bank_service.register_memory_bank.return_value = Result.ko(
+            [ErrorWithDetails("INVALID_MEMORY_BANK", {"name": "bad-name"})]
+        )
+
+        result = use_case.execute({"name": "bad-name", "description": "x"})
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "INVALID_MEMORY_BANK"
+
+    def test_execute_returns_ko_when_name_empty(self, use_case, memory_bank_service) -> None:
+        """Execute with empty name should return Result.ko without calling the service."""
         result = use_case.execute({"name": "", "description": "desc"})
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "NAME_REQUIRED"
+        memory_bank_service.register_memory_bank.assert_not_called()
 
-    def test_execute_returns_ko_when_description_empty(self, use_case) -> None:
-        """Execute with empty description should return Result.ko without calling router."""
+    def test_execute_returns_ko_when_description_empty(self, use_case, memory_bank_service) -> None:
+        """Execute with empty description should return Result.ko without calling the service."""
         result = use_case.execute({"name": "my-bank", "description": ""})
 
         assert result.is_ko is True
         assert result.errors[0].error_code == "DESCRIPTION_REQUIRED"
+        memory_bank_service.register_memory_bank.assert_not_called()
 
 
 class TestListBanksUseCase:
-    """Test ListBanksUseCase bank listing logic."""
+    """Test ListBanksUseCase merged listing (filesystem ∪ pool ∪ registry)."""
 
     @pytest.fixture
     def router(self) -> MagicMock:
         router = MagicMock()
-        # Simulate active instances: "default" and "ns1"
-        # get_stats() returns a Result[dict] per the MnemosyneClient contract.
-        # The canonical memory count is "total_memories" in the ok value.
-        mock_default = MagicMock()
-        mock_default.memory_bank = "default"
-        mock_default.get_stats.return_value = Result.ok({"total_memories": 5})
-
-        mock_ns1 = MagicMock()
-        mock_ns1.memory_bank = "ns1"
-        mock_ns1.get_stats.return_value = Result.ok({"total_memories": 10})
-
-        router.instances = {
-            "default": mock_default,
-            "ns1": mock_ns1,
-        }
-        # Simulate registry: "default", "ns1", and "ns2" (registered but not active)
-        router.registry.list_banks.return_value = ["default", "ns1", "ns2"]
-        router.get_bank_description.side_effect = lambda name: {
-            "default": "Default personal memory",
-            "ns1": "Namespace one",
-            "ns2": "Namespace two",
-        }.get(name)
-
+        router.instances = {}
+        router.list_bank_dirs.return_value = []
         return router
+
+    @pytest.fixture
+    def memory_bank_service(self) -> MagicMock:
+        service = MagicMock()
+        service.list_memory_banks.return_value = Result.ok([])
+        return service
 
     @pytest.fixture
     def logger(self) -> LoggerMock:
         return LoggerMock()
 
     @pytest.fixture
-    def use_case(self, router, logger) -> ListBanksUseCase:
+    def use_case(self, memory_bank_service, router, logger) -> ListBanksUseCase:
         return ListBanksUseCase(
+            memory_bank_service=memory_bank_service,
             router=router,
             logger=logger,
         )
@@ -148,84 +177,92 @@ class TestListBanksUseCase:
 
         assert result.is_ok is True
 
-    # -- Execution --
+    # -- Merge behavior --
 
-    def test_execute_returns_merged_active_and_registered_banks(self, use_case) -> None:
-        """Result should include both active instances and registered-only banks."""
+    def test_bank_present_only_on_disk_is_on_disk(self, router, use_case) -> None:
+        """A dir-only bank → status='on_disk', empty description, memory_count 0."""
+        router.list_bank_dirs.return_value = ["disk-only"]
+
+        result = use_case.execute({})
+
+        assert result.is_ok is True
+        bank = result.value["banks"][0]
+        assert bank["name"] == "disk-only"
+        assert bank["status"] == "on_disk"
+        assert bank["description"] == ""
+        assert bank["memory_count"] == 0
+
+    def test_bank_present_only_in_registry_uses_stored_fields(self, memory_bank_service, use_case) -> None:
+        """Registry-only bank → stored status + description + stored memory_count."""
+        memory_bank_service.list_memory_banks.return_value = Result.ok(
+            [_bank("reg-only", description="Stored description", status="suspended", memory_count=4)]
+        )
+
+        result = use_case.execute({})
+
+        assert result.is_ok is True
+        bank = result.value["banks"][0]
+        assert bank["name"] == "reg-only"
+        assert bank["status"] == "suspended"
+        assert bank["description"] == "Stored description"
+        assert bank["memory_count"] == 4
+
+    def test_bank_in_pool_is_active_with_live_memory_count(self, router, use_case) -> None:
+        """Pool bank → status='active' + live memory_count from get_stats."""
+        client = MagicMock()
+        client.memory_bank = "pooled"
+        client.get_stats.return_value = Result.ok({"total_memories": 11})
+        router.instances = {"pooled": client}
+
+        result = use_case.execute({})
+
+        assert result.is_ok is True
+        bank = result.value["banks"][0]
+        assert bank["name"] == "pooled"
+        assert bank["status"] == "active"
+        assert bank["memory_count"] == 11
+
+    def test_duplicate_names_deduped_precedence_active(self, router, memory_bank_service, use_case) -> None:
+        """A bank in ALL three sources yields exactly ONE entry, status active (pool wins),
+        description from registry, live memory_count."""
+        client = MagicMock()
+        client.memory_bank = "shared"
+        client.get_stats.return_value = Result.ok({"total_memories": 9})
+        router.instances = {"shared": client}
+        router.list_bank_dirs.return_value = ["shared"]
+        memory_bank_service.list_memory_banks.return_value = Result.ok(
+            [_bank("shared", description="Stored desc", status="suspended", memory_count=2)]
+        )
+
         result = use_case.execute({})
 
         assert result.is_ok is True
         banks = result.value["banks"]
-        names = {b["name"] for b in banks}
-        # All three: default (active), ns1 (active), ns2 (registered only)
-        assert names == {"default", "ns1", "ns2"}
+        assert len(banks) == 1
+        bank = banks[0]
+        assert bank["name"] == "shared"
+        assert bank["status"] == "active"
+        assert bank["memory_count"] == 9
+        assert bank["description"] == "Stored desc"
 
-    def test_execute_active_banks_have_status_active(self, use_case) -> None:
-        """Active instances should have status='active'."""
+    def test_all_entries_have_shape_with_name_equal_bank(self, router, memory_bank_service, use_case) -> None:
+        """Every entry is {name, bank, description, memory_count, status} with name == bank."""
+        client = MagicMock()
+        client.memory_bank = "pooled"
+        client.get_stats.return_value = Result.ok({"total_memories": 3})
+        router.instances = {"pooled": client}
+        router.list_bank_dirs.return_value = ["disk-only"]
+        memory_bank_service.list_memory_banks.return_value = Result.ok(
+            [_bank("reg-only", description="desc", status="registered", memory_count=1)]
+        )
+
         result = use_case.execute({})
-        banks = result.value["banks"]
-
-        for bank in banks:
-            if bank["name"] in ("default", "ns1"):
-                assert bank["status"] == "active"
-
-    def test_execute_registered_only_banks_have_status_registered(self, use_case) -> None:
-        """Banks that are registered but not active should have status='registered'."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
-
-        ns2 = next(b for b in banks if b["name"] == "ns2")
-        assert ns2["status"] == "registered"
-
-    def test_execute_active_banks_include_memory_count(self, use_case) -> None:
-        """Active banks should surface memory_count from get_stats' total_memories."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
-
-        default_bank = next(b for b in banks if b["name"] == "default")
-        assert default_bank["memory_count"] == 5
-
-        ns1_bank = next(b for b in banks if b["name"] == "ns1")
-        assert ns1_bank["memory_count"] == 10
-
-    def test_execute_registered_only_banks_have_zero_memory_count(self, use_case) -> None:
-        """Registered-only banks should have memory_count=0."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
-
-        ns2 = next(b for b in banks if b["name"] == "ns2")
-        assert ns2["memory_count"] == 0
-
-    def test_execute_each_bank_has_required_fields(self, use_case) -> None:
-        """Each bank entry should have name, bank, description, memory_count, status."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
 
         required_fields = {"name", "bank", "description", "memory_count", "status"}
-        for bank in banks:
+        assert len(result.value["banks"]) == 3
+        for bank in result.value["banks"]:
             assert set(bank.keys()) == required_fields
-
-    def test_execute_includes_description_from_router(self, use_case) -> None:
-        """Each bank should include description from the router's registry."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
-
-        default_bank = next(b for b in banks if b["name"] == "default")
-        assert default_bank["description"] == "Default personal memory"
-
-        ns2 = next(b for b in banks if b["name"] == "ns2")
-        assert ns2["description"] == "Namespace two"
-
-    def test_execute_bank_field_matches_memory_bank(self, use_case) -> None:
-        """The 'bank' field should match the client's memory_bank for active instances."""
-        result = use_case.execute({})
-        banks = result.value["banks"]
-
-        default_bank = next(b for b in banks if b["name"] == "default")
-        assert default_bank["bank"] == "default"
-
-        ns1 = next(b for b in banks if b["name"] == "ns1")
-        assert ns1["bank"] == "ns1"
+            assert bank["name"] == bank["bank"]
 
 
 class TestListBanksStatsConsumption:
@@ -247,9 +284,15 @@ class TestListBanksStatsConsumption:
 
         router = MagicMock()
         router.instances = {"default": client}
-        router.registry.list_banks.return_value = ["default"]
-        router.get_bank_description.return_value = "desc"
-        return ListBanksUseCase(router=router, logger=logger)
+        router.list_bank_dirs.return_value = []
+
+        memory_bank_service = MagicMock()
+        memory_bank_service.list_memory_banks.return_value = Result.ok([])
+        return ListBanksUseCase(
+            memory_bank_service=memory_bank_service,
+            router=router,
+            logger=logger,
+        )
 
     def test_memory_count_from_total_memories_when_ok(self, logger) -> None:
         """Result.ok({'total_memories': 5}) → memory_count == 5."""

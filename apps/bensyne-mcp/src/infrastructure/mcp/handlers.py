@@ -17,7 +17,6 @@ constructors directly.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
@@ -31,6 +30,7 @@ from src.utils.logging import log_tool_call
 from src.utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
+    from src.application.services.memory_bank_service import MemoryBankService
     from src.infrastructure.bank.router import MemoryBankRouter
 
 logger = get_logger(__name__)
@@ -73,10 +73,12 @@ async def handle_remember(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
     file_service = container.file_service(bundle=bundle)
-    hash_index_service = container.hash_index_service(memory_bank=memory_bank)
+    hash_index_service = container.hash_index_service(
+        memory_bank=memory_bank, memory_bank_router=router
+    )
 
     # Build parameters for the use case — enrich with memory_bank.
     # The chunk hash lives in metadata.chunk_hash; the use case reads it directly.
@@ -107,7 +109,7 @@ async def handle_recall(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
     file_service = container.file_service(bundle=bundle)
     file_enrichment_service = container.file_enrichment_service(file_service=file_service)
@@ -145,14 +147,16 @@ async def handle_forget(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    hash_index_service = container.hash_index_service(memory_bank=memory_bank)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    hash_index_service = container.hash_index_service(
+        memory_bank=memory_bank, memory_bank_router=router
+    )
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
     file_service = container.file_service(bundle=bundle)
 
     # Bank type checker: determine if this bank is "pure_memories"
     if bank_type_checker is None:
-        bank_type_checker = container.bank_type_checker(data_dir=Path(router.config.data_dir))
+        bank_type_checker = container.bank_type_checker(memory_bank_router=router)
 
     params = dict(arguments)
     params["memory_bank"] = memory_bank
@@ -227,12 +231,17 @@ async def handle_stats(router: MemoryBankRouter, arguments: dict) -> dict:
 
 
 @log_tool_call("listMemoryBanks")
-async def handle_list_banks(router: MemoryBankRouter, arguments: dict) -> dict:
+async def handle_list_banks(
+    router: MemoryBankRouter,
+    memory_bank_service: MemoryBankService,
+    arguments: dict,
+) -> dict:
     """List all active memory banks with their status, descriptions, and memory counts.
 
-    Delegates to ListBanksUseCase.
+    Delegates to ListBanksUseCase (business via service, technical via router).
     """
     use_case = ListBanksUseCase(
+        memory_bank_service=memory_bank_service,
         router=router,
         logger=logger,
     )
@@ -241,10 +250,17 @@ async def handle_list_banks(router: MemoryBankRouter, arguments: dict) -> dict:
 
 
 @log_tool_call("registerMemoryBank")
-async def handle_register_bank(router: MemoryBankRouter, arguments: dict) -> dict:
-    """Register or update a memory bank description."""
+async def handle_register_bank(
+    router: MemoryBankRouter,
+    memory_bank_service: MemoryBankService,
+    arguments: dict,
+) -> dict:
+    """Register or update a memory bank description.
+
+    Delegates to RegisterBankUseCase (business via service).
+    """
     use_case = RegisterBankUseCase(
-        router=router,
+        memory_bank_service=memory_bank_service,
         logger=logger,
     )
     result = use_case.execute(arguments)
@@ -271,7 +287,7 @@ async def handle_search_files(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
     file_service = container.file_service(bundle=bundle)
 
@@ -306,7 +322,7 @@ async def handle_expand_file_relations(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
 
     params = dict(arguments)
@@ -345,7 +361,7 @@ async def handle_fetch_file(
 
     # Per-bank file metadata dependencies via DI container (D25)
     container = _resolve_container(container)
-    bank_dir = Path(router.config.data_dir) / memory_bank
+    bank_dir = router.get_bank_dir(memory_bank)
     bundle = container.file_metadata_bundle(bank_dir=bank_dir)
     file_service = container.file_service(bundle=bundle)
 

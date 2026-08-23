@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+    from src.application.services.memory_bank_service import MemoryBankService
     from src.domain.config_models import AppConfig
     from src.infrastructure.bank.router import MemoryBankRouter
     from src.infrastructure.di import Container
@@ -48,13 +49,19 @@ _MEMORY_BANK_FILE_DESC = (
 
 
 def create_application(
-    config: AppConfig, router: MemoryBankRouter, container: Container | None = None
+    config: AppConfig,
+    router: MemoryBankRouter,
+    memory_bank_service: MemoryBankService | None = None,
+    container: Container | None = None,
 ) -> FastMCP:
     """Create and wire the complete application.
 
     Args:
         config: Application configuration.
         router: Memory bank router for routing tool calls.
+        memory_bank_service: Application service for bank business operations
+            (Task 7 rewire — business via service, technical via router).
+            When omitted, list/register handlers default to ``None``.
         container: DI container for per-bank file-metadata dependencies (D25).
             When omitted, handlers fall back to a per-call ProductionContainer.
 
@@ -64,7 +71,7 @@ def create_application(
     mcp = create_server(config)
 
     # Register MCP tools
-    register_tools(mcp, router, container)
+    register_tools(mcp, router, memory_bank_service, container)
 
     # Mount health check endpoints
     mount_health_routes(mcp, router)
@@ -87,13 +94,18 @@ def create_server(config: AppConfig) -> FastMCP:
 
 
 def register_tools(
-    mcp: FastMCP, router: MemoryBankRouter, container: Container | None = None
+    mcp: FastMCP,
+    router: MemoryBankRouter,
+    memory_bank_service: MemoryBankService | None = None,
+    container: Container | None = None,
 ) -> None:
     """Register all MCP tool handlers with the server.
 
     Args:
         mcp: FastMCP server instance.
         router: Memory bank router injected into all handlers.
+        memory_bank_service: Application service injected into the list/register
+            bank handlers (Task 7 — business via service).
         container: DI container plumbed to file-path handlers (D25).
     """
     from src.infrastructure.mcp import handlers
@@ -276,7 +288,7 @@ def register_tools(
 
         Call this tool first in any memory workflow to see live banks.
         """
-        return await handlers.handle_list_banks(router, {})
+        return await handlers.handle_list_banks(router, memory_bank_service, {})  # type: ignore[arg-type]
 
     @mcp.tool(name="registerMemoryBank")
     async def register_bank(
@@ -294,7 +306,9 @@ def register_tools(
 
         Provide a unique name and a short description of its purpose.
         """
-        return await handlers.handle_register_bank(router, {"name": name, "description": description})
+        return await handlers.handle_register_bank(
+            router, memory_bank_service, {"name": name, "description": description}  # type: ignore[arg-type]
+        )
 
     @mcp.tool(name="searchFiles")
     async def search_files(

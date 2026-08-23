@@ -95,6 +95,35 @@ class TestHasChunkHash:
         assert HashIndexService.has_chunk_hash(arguments) is False
 
 
+class TestDbPathRequired:
+    """db_path is REQUIRED (S3) — no CWD-relative `data/<bank>/` fallback."""
+
+    def test_explicit_none_raises_value_error(self) -> None:
+        """Passing db_path=None explicitly raises ValueError."""
+        with pytest.raises(ValueError, match="db_path is required"):
+            HashIndexService("x", None)  # type: ignore[arg-type]
+
+    def test_explicit_db_path_used_and_no_data_relative_artifacts(
+        self, tmp_path: Path
+    ) -> None:
+        """Construction with an explicit db_path stores/looks up at that exact
+        path and creates NO CWD-relative `data/<bank>/` artifacts."""
+        db_path = tmp_path / "hash.db"
+        index = HashIndexService("red-test-bank", db_path)
+
+        index.store("sha256_exact", "mem_exact")
+        assert index.lookup("sha256_exact").value == "mem_exact"
+
+        assert db_path.exists()
+        # The old CWD-relative fallback must never fire.
+        assert not (Path("data") / "red-test-bank" / "hash_index.db").exists()
+
+    def test_missing_db_path_argument_raises_type_error(self) -> None:
+        """db_path has no default — omitting it is a TypeError (no fallback)."""
+        with pytest.raises(TypeError):
+            HashIndexService("x")  # type: ignore[call-arg]
+
+
 class TestChunkHashKeying:
     """store/lookup/remove round-trip on the chunk_hash key."""
 

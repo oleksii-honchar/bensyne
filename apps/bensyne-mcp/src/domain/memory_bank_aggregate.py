@@ -63,6 +63,21 @@ class MemoryBank:
             )
         )
 
+    def update_description(self, description: str) -> Result["MemoryBank"]:
+        """Frozen update: returns a NEW MemoryBank with the new description.
+
+        Validates via MemoryBankSchema (non-empty) exactly like of(). Used by
+        registerMemoryBank on an existing bank. On failure returns Result.ko
+        (INVALID_MEMORY_BANK) and leaves the original instance unchanged.
+        """
+        if not description or not description.strip():
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK", {"name": self.name})])
+        try:
+            MemoryBankSchema(name=self.name, description=description)
+        except ValidationError:
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY_BANK", {"name": self.name})])
+        return Result.ok(self.replace(description=description))
+
     # ------------------------------------------------------------------
     # Entity lifecycle
     # ------------------------------------------------------------------

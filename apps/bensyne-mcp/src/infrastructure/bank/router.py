@@ -1,12 +1,17 @@
-"""Memory bank router with async locking and LRU eviction.
+"""Memory bank router with async locking, LRU eviction, and path authority.
 
 Uses the new Result-returning MnemosyneClient and structured logging.
+Path rules (DEC-0062/U11, v2 uniform layout):
+  - All banks (incl. default): {data_dir}/banks/{memory_bank}/{...}.db
+In-memory registry duties are removed — the router is a path authority +
+instance pool only (DEC-0064/U14).
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,7 +20,6 @@ if TYPE_CHECKING:
 from src.domain.config_models import InstancePoolConfig
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.infrastructure.bank.pool import evict_if_over_limit
-from src.infrastructure.bank.registry import MemoryBankRegistry
 from src.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +38,6 @@ class MemoryBankRouter:
 
     def __init__(self, config: InstancePoolConfig) -> None:
         self.config = config
-        self.registry = MemoryBankRegistry()
         self.instances: dict[str, MnemosyneClient] = {}
         self._lock: Lock | None = None
 
@@ -53,6 +56,7 @@ class MemoryBankRouter:
         client = MnemosyneClient(
             memory_bank=memory_bank,
             data_dir=self.config.data_dir,
+            memory_bank_router=self,
         )
         logger.info(
             "Created MnemosyneClient instance",
@@ -120,27 +124,49 @@ class MemoryBankRouter:
         """
         return list(self.instances.keys())
 
-    def get_bank_description(self, memory_bank: str) -> str | None:
-        """Get description for a memory bank from the registry.
+    # ------------------------------------------------------------------
+    # Path authority (DEC-0064/U14) — v2 uniform paths under banks/
+    # ------------------------------------------------------------------
 
-        Args:
-            memory_bank: The memory bank name.
+    def _banks_root(self) -> Path:
+        """Return the v2 banks root directory: {data_dir}/banks."""
+        return Path(self.config.data_dir) / "banks"
+
+    def get_bank_dir(self, memory_bank: str) -> Path:
+        """Return the bank directory {data_dir}/banks/{memory_bank} (write path).
+
+        Creates the directory (mkdir -p) so write callers can drop files.
+        """
+        path = self._banks_root() / memory_bank
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def get_bank_db_path(self, memory_bank: str) -> Path:
+        """Return the mnemosyne db path for the bank (write path).
+
+        Uniform for ALL banks incl. default: {data_dir}/banks/{bank}/mnemosyne.db.
+        Ensures the parent directory exists (mkdir -p).
+        """
+        path = self.get_bank_dir(memory_bank) / "mnemosyne.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def get_file_metadata_path(self, memory_bank: str) -> Path:
+        """Return the file metadata db path (read-side, NO mkdir)."""
+        return self._banks_root() / memory_bank / "file_metadata.db"
+
+    def get_hash_index_path(self, memory_bank: str) -> Path:
+        """Return the hash index db path (read-side, NO mkdir)."""
+        return self._banks_root() / memory_bank / "hash_index.db"
+
+    def list_bank_dirs(self) -> list[str]:
+        """Scan {data_dir}/banks/ and return sorted bank names (read-only).
 
         Returns:
-            Description string or None if not registered.
+            Sorted list of bank names present on disk; [] when banks/ does
+            not exist. No mkdir/delete side effects.
         """
-        return self.registry.get(memory_bank)
-
-    def register_bank(self, name: str, description: str) -> None:
-        """Register or update a memory bank description (delegates to registry).
-
-        Args:
-            name: Memory bank name.
-            description: Human-readable description.
-        """
-        self.registry.register(name, description)
-        logger.info(
-            "Memory bank registered",
-            memory_bank=name,
-            description=description,
-        )
+        banks_root = self._banks_root()
+        if not banks_root.is_dir():
+            return []
+        return sorted(entry.name for entry in banks_root.iterdir() if entry.is_dir())

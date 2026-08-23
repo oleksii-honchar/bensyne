@@ -46,7 +46,7 @@ def _introspect_tool_parameters(tool_name: str) -> dict:
     from src.app import register_tools
 
     mcp = FastMCP(name="introspect-test")
-    register_tools(mcp, MagicMock(), None)
+    register_tools(mcp, MagicMock(), MagicMock(), None)
 
     async def _collect() -> dict:
         tools = await mcp.list_tools()
@@ -186,7 +186,7 @@ class TestRememberMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         # Check that mcp.tool was called with name="rememberMemory"
         tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "rememberMemory"]
@@ -199,7 +199,7 @@ class TestRememberMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "memory_remember"]
         assert len(tool_calls) == 0, "memory_remember tool should NOT be registered"
@@ -211,7 +211,7 @@ class TestRememberMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         # Find the rememberMemory tool registration
         remember_memory_calls = [

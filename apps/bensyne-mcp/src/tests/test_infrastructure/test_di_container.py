@@ -8,7 +8,8 @@ Verifies:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dependency_injector import providers
@@ -21,6 +22,16 @@ from src.infrastructure.di import (
 )
 
 
+@pytest.fixture
+def router(tmp_path) -> "MemoryBankRouter":
+    """MemoryBankRouter with a temp data_dir (MnemosyneClient mocked)."""
+    from src.domain.config_models import InstancePoolConfig
+    from src.infrastructure.bank.router import MemoryBankRouter
+
+    with patch("src.infrastructure.bank.router.MnemosyneClient"):
+        yield MemoryBankRouter(InstancePoolConfig(data_dir=str(tmp_path)))
+
+
 class TestProductionContainerSingletons:
     """ProductionContainer provides correct singleton instances."""
 
@@ -30,22 +41,6 @@ class TestProductionContainerSingletons:
         logger1 = container.logger()
         logger2 = container.logger()
         assert logger1 is logger2
-
-    def test_bank_manager_is_singleton(self) -> None:
-        """BankManager provider returns the same instance on repeated calls."""
-        container = ProductionContainer()
-        bm1 = container.bank_manager()
-        bm2 = container.bank_manager()
-        assert bm1 is bm2
-
-    def test_bank_manager_honors_data_dir_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """BankManager provider resolves data_dir from the DATA_DIR env var."""
-        monkeypatch.setenv("DATA_DIR", "/env/bank")
-        # Reset any cached singleton so the provider rebuilds with the current env.
-        ProductionContainer.bank_manager.reset()
-        container = ProductionContainer()
-        bm = container.bank_manager()
-        assert str(bm.data_dir) == "/env/bank"
 
     def test_memory_bank_router_is_singleton(self) -> None:
         """MemoryBankRouter provider returns the same instance on repeated calls."""
@@ -66,33 +61,31 @@ class TestProductionContainerSingletons:
         repo2 = container.memory_repository()
         assert repo1 is repo2
 
-    def test_memory_bank_repository_is_singleton(self) -> None:
+    def test_memory_bank_repository_is_singleton(self, tmp_path, monkeypatch) -> None:
         """MemoryBankRepository provider returns the same instance on repeated calls."""
+        # Real repository resolves DATA_DIR at resolution time — point it at a
+        # temp dir so the test never touches the app's ./data (must stay clean).
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
         container = ProductionContainer()
         repo1 = container.memory_bank_repository()
         repo2 = container.memory_bank_repository()
         assert repo1 is repo2
 
-    def test_providers_return_correct_types(self) -> None:
+    def test_providers_return_correct_types(self, tmp_path, monkeypatch) -> None:
         """Each provider returns the expected type."""
         from unittest.mock import patch
 
-        from src.infrastructure.mnemosyne.bank_manager import BankManager
+        from src.infrastructure.bank.memory_bank_repository import MemoryBankRepository
         from src.infrastructure.bank.router import MemoryBankRouter
-        from src.tests.test_domain.domain_test_utils import (
-            InMemoryMemoryBankRepository,
-            InMemoryMemoryRepository,
-        )
+        from src.tests.test_domain.domain_test_utils import InMemoryMemoryRepository
 
+        # Real repository resolves DATA_DIR at resolution time — temp dir only.
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
         container = ProductionContainer()
 
         # logger — structlog BoundLogger has info method
         logger = container.logger()
         assert hasattr(logger, "info")
-
-        # bank_manager
-        bm = container.bank_manager()
-        assert isinstance(bm, BankManager)
 
         # memory_bank_router — mock MnemosyneClient to avoid real library init
         with patch("src.infrastructure.bank.router.MnemosyneClient"):
@@ -103,9 +96,138 @@ class TestProductionContainerSingletons:
         repo = container.memory_repository()
         assert isinstance(repo, InMemoryMemoryRepository)
 
-        # memory_bank_repository
+        # memory_bank_repository — real SQLAlchemy-backed repository (Task 8),
+        # NOT the test fake.
         bank_repo = container.memory_bank_repository()
-        assert isinstance(bank_repo, InMemoryMemoryBankRepository)
+        assert isinstance(bank_repo, MemoryBankRepository)
+
+
+class TestMemoryBankServiceProvider:
+    """memory_bank_service provider wiring (Task 8 — real repo + service singletons)."""
+
+    def test_production_service_wired_to_real_repository(self, tmp_path, monkeypatch) -> None:
+        """ProductionContainer memory_bank_service binds the real repository singleton."""
+        from src.application.services.memory_bank_service import MemoryBankService
+        from src.infrastructure.bank.memory_bank_repository import MemoryBankRepository
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        service = container.memory_bank_service()
+
+        assert isinstance(service, MemoryBankService)
+        assert isinstance(service.memory_bank_repository, MemoryBankRepository)
+        assert service.memory_bank_repository is container.memory_bank_repository()
+
+    def test_production_repository_db_path_matches_helper(self, tmp_path, monkeypatch) -> None:
+        """Production repository DB file == memory_banks_db_path(resolve_data_dir())."""
+        from src.infrastructure.bank.memory_bank_repository import (
+            MemoryBankRepository,
+            memory_banks_db_path,
+        )
+        from src.infrastructure.config.data_dir import resolve_data_dir
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        repo = container.memory_bank_repository()
+
+        assert isinstance(repo, MemoryBankRepository)
+        assert repo._db_path == memory_banks_db_path(resolve_data_dir())
+        assert repo._db_path == Path(tmp_path) / "memory_banks.db"
+
+    def test_memory_bank_service_is_singleton(self, tmp_path, monkeypatch) -> None:
+        """memory_bank_service provider returns the same instance on repeated calls."""
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        assert container.memory_bank_service() is container.memory_bank_service()
+
+    def test_test_container_service_uses_fake_repo_and_mock_logger(self) -> None:
+        """TestContainer keeps the in-memory fake and binds LoggerMock."""
+        from src.application.services.memory_bank_service import MemoryBankService
+        from src.tests.test_domain.domain_test_utils import (
+            InMemoryMemoryBankRepository,
+        )
+        from src.utils.structured_logging import LoggerMock
+
+        container = TestContainer()
+        service = container.memory_bank_service()
+
+        assert isinstance(service, MemoryBankService)
+        assert isinstance(service.memory_bank_repository, InMemoryMemoryBankRepository)
+        assert service._logger is container.logger()
+        assert isinstance(service._logger, LoggerMock)
+
+
+class TestProductionBootstrap:
+    """Integration-style: ProductionContainer + temp DATA_DIR bootstraps the v2 tree.
+
+    Mirrors the main.py startup seed (config → container → ensure_default_bank)
+    against a temp DATA_DIR so the app's real ./data dir stays clean.
+    """
+
+    DEFAULT_DESC = "Default personal memory — general conversation context, preferences, and facts"
+
+    def test_ensure_default_bank_bootstraps_db_with_default_row(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Seeding creates memory_banks.db and a 'default' row."""
+        from src.infrastructure.bank.memory_bank_repository import memory_banks_db_path
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        container.memory_bank_service().ensure_default_bank(self.DEFAULT_DESC)
+
+        assert memory_banks_db_path(tmp_path).exists()
+
+        bank = container.memory_bank_service().get_memory_bank("default").value
+        assert bank is not None
+        assert bank.name == "default"
+        assert bank.description == self.DEFAULT_DESC
+        assert bank.status == "registered"
+
+    def test_ensure_default_bank_twice_does_not_duplicate_or_overwrite(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Calling twice with a different description keeps one row, original text."""
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        service = container.memory_bank_service()
+
+        service.ensure_default_bank(self.DEFAULT_DESC)
+        service.ensure_default_bank("a different startup description")
+
+        banks = service.list_memory_banks().value
+        assert banks is not None
+        assert [b.name for b in banks] == ["default"]
+        assert banks[0].description == self.DEFAULT_DESC
+
+    def test_seed_produces_v2_tree_only(self, tmp_path, monkeypatch) -> None:
+        """Seed creates data/memory_banks.db only; banks/default/ is lazy.
+
+        No root data/mnemosyne.db, no data/default/ — the bank dir appears only
+        when the router's write path is first used (get_bank_db_path).
+        """
+        from src.infrastructure.bank.memory_bank_repository import memory_banks_db_path
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        container = ProductionContainer()
+        container.memory_bank_service().ensure_default_bank(self.DEFAULT_DESC)
+
+        assert memory_banks_db_path(tmp_path).exists()
+        assert not (tmp_path / "banks").exists()
+        assert not (tmp_path / "mnemosyne.db").exists()
+        assert not (tmp_path / "default").exists()
+
+        # Lazy v2 creation via the router path authority on first client use.
+        from unittest.mock import patch
+
+        from src.domain.config_models import InstancePoolConfig
+        from src.infrastructure.bank.router import MemoryBankRouter
+
+        with patch("src.infrastructure.bank.router.MnemosyneClient"):
+            tmp_router = MemoryBankRouter(InstancePoolConfig(data_dir=str(tmp_path)))
+            db_path = tmp_router.get_bank_db_path("default")
+            assert db_path == tmp_path / "banks" / "default" / "mnemosyne.db"
+            assert db_path.parent.exists()
 
 
 class TestContainerOverride:
@@ -279,14 +401,18 @@ class TestFileUseCaseFactories:
         assert use_case.file_service is file_service
         assert use_case.mnemosyne_client is instance
 
-    def test_remember_memory_use_case_shares_container_objects(self, tmp_path) -> None:
+    def test_remember_memory_use_case_shares_container_objects(
+        self, tmp_path, router
+    ) -> None:
         """remember_memory_use_case shares the FileService and hash index service instances."""
         from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
 
         container = ProductionContainer()
         bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
         file_service = container.file_service(bundle=bundle)
-        hash_index_service = container.hash_index_service(memory_bank="bank")
+        hash_index_service = container.hash_index_service(
+            memory_bank="bank", memory_bank_router=router
+        )
         instance = MagicMock()
 
         use_case = container.remember_memory_use_case(
@@ -320,15 +446,19 @@ class TestFileUseCaseFactories:
         assert use_case.file_enrichment_service is enrichment
         assert enrichment._file_service is file_service
 
-    def test_forget_memory_use_case_shares_container_objects(self, tmp_path) -> None:
+    def test_forget_memory_use_case_shares_container_objects(
+        self, tmp_path, router
+    ) -> None:
         """forget_memory_use_case shares FileService, hash index and bank type checker."""
         from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
 
         container = ProductionContainer()
         bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
         file_service = container.file_service(bundle=bundle)
-        hash_index_service = container.hash_index_service(memory_bank="bank")
-        checker = container.bank_type_checker(data_dir=tmp_path)
+        hash_index_service = container.hash_index_service(
+            memory_bank="bank", memory_bank_router=router
+        )
+        checker = container.bank_type_checker(memory_bank_router=router)
         instance = MagicMock()
 
         use_case = container.forget_memory_use_case(
@@ -379,36 +509,65 @@ class TestFileUseCaseFactories:
 class TestFileMetadataSupportFactories:
     """hash_index_service and bank_type_checker factories."""
 
-    def test_hash_index_service_factory(self) -> None:
-        """hash_index_service factory builds a HashIndexService for the bank."""
+    def test_hash_index_service_factory_uses_router_path(self, router) -> None:
+        """hash_index_service factory builds a HashIndexService whose DB lands
+        at router.get_hash_index_path(bank)."""
         from src.infrastructure.mcp.hash_index_service import HashIndexService
 
         container = ProductionContainer()
-        service = container.hash_index_service(memory_bank="bank")
+        service = container.hash_index_service(
+            memory_bank="foo", memory_bank_router=router
+        )
 
         assert isinstance(service, HashIndexService)
-        assert service.memory_bank == "bank"
+        assert service.memory_bank == "foo"
+        expected = router.get_hash_index_path("foo")
+        assert service._conn._db_path == expected
 
-    def test_bank_type_checker_detects_file_metadata_banks(self, tmp_path) -> None:
+        service.store("sha256_di", "mem_di")
+        assert expected.exists()
+        assert expected == Path(router.config.data_dir) / "banks" / "foo" / "hash_index.db"
+
+    def test_bank_type_checker_detects_file_metadata_banks(self, router) -> None:
         """bank_type_checker returns file_metadata when the bank DB exists."""
         container = ProductionContainer()
-        bank_db = tmp_path / "banks" / "bank-a" / "file_metadata.db"
+        bank_db = router.get_file_metadata_path("bank-a")
         bank_db.parent.mkdir(parents=True)
         bank_db.touch()
 
-        checker = container.bank_type_checker(data_dir=tmp_path)
+        checker = container.bank_type_checker(memory_bank_router=router)
 
         assert checker("bank-a") == "file_metadata"
         assert checker("unknown-bank") == "pure_memories"
 
-    def test_bank_type_checker_default_bank_path(self, tmp_path) -> None:
-        """Default bank resolves file_metadata.db at the data_dir root."""
+    def test_bank_type_checker_default_bank_uniform_path(self, router) -> None:
+        """Default bank resolves under banks/ (v2 uniform) — file_metadata.db
+        at the data_dir root no longer counts."""
         container = ProductionContainer()
-        (tmp_path / "file_metadata.db").touch()
+        # Old-layout root db must NOT make the default bank "file_metadata".
+        (Path(router.config.data_dir) / "file_metadata.db").touch()
 
-        checker = container.bank_type_checker(data_dir=tmp_path)
+        checker = container.bank_type_checker(memory_bank_router=router)
 
+        assert checker("default") == "pure_memories"
+
+        # v2 uniform layout: banks/default/file_metadata.db DOES.
+        default_db = router.get_file_metadata_path("default")
+        default_db.parent.mkdir(parents=True)
+        default_db.touch()
         assert checker("default") == "file_metadata"
+
+    def test_bank_type_checker_uses_router_for_custom_bank(self, router) -> None:
+        """Custom banks resolve via the router path authority (same method)."""
+        container = ProductionContainer()
+        custom_db = router.get_file_metadata_path("custom")
+        custom_db.parent.mkdir(parents=True)
+        custom_db.touch()
+
+        checker = container.bank_type_checker(memory_bank_router=router)
+
+        assert checker("custom") == "file_metadata"
+        assert checker("default") == "pure_memories"
 
 
 class TestTestContainerFileFactories:

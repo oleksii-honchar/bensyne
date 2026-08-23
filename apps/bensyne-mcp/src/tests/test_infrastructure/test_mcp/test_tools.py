@@ -915,7 +915,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             assert len(result["banks"]) == 3
             names = {ns["name"] for ns in result["banks"]}
@@ -957,7 +957,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
             custom_ns = next(ns for ns in result["banks"] if ns["name"] == "custom-ns")
@@ -992,7 +992,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             counted_ns = next(ns for ns in result["banks"] if ns["name"] == "counted-ns")
             assert "memory_count" in counted_ns
@@ -1019,7 +1019,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             sparse_ns = next(ns for ns in result["banks"] if ns["name"] == "sparse-ns")
             assert "memory_count" in sparse_ns
@@ -1052,7 +1052,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             assert "banks" in result
             assert isinstance(result["banks"], list)
@@ -1091,7 +1091,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             default_ns = next(ns for ns in result["banks"] if ns["name"] == "default")
             assert (
@@ -1120,7 +1120,7 @@ class TestHandleListBanks:
                 "src.infrastructure.mcp.handlers.ListBanksUseCase",
                 return_value=mock_use_case,
             ):
-                result = await handle_list_banks(router, {})
+                result = await handle_list_banks(router, MagicMock(), {})
 
             unreg_ns = next(ns for ns in result["banks"] if ns["name"] == "unregistered-ns")
             assert "description" in unreg_ns
@@ -1426,7 +1426,8 @@ class TestHandleRegisterBank:
             ):
                 result = await handle_register_bank(
                     router,
-                    {"name": "my-ns", "description": "My custom bank"},
+                    MagicMock(),
+{"name": "my-ns", "description": "My custom bank"},
                 )
 
             assert result["status"] == "registered"
@@ -1454,13 +1455,15 @@ class TestHandleRegisterBank:
                 # First registration
                 await handle_register_bank(
                     router,
-                    {"name": "my-ns", "description": "Original description"},
+                    MagicMock(),
+{"name": "my-ns", "description": "Original description"},
                 )
 
                 # Second registration with same name updates description
                 result = await handle_register_bank(
                     router,
-                    {"name": "my-ns", "description": "Updated description"},
+                    MagicMock(),
+{"name": "my-ns", "description": "Updated description"},
                 )
                 assert result["status"] == "registered"
                 assert result["name"] == "my-ns"
@@ -1480,7 +1483,7 @@ class TestHandleRegisterBank:
                 return_value=mock_use_case,
             ):
                 with pytest.raises(ValidationError, match="registerMemoryBank failed"):
-                    await handle_register_bank(router, {"description": "no name"})
+                    await handle_register_bank(router, MagicMock(), {"description": "no name"})
 
         asyncio.run(run())
 
@@ -1497,7 +1500,7 @@ class TestHandleRegisterBank:
                 return_value=mock_use_case,
             ):
                 with pytest.raises(ValidationError, match="registerMemoryBank failed"):
-                    await handle_register_bank(router, {"name": "no-desc"})
+                    await handle_register_bank(router, MagicMock(), {"name": "no-desc"})
 
         asyncio.run(run())
 
@@ -1514,7 +1517,7 @@ class TestHandleRegisterBank:
                 return_value=mock_use_case,
             ):
                 with pytest.raises(ValidationError, match="registerMemoryBank failed"):
-                    await handle_register_bank(router, {})
+                    await handle_register_bank(router, MagicMock(), {})
 
         asyncio.run(run())
 
@@ -1537,7 +1540,8 @@ class TestHandleRegisterBank:
             ):
                 result = await handle_register_bank(
                     router,
-                    {"name": "test-ns", "description": "Test"},
+                    MagicMock(),
+{"name": "test-ns", "description": "Test"},
                 )
 
             assert set(result.keys()) == {"status", "name"}

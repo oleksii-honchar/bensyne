@@ -38,6 +38,13 @@ from src.app import create_application
 from src.middleware.health import mark_default_instance_ready
 from src.utils.logging import setup_logging
 
+# Startup seed description for the `default` bank (moved from the deleted
+# registry.py DEFAULT_DESCRIPTIONS). The seed is idempotent — ensure_default_bank
+# creates the row only when absent and never overwrites an existing description.
+DEFAULT_BANK_DESCRIPTION = (
+    "Default personal memory — general conversation context, preferences, and facts"
+)
+
 
 async def shutdown_handler(signum: int, router: MemoryBankRouter) -> None:
     """Graceful shutdown handler.
@@ -101,9 +108,12 @@ def main() -> None:
 
     # Step 5: Create DI container + FastMCP server, register all tools with
     # router + container injected (per-bank file dependencies resolve via the
-    # container factories — D25)
+    # container factories — D25). Boot order per spec §4.8: config → container
+    # (repository/router/service) → idempotent default-bank seed → app.
     container = ProductionContainer()
-    app = create_application(config, router, container)
+    memory_bank_service = container.memory_bank_service()
+    memory_bank_service.ensure_default_bank(DEFAULT_BANK_DESCRIPTION)
+    app = create_application(config, router, memory_bank_service, container)
 
     # Step 6: Call health.mark_default_instance_ready()
     mark_default_instance_ready()

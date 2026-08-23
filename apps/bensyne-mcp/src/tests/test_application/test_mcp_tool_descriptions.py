@@ -59,7 +59,7 @@ async def mcp_tools() -> dict[str, object]:
     on a managed event loop (no manual asyncio.run needed)."""
     mcp = FastMCP(name="bensyne-description-test")
     router = MagicMock()
-    register_tools(mcp, router, None)
+    register_tools(mcp, router, MagicMock(), None)
     tools = await mcp.list_tools()
     return {t.name: t for t in tools}
 

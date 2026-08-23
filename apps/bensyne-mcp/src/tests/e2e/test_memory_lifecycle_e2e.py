@@ -84,9 +84,6 @@ def mock_router(mock_mnemosyne_client: MagicMock) -> MagicMock:
     router = MagicMock()
     router.get_instance = AsyncMock(return_value=mock_mnemosyne_client)
     router.instances = {"default": mock_mnemosyne_client}
-    router.registry = MagicMock()
-    router.registry.list_banks.return_value = ["default"]
-    router.get_bank_description.return_value = "Default personal memory"
     return router
 
 
@@ -406,14 +403,20 @@ class TestBankRegistrationAndListing:
         """Register a new bank via handler and verify it's registered."""
         from src.infrastructure.mcp.handlers import handle_register_bank
 
+        mock_service = MagicMock()
+        mock_service.register_memory_bank.return_value = Result.ok(
+            MagicMock(name="new_bank", description="A new test bank")
+        )
+
         result = await handle_register_bank(
             mock_router,
+            mock_service,
             {"name": "new_bank", "description": "A new test bank"},
         )
 
         assert result["status"] == "registered"
         assert result["name"] == "new_bank"
-        mock_router.register_bank.assert_called_once_with("new_bank", "A new test bank")
+        mock_service.register_memory_bank.assert_called_once_with("new_bank", "A new test bank")
 
     async def test_list_banks_via_handler(
         self,
@@ -422,17 +425,24 @@ class TestBankRegistrationAndListing:
         """List banks returns merged list of active and registered."""
         from src.infrastructure.mcp.handlers import handle_list_banks
 
-        # Setup: mock router has active instances and registered banks
+        # Setup: mock router has active instances and mock service has registered banks
         mock_router.instances = {
             "default": MagicMock(
                 memory_bank="default",
                 get_stats=MagicMock(return_value=Result.ok({"total_memories": 7})),
             )
         }
-        mock_router.get_bank_description.return_value = "Default bank"
-        mock_router.registry.list_banks.return_value = ["default", "registered_only"]
+        mock_router.list_bank_dirs.return_value = ["default", "registered_only"]
 
-        result = await handle_list_banks(mock_router, {})
+        mock_service = MagicMock()
+        registered_bank = MagicMock()
+        registered_bank.name = "registered_only"
+        registered_bank.description = "Registered bank"
+        registered_bank.memory_count = 0
+        registered_bank.status = "registered"
+        mock_service.list_memory_banks.return_value = Result.ok([registered_bank])
+
+        result = await handle_list_banks(mock_router, mock_service, {})
 
         assert "banks" in result
         assert len(result["banks"]) >= 1
@@ -448,10 +458,10 @@ class TestBankRegistrationAndListing:
         from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
         from src.utils.structured_logging import LoggerMock
 
-        mock_router = MagicMock()
+        mock_service = MagicMock()
         logger = LoggerMock()
 
-        uc = RegisterBankUseCase(router=mock_router, logger=logger)
+        uc = RegisterBankUseCase(memory_bank_service=mock_service, logger=logger)
 
         result = uc.execute({"name": "", "description": "A bank"})
         assert result.is_ko is True
@@ -464,10 +474,10 @@ class TestBankRegistrationAndListing:
         from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
         from src.utils.structured_logging import LoggerMock
 
-        mock_router = MagicMock()
+        mock_service = MagicMock()
         logger = LoggerMock()
 
-        uc = RegisterBankUseCase(router=mock_router, logger=logger)
+        uc = RegisterBankUseCase(memory_bank_service=mock_service, logger=logger)
 
         result = uc.execute({"name": "valid_name", "description": ""})
         assert result.is_ko is True
@@ -933,7 +943,11 @@ class TestMCPToolInterfacesPreserved:
         """listMemoryBanks returns dict with banks list."""
         from src.infrastructure.mcp.handlers import handle_list_banks
 
-        result = await handle_list_banks(mock_router, {})
+        mock_service = MagicMock()
+        mock_service.list_memory_banks.return_value = Result.ok([])
+        mock_router.list_bank_dirs.return_value = []
+
+        result = await handle_list_banks(mock_router, mock_service, {})
 
         assert isinstance(result, dict)
         assert "banks" in result
@@ -946,8 +960,14 @@ class TestMCPToolInterfacesPreserved:
         """registerMemoryBank returns dict with status and name."""
         from src.infrastructure.mcp.handlers import handle_register_bank
 
+        mock_service = MagicMock()
+        mock_service.register_memory_bank.return_value = Result.ok(
+            MagicMock(name="test_bank", description="Test bank")
+        )
+
         result = await handle_register_bank(
             mock_router,
+            mock_service,
             {"name": "test_bank", "description": "Test bank"},
         )
 

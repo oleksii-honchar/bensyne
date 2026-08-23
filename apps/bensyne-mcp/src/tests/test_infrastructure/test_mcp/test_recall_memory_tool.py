@@ -46,7 +46,7 @@ def _introspect_tool_parameters(tool_name: str) -> dict:
     from src.app import register_tools
 
     mcp = FastMCP(name="introspect-test")
-    register_tools(mcp, MagicMock(), None)
+    register_tools(mcp, MagicMock(), MagicMock(), None)
 
     async def _collect() -> dict:
         tools = await mcp.list_tools()
@@ -158,7 +158,7 @@ class TestRecallMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         # Check that mcp.tool was called with name="recallMemory"
         tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "recallMemory"]
@@ -171,7 +171,7 @@ class TestRecallMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         tool_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "memory_recall"]
         assert len(tool_calls) == 0, "memory_recall tool should NOT be registered"
@@ -189,7 +189,7 @@ class TestRecallMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         # Find the recallMemory tool registration — tool() is called with name=
         recall_memory_calls = [
@@ -211,7 +211,7 @@ class TestRecallMemoryToolRegistration:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
         assert len(names) == 11
@@ -454,7 +454,7 @@ class TestFetchFileNeighborParams:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         fetch_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "fetchFile"]
         assert len(fetch_calls) == 1
@@ -472,7 +472,7 @@ class TestFetchFileNeighborParams:
 
         mock_mcp = MagicMock()
         mock_router = MagicMock()
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         fetch_calls = [call for call in mock_mcp.tool.call_args_list if call.kwargs.get("name") == "fetchFile"]
         assert len(fetch_calls) == 1
@@ -493,7 +493,7 @@ class TestFetchFileNeighborParams:
         mock_mcp = MagicMock()
         mock_router = MagicMock()
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
         assert len(names) == 11

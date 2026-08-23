@@ -138,10 +138,10 @@ class HashIndexService:
     All methods return Result[T] for domain-layer integration.
     """
 
-    def __init__(self, memory_bank: str, db_path: Path | None = None) -> None:
+    def __init__(self, memory_bank: str, db_path: Path) -> None:
         self.memory_bank = memory_bank
         if db_path is None:
-            db_path = Path("data") / memory_bank / "hash_index.db"
+            raise ValueError("db_path is required")
         self._conn = _HashIndexConnection(db_path, memory_bank)
         self._lock = threading.Lock()
 

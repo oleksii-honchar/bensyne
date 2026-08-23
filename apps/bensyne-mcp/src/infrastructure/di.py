@@ -35,6 +35,7 @@ from dependency_injector import containers, providers
 
 from src.application.services.file_enrichment_service import FileEnrichmentService
 from src.application.services.file_service import FileService
+from src.application.services.memory_bank_service import MemoryBankService
 from src.application.use_cases.expand_file_relations_use_case import (
     ExpandFileRelationsUseCase,
 )
@@ -44,9 +45,12 @@ from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
 from src.application.use_cases.search_files_use_case import SearchFilesUseCase
 from src.domain.config_models import InstancePoolConfig
-from src.infrastructure.config.data_dir import resolve_data_dir
-from src.infrastructure.mnemosyne.bank_manager import BankManager
+from src.infrastructure.bank.memory_bank_repository import (
+    MemoryBankRepository,
+    memory_banks_db_path,
+)
 from src.infrastructure.bank.router import MemoryBankRouter
+from src.infrastructure.config.data_dir import resolve_data_dir
 from src.infrastructure.mcp.hash_index_service import HashIndexService
 from src.infrastructure.storage.sqlite.file_chunk_repository import (
     FileChunkRepository,
@@ -119,29 +123,38 @@ def _build_expand_file_relations_use_case(
     )
 
 
-def _build_bank_manager() -> BankManager:
-    """Build BankManager resolving the data dir (DATA_DIR env -> ./data default)."""
-    return BankManager(data_dir=resolve_data_dir())
+def _build_hash_index_service(
+    memory_bank: str, memory_bank_router: MemoryBankRouter
+) -> HashIndexService:
+    """Build HashIndexService with the router's canonical hash index path."""
+    db_path = memory_bank_router.get_hash_index_path(memory_bank)
+    return HashIndexService(memory_bank=memory_bank, db_path=db_path)
 
 
-def _build_bank_type_checker(data_dir: Path) -> Callable[[str], str]:
-    """Build the forget-path bank type checker (mirrors MnemosyneClient path resolution).
+def _build_bank_type_checker(
+    memory_bank_router: MemoryBankRouter,
+) -> Callable[[str], str]:
+    """Build the forget-path bank type checker (mirrors router path authority).
 
     A bank is "file_metadata" if it has file metadata stored (SQLite DB exists),
-    otherwise it's "pure_memories".
-    Path resolution:
-    - default bank: data_dir/file_metadata.db
-    - custom bank:  data_dir/banks/bank_name/file_metadata.db
+    otherwise it's "pure_memories". Uniform v2 path for ALL banks incl. default:
+    {data_dir}/banks/{bank_name}/file_metadata.db (U11).
     """
 
     def _checker(bank_name: str) -> str:
-        if bank_name == "default":
-            db_path = data_dir / "file_metadata.db"
-        else:
-            db_path = data_dir / "banks" / bank_name / "file_metadata.db"
+        db_path = memory_bank_router.get_file_metadata_path(bank_name)
         return "file_metadata" if db_path.exists() else "pure_memories"
 
     return _checker
+
+
+def _build_memory_bank_repository() -> MemoryBankRepository:
+    """Build the real SQLAlchemy-backed memory bank repository singleton.
+
+    Resolves the data dir at resolution time (DATA_DIR env / ./data default) so
+    the container honors the runtime environment instead of a baked-in path.
+    """
+    return MemoryBankRepository(memory_banks_db_path(resolve_data_dir()))
 
 
 class Container(containers.DeclarativeContainer):
@@ -153,8 +166,6 @@ class Container(containers.DeclarativeContainer):
 
     # Resolves data_dir at resolution time so the DATA_DIR env (e.g. Docker ENV)
     # or the relative ./data default is honored instead of a baked-in /data.
-    bank_manager = providers.Singleton(_build_bank_manager)
-
     memory_bank_router = providers.Singleton(
         MemoryBankRouter,
         config=InstancePoolConfig(),
@@ -164,7 +175,13 @@ class Container(containers.DeclarativeContainer):
 
     memory_repository = providers.Singleton(InMemoryMemoryRepository)
 
-    memory_bank_repository = providers.Singleton(InMemoryMemoryBankRepository)
+    memory_bank_repository = providers.Singleton(_build_memory_bank_repository)
+
+    memory_bank_service = providers.Singleton(
+        MemoryBankService,
+        memory_bank_repository=memory_bank_repository,
+        logger=logger,
+    )
 
     # -- Per-bank file-metadata factories (D25) --
     #
@@ -182,7 +199,7 @@ class Container(containers.DeclarativeContainer):
         logger=logger,
     )
 
-    hash_index_service = providers.Factory(HashIndexService)
+    hash_index_service = providers.Factory(_build_hash_index_service)
 
     bank_type_checker = providers.Factory(_build_bank_type_checker)
 
@@ -220,8 +237,9 @@ class Container(containers.DeclarativeContainer):
 class ProductionContainer(Container):
     """Production container — wires real dependencies.
 
-    Repositories default to in-memory implementations here as placeholders.
-    Replace with SQLAlchemy-backed implementations when Task 17+ is complete.
+    Inherits the base Container: the SQLAlchemy-backed MemoryBankRepository
+    singleton (memory_banks.db at the resolved data dir) and the
+    MemoryBankService wired to it. Test-only fakes live in TestContainer.
     """
 
     pass
@@ -241,7 +259,18 @@ class TestContainer(Container):
 
     memory_repository = providers.Singleton(InMemoryMemoryRepository)
 
-    memory_bank_repository = providers.Singleton(InMemoryMemoryBankRepository)
+    # Test-only fake: the contract's in-memory implementation of the
+    # MemoryBankRepository interface (§4.2). Deliberately a different type than
+    # the production provider, so mypy's provider-type check needs an ignore.
+    memory_bank_repository = providers.Singleton(
+        InMemoryMemoryBankRepository  # type: ignore[arg-type]
+    )
+
+    memory_bank_service = providers.Singleton(
+        MemoryBankService,
+        memory_bank_repository=memory_bank_repository,
+        logger=logger,
+    )
 
     memory_bank_router = providers.Singleton(
         MemoryBankRouter,

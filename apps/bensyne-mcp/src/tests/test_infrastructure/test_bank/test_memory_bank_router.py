@@ -95,6 +95,24 @@ class TestRouterUsesNewClient:
 class TestRouterGetInstance:
     """get_instance returns MnemosyneClient, manages pool lifecycle."""
 
+    def test_router_passes_memory_bank_router_into_client(self, tmp_path: Path) -> None:
+        """_create_instance passes memory_bank_router=self into MnemosyneClient (S1 HIGH mitigation)."""
+        config = InstancePoolConfig(
+            max_instances=5,
+            eviction_timeout=300,
+            data_dir=str(tmp_path),
+            default_bank="default",
+        )
+        with patch("src.infrastructure.bank.router.MnemosyneClient") as mock_client_cls:
+            mock_client_cls.return_value = _make_mock_client("default")
+            router = MemoryBankRouter(config=config)
+
+        mock_client_cls.assert_called_once_with(
+            memory_bank="default",
+            data_dir=str(tmp_path),
+            memory_bank_router=router,
+        )
+
     def test_get_instance_returns_existing_instance_for_known_bank(self, tmp_path: Path) -> None:
         """Second call for same memory bank returns the same cached instance."""
         with patch.object(MemoryBankRouter, "_create_instance", side_effect=lambda mb: _make_mock_client(mb)):
@@ -188,28 +206,96 @@ class TestRouterListBanks:
 
 
 # ---------------------------------------------------------------------------
-# register_bank
+# Path authority (DEC-0064/U14) — v2 uniform paths under <data_dir>/banks/
 # ---------------------------------------------------------------------------
 
 
-class TestRouterRegisterBank:
-    """register_bank registers new bank in registry."""
+class TestRouterPathAuthority:
+    """Router is the single path authority for memory bank storage (v2 layout)."""
 
-    def test_register_bank_adds_bank_to_registry(self, tmp_path: Path) -> None:
-        """register_bank adds a new bank description to the registry."""
+    def test_get_bank_db_path_uniform_for_default(self, tmp_path: Path) -> None:
+        """'default' resolves under banks/ like any bank — NO root special-case."""
         router = _make_router(tmp_path)
-        router.register_bank("project-x", "Project X memories")
-        desc = router.get_bank_description("project-x")
-        assert desc == "Project X memories"
+        assert router.get_bank_db_path("default") == tmp_path / "banks" / "default" / "mnemosyne.db"
 
-    def test_register_bank_overwrites_existing(self, tmp_path: Path) -> None:
-        """register_bank overwrites an existing bank description."""
+    def test_get_bank_db_path_creates_parent_dir(self, tmp_path: Path) -> None:
+        """get_bank_db_path mkdirs the bank dir (write path)."""
         router = _make_router(tmp_path)
-        router.register_bank("ns1", "first description")
-        assert router.get_bank_description("ns1") == "first description"
+        path = router.get_bank_db_path("foo")
+        assert path.parent.is_dir()
+        assert path.parent == tmp_path / "banks" / "foo"
 
-        router.register_bank("ns1", "second description")
-        assert router.get_bank_description("ns1") == "second description"
+    def test_get_bank_dir_creates_dir(self, tmp_path: Path) -> None:
+        """get_bank_dir returns <data_dir>/banks/<bank> and creates the dir."""
+        router = _make_router(tmp_path)
+        bank_dir = router.get_bank_dir("foo")
+        assert bank_dir == tmp_path / "banks" / "foo"
+        assert bank_dir.is_dir()
+
+    def test_get_file_metadata_path_does_not_create_dir(self, tmp_path: Path) -> None:
+        """get_file_metadata_path returns the co-located path WITHOUT mkdir (read-side)."""
+        router = _make_router(tmp_path)
+        path = router.get_file_metadata_path("foo")
+        assert path == tmp_path / "banks" / "foo" / "file_metadata.db"
+        assert not (tmp_path / "banks" / "foo").exists()
+
+    def test_get_hash_index_path_does_not_create_dir(self, tmp_path: Path) -> None:
+        """get_hash_index_path returns the co-located path WITHOUT mkdir (read-side)."""
+        router = _make_router(tmp_path)
+        path = router.get_hash_index_path("foo")
+        assert path == tmp_path / "banks" / "foo" / "hash_index.db"
+        assert not (tmp_path / "banks" / "foo").exists()
+
+    def test_get_bank_db_path_is_uniform_for_custom_bank(self, tmp_path: Path) -> None:
+        """Custom banks resolve identically to default under banks/."""
+        router = _make_router(tmp_path)
+        assert router.get_bank_db_path("custom") == tmp_path / "banks" / "custom" / "mnemosyne.db"
+
+
+class TestRouterListBankDirs:
+    """list_bank_dirs is a read-only scan of <data_dir>/banks/."""
+
+    def test_list_bank_dirs_returns_sorted_names(self, tmp_path: Path) -> None:
+        """Existing banks/ dir yields sorted bank names."""
+        (tmp_path / "banks" / "zeta").mkdir(parents=True)
+        (tmp_path / "banks" / "alpha").mkdir(parents=True)
+        router = _make_router(tmp_path)
+        assert router.list_bank_dirs() == ["alpha", "zeta"]
+
+    def test_list_bank_dirs_returns_empty_when_banks_absent(self, tmp_path: Path) -> None:
+        """No banks/ dir → empty list."""
+        router = _make_router(tmp_path)
+        assert router.list_bank_dirs() == []
+
+    def test_list_bank_dirs_creates_nothing(self, tmp_path: Path) -> None:
+        """list_bank_dirs has NO mkdir/delete side effects."""
+        router = _make_router(tmp_path)
+        router.list_bank_dirs()
+        assert not (tmp_path / "banks").exists()
+
+
+# ---------------------------------------------------------------------------
+# Registry duties removed (S13) — no registry/description methods
+# ---------------------------------------------------------------------------
+
+
+class TestRouterRegistryRemoved:
+    """Router no longer exposes in-memory registry duties (S13)."""
+
+    def test_router_has_no_registry_attribute(self, tmp_path: Path) -> None:
+        """self.registry is gone."""
+        router = _make_router(tmp_path)
+        assert not hasattr(router, "registry")
+
+    def test_router_has_no_get_bank_description(self, tmp_path: Path) -> None:
+        """get_bank_description is gone."""
+        router = _make_router(tmp_path)
+        assert not hasattr(router, "get_bank_description")
+
+    def test_router_has_no_register_bank(self, tmp_path: Path) -> None:
+        """register_bank is gone."""
+        router = _make_router(tmp_path)
+        assert not hasattr(router, "register_bank")
 
 
 # ---------------------------------------------------------------------------

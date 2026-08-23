@@ -22,7 +22,11 @@ class TestCreateApplication:
         router.get_active_banks.return_value = {"default"}
         return router
 
-    def test_create_application_returns_mcp_server(self, mock_config, mock_router) -> None:
+    @pytest.fixture
+    def mock_memory_bank_service(self) -> MagicMock:
+        return MagicMock()
+
+    def test_create_application_returns_mcp_server(self, mock_config, mock_router, mock_memory_bank_service) -> None:
         """create_application returns a FastMCP instance."""
         with (
             patch("src.app.create_server") as mock_create_server,
@@ -35,11 +39,11 @@ class TestCreateApplication:
 
             from src.app import create_application
 
-            result = create_application(mock_config, mock_router)
+            result = create_application(mock_config, mock_router, mock_memory_bank_service)
 
             assert result is mock_mcp
 
-    def test_create_application_calls_create_server_with_config(self, mock_config, mock_router) -> None:
+    def test_create_application_calls_create_server_with_config(self, mock_config, mock_router, mock_memory_bank_service) -> None:
         """create_application passes config to create_server."""
         with (
             patch("src.app.create_server") as mock_create_server,
@@ -52,11 +56,11 @@ class TestCreateApplication:
 
             from src.app import create_application
 
-            create_application(mock_config, mock_router)
+            create_application(mock_config, mock_router, mock_memory_bank_service)
 
             mock_create_server.assert_called_once_with(mock_config)
 
-    def test_create_application_registers_tools(self, mock_config, mock_router) -> None:
+    def test_create_application_registers_tools(self, mock_config, mock_router, mock_memory_bank_service) -> None:
         """create_application registers MCP tools with the router injected (container defaults to None)."""
         with (
             patch("src.app.create_server") as mock_create_server,
@@ -69,11 +73,11 @@ class TestCreateApplication:
 
             from src.app import create_application
 
-            create_application(mock_config, mock_router)
+            create_application(mock_config, mock_router, mock_memory_bank_service)
 
-            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, None)
+            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, mock_memory_bank_service, None)
 
-    def test_create_application_plumbs_container_to_register_tools(self, mock_config, mock_router) -> None:
+    def test_create_application_plumbs_container_to_register_tools(self, mock_config, mock_router, mock_memory_bank_service) -> None:
         """create_application passes the DI container through to register_tools (D25)."""
         with (
             patch("src.app.create_server") as mock_create_server,
@@ -87,11 +91,11 @@ class TestCreateApplication:
 
             from src.app import create_application
 
-            create_application(mock_config, mock_router, mock_container)
+            create_application(mock_config, mock_router, mock_memory_bank_service, mock_container)
 
-            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, mock_container)
+            mock_register_tools.assert_called_once_with(mock_mcp, mock_router, mock_memory_bank_service, mock_container)
 
-    def test_create_application_mounts_health_routes(self, mock_config, mock_router) -> None:
+    def test_create_application_mounts_health_routes(self, mock_config, mock_router, mock_memory_bank_service) -> None:
         """create_application mounts health check endpoints."""
         with (
             patch("src.app.create_server") as mock_create_server,
@@ -104,7 +108,7 @@ class TestCreateApplication:
 
             from src.app import create_application
 
-            create_application(mock_config, mock_router)
+            create_application(mock_config, mock_router, mock_memory_bank_service)
 
             mock_mount_health.assert_called_once_with(mock_mcp, mock_router)
 
@@ -119,14 +123,76 @@ class TestRegisterTools:
 
         mock_mcp = MagicMock()
         mock_router = MagicMock(spec=MemoryBankRouter)
+        mock_service = MagicMock()
 
         from src.app import register_tools
 
-        register_tools(mock_mcp, mock_router)
+        register_tools(mock_mcp, mock_router, mock_service)
 
         # Verify tool registration calls — each tool should be registered
         # Check that mcp.tool was called for each handler
         assert mock_mcp.tool.call_count >= 6  # remember, recall, forget, update, sleep, stats + list_banks
+
+
+class TestListRegisterToolClosures:
+    """listMemoryBanks / registerMemoryBank closures invoke the service-backed handlers.
+
+    Task 7: create_application(..., memory_bank_service, ...) must plumb the service
+    into the list/register handlers (router param stays — same injection pattern).
+    """
+
+    def _capture_tool_fn(self, mock_mcp: MagicMock, tool_name: str):
+        # With the @mcp.tool(name=...) decorator pattern, the name is passed to
+        # mcp.tool and the function is applied by the returned decorator — the
+        # two calls are 1:1 in order.
+        for i, call in enumerate(mock_mcp.tool.call_args_list):
+            if call.kwargs.get("name") == tool_name:
+                return mock_mcp.tool.return_value.call_args_list[i].args[0]
+        raise AssertionError(f"tool {tool_name} not registered")
+
+    def test_list_banks_closure_invokes_service_backed_handler(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+        mock_service = MagicMock()
+
+        from src.app import register_tools
+
+        with patch(
+            "src.infrastructure.mcp.handlers.handle_list_banks",
+            new=AsyncMock(return_value={"banks": []}),
+        ) as mock_handle:
+            register_tools(mock_mcp, mock_router, mock_service)
+            tool_fn = self._capture_tool_fn(mock_mcp, "listMemoryBanks")
+            result = asyncio.run(tool_fn())
+
+        assert result == {"banks": []}
+        mock_handle.assert_awaited_once_with(mock_router, mock_service, {})
+
+    def test_register_bank_closure_invokes_service_backed_handler(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+        mock_service = MagicMock()
+
+        from src.app import register_tools
+
+        with patch(
+            "src.infrastructure.mcp.handlers.handle_register_bank",
+            new=AsyncMock(return_value={"status": "registered", "name": "ns"}),
+        ) as mock_handle:
+            register_tools(mock_mcp, mock_router, mock_service)
+            tool_fn = self._capture_tool_fn(mock_mcp, "registerMemoryBank")
+            result = asyncio.run(tool_fn("ns", "desc"))
+
+        assert result == {"status": "registered", "name": "ns"}
+        mock_handle.assert_awaited_once_with(
+            mock_router, mock_service, {"name": "ns", "description": "desc"}
+        )
 
 
 class TestMountHealthRoutes:
@@ -167,8 +233,8 @@ class TestMainEntryPoints:
             patch.object(sys, "argv", test_args),
             patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
             patch("src.utils.logging.setup_logging") as mock_setup_logging,
-            patch("src.infrastructure.mnemosyne.bank_manager.BankManager") as MockBankManager,
             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.infrastructure.di.ProductionContainer") as MockProductionContainer,
             patch("src.app.create_application") as mock_create_app,
             patch("src.middleware.health.mark_default_instance_ready"),
             patch("asyncio.get_event_loop") as mock_get_loop,
@@ -188,6 +254,9 @@ class TestMainEntryPoints:
 
             mock_router_instance = MagicMock()
             MockMemoryBankRouter.return_value = mock_router_instance
+
+            mock_container = MagicMock()
+            MockProductionContainer.return_value = mock_container
 
             mock_app = MagicMock()
             mock_create_app.return_value = mock_app
@@ -220,7 +289,8 @@ class TestMainEntryPoints:
             assert any(kwargs.get("level") == "DEBUG" for kwargs in level_replaces)
 
     def test_main_startup_sequence_order(self) -> None:
-        """main.py follows correct startup sequence: config → logging → router → app → ready."""
+        """main.py follows correct startup sequence: config → container →
+        ensure_default_bank → create_application (service + container passed)."""
         import sys
         from unittest.mock import patch, MagicMock
 
@@ -253,8 +323,101 @@ class TestMainEntryPoints:
             patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
             patch("src.utils.logging.setup_logging") as mock_setup_logging,
             patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.infrastructure.di.ProductionContainer") as MockProductionContainer,
             patch("src.app.create_application") as mock_create_app,
             patch("src.middleware.health.mark_default_instance_ready") as mock_mark_ready,
+            patch("asyncio.get_event_loop") as mock_get_loop,
+            patch("dataclasses.replace", side_effect=lambda obj, **kwargs: obj),
+        ):
+
+            MockConfigManager.return_value.load.return_value = mock_config
+            mock_setup_logging.return_value = MagicMock()
+
+            mock_router_instance = MagicMock()
+            MockMemoryBankRouter.return_value = mock_router_instance
+
+            # Container mock: service resolved once, seed recorded before app creation.
+            boot_order: list[str] = []
+            mock_service = MagicMock()
+            mock_service.ensure_default_bank.side_effect = lambda desc: boot_order.append(
+                "ensure_default_bank"
+            )
+            mock_container = MagicMock()
+            mock_container.memory_bank_service.return_value = mock_service
+            MockProductionContainer.return_value = mock_container
+
+            mock_app = MagicMock()
+            mock_create_app.return_value = mock_app
+            mock_create_app.side_effect = lambda *a, **kw: boot_order.append(
+                "create_application"
+            ) or mock_app
+
+            mock_loop = MagicMock()
+            mock_get_loop.return_value = mock_loop
+
+            import importlib
+            import main
+
+            importlib.reload(main)
+
+            try:
+                main.main()
+            except SystemExit:
+                pass
+
+            # Verify startup sequence was called in order
+            assert MockConfigManager.called
+            assert mock_setup_logging.called
+            assert MockMemoryBankRouter.called
+            assert MockProductionContainer.called
+            assert mock_service.ensure_default_bank.called
+            assert mock_mark_ready.called
+            assert boot_order == ["ensure_default_bank", "create_application"]
+
+            # New signature: create_application(config, router, service, container)
+            mock_create_app.assert_called_once_with(
+                mock_config, mock_router_instance, mock_service, mock_container
+            )
+
+    def test_main_boot_seeds_default_bank(self, tmp_path, monkeypatch) -> None:
+        """Boot with a temp DATA_DIR seeds memory_banks.db with a 'default' row.
+
+        Config → container → ensure_default_bank → create_application executes
+        without import errors; the real app data dir stays untouched.
+        """
+        import sys
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        test_args = ["main.py"]
+
+        mock_server = MagicMock()
+        mock_server.port = 3000
+        mock_server.host = "0.0.0.0"
+
+        mock_logging_cfg = MagicMock()
+        mock_logging_cfg.level = "INFO"
+        mock_logging_cfg.format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        mock_logging_cfg.log_file = None
+
+        mock_instance_pool = MagicMock()
+        mock_instance_pool.data_dir = str(tmp_path)
+        mock_instance_pool.default_bank = "default"
+        mock_instance_pool.max_instances = 50
+        mock_instance_pool.eviction_timeout = 300
+
+        mock_config = MagicMock()
+        mock_config.server = mock_server
+        mock_config.logging = mock_logging_cfg
+        mock_config.instance_pool = mock_instance_pool
+
+        with (
+            patch.object(sys, "argv", test_args),
+            patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
+            patch("src.utils.logging.setup_logging") as mock_setup_logging,
+            patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.app.create_application") as mock_create_app,
+            patch("src.middleware.health.mark_default_instance_ready"),
             patch("asyncio.get_event_loop") as mock_get_loop,
             patch("dataclasses.replace", side_effect=lambda obj, **kwargs: obj),
         ):
@@ -281,12 +444,28 @@ class TestMainEntryPoints:
             except SystemExit:
                 pass
 
-            # Verify startup sequence was called in order
-            assert MockConfigManager.called
-            assert mock_setup_logging.called
-            assert MockMemoryBankRouter.called
-            assert mock_create_app.called
-            assert mock_mark_ready.called
+            # Real ProductionContainer + real service ran the seed against the
+            # temp DATA_DIR — memory_banks.db exists with a default row.
+            from src.infrastructure.bank.memory_bank_repository import (
+                MemoryBankRepository,
+                memory_banks_db_path,
+            )
+
+            db_path = memory_banks_db_path(tmp_path)
+            assert db_path.exists()
+
+            repo = MemoryBankRepository(db_path)
+            bank = repo.find_by_id("default").value
+            assert bank is not None
+            assert bank.name == "default"
+
+            # create_application received the resolved service singleton + container.
+            service = mock_create_app.call_args.args[2]
+            container = mock_create_app.call_args.args[3]
+            from src.application.services.memory_bank_service import MemoryBankService
+
+            assert isinstance(service, MemoryBankService)
+            assert container.memory_bank_service() is service
 
 
 class TestGracefulShutdown:

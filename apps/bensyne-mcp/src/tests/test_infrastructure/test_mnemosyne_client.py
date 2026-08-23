@@ -8,12 +8,15 @@ Verifies:
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.domain.config_models import InstancePoolConfig
 from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
+from src.infrastructure.bank.router import MemoryBankRouter
 
 
 # ---------------------------------------------------------------------------
@@ -326,3 +329,150 @@ class TestMnemosyneClientStats:
         assert result.is_ko
         errors = result.get_errors()
         assert errors[0].error_code == "DATABASE_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# memory_bank_router kwarg — uniform v2 path authority (Task 4, DEC-0062/U11)
+# ---------------------------------------------------------------------------
+
+
+def _make_router(tmp_path: Path) -> MemoryBankRouter:
+    """Create a router with a tmp data_dir and mocked client creation."""
+    config = InstancePoolConfig(
+        max_instances=5,
+        eviction_timeout=300,
+        data_dir=str(tmp_path),
+        default_bank="default",
+    )
+    mock = MagicMock(spec=MnemosyneClient)
+    mock.memory_bank = "default"
+    with patch.object(MemoryBankRouter, "_create_instance", return_value=mock):
+        return MemoryBankRouter(config=config)
+
+
+class TestMnemosyneClientRouterKwarg:
+    """_create_instance resolves db_path via the router (uniform banks/ layout)."""
+
+    def test_default_bank_resolves_uniform_path(self, tmp_path: Path) -> None:
+        """'default' with router → <tmp>/banks/default/mnemosyne.db (was <tmp>/mnemosyne.db)."""
+        router = _make_router(tmp_path)
+        with patch("mnemosyne.core.memory.Mnemosyne") as mock_mnemosyne_cls:
+            MnemosyneClient(memory_bank="default", data_dir=str(tmp_path), memory_bank_router=router)
+        mock_mnemosyne_cls.assert_called_once_with(bank="default", db_path=str(tmp_path / "banks" / "default" / "mnemosyne.db"))
+
+    def test_custom_bank_resolves_uniform_path_and_creates_parent(self, tmp_path: Path) -> None:
+        """'custom' with router → <tmp>/banks/custom/mnemosyne.db; parent dir created."""
+        router = _make_router(tmp_path)
+        with patch("mnemosyne.core.memory.Mnemosyne") as mock_mnemosyne_cls:
+            MnemosyneClient(memory_bank="custom", data_dir=str(tmp_path), memory_bank_router=router)
+        expected = tmp_path / "banks" / "custom"
+        assert expected.is_dir()
+        mock_mnemosyne_cls.assert_called_once_with(bank="custom", db_path=str(expected / "mnemosyne.db"))
+
+    def test_without_router_keeps_legacy_default_path(self, tmp_path: Path) -> None:
+        """No router → default bank still lands at <data_dir>/mnemosyne.db (backward-compat fallback)."""
+        with patch("mnemosyne.core.memory.Mnemosyne") as mock_mnemosyne_cls:
+            MnemosyneClient(memory_bank="default", data_dir=str(tmp_path))
+        mock_mnemosyne_cls.assert_called_once_with(bank="default", db_path=str(tmp_path / "mnemosyne.db"))
+
+    def test_without_router_keeps_legacy_custom_path(self, tmp_path: Path) -> None:
+        """No router → custom bank still lands at <data_dir>/banks/<bank>/mnemosyne.db (fallback)."""
+        with patch("mnemosyne.core.memory.Mnemosyne") as mock_mnemosyne_cls:
+            MnemosyneClient(memory_bank="custom", data_dir=str(tmp_path))
+        mock_mnemosyne_cls.assert_called_once_with(bank="custom", db_path=str(tmp_path / "banks" / "custom" / "mnemosyne.db"))
+
+
+# ---------------------------------------------------------------------------
+# get_stats router workaround (DEC-0066/S7) — canonical banks key + phantom cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestMnemosyneClientStatsRouter:
+    """get_stats() with a router overwrites banks from the canonical filesystem view."""
+
+    def test_banks_key_overwritten_by_list_bank_dirs(self, tmp_path: Path) -> None:
+        """Library's phantom banks list is replaced by router.list_bank_dirs()."""
+        router = _make_router(tmp_path)
+        (tmp_path / "banks" / "alpha").mkdir(parents=True)
+        (tmp_path / "banks" / "zeta").mkdir(parents=True)
+        mock = MagicMock()
+        mock.get_stats.return_value = {"working": 10, "banks": ["phantom-bank"]}
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock):
+            client = MnemosyneClient(memory_bank="default", data_dir=str(tmp_path), memory_bank_router=router)
+
+        result = client.get_stats()
+
+        assert result.is_ok
+        assert result.value["banks"] == ["alpha", "zeta"]
+
+    def test_empty_phantom_banks_dir_removed(self, tmp_path: Path) -> None:
+        """Empty nested <bank_dir>/banks/ phantom dir is removed; bank data untouched."""
+        router = _make_router(tmp_path)
+        bank_dir = tmp_path / "banks" / "somebank"
+        phantom = bank_dir / "banks"
+        phantom.mkdir(parents=True)
+        data_file = bank_dir / "mnemosyne.db"
+        data_file.write_text("bank data")
+        mock = MagicMock()
+        mock.get_stats.return_value = {"working": 10, "banks": ["somebank"]}
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock):
+            client = MnemosyneClient(memory_bank="somebank", data_dir=str(tmp_path), memory_bank_router=router)
+
+        result = client.get_stats()
+
+        assert result.is_ok
+        assert not phantom.exists()
+        assert data_file.read_text() == "bank data"
+
+    def test_empty_phantom_dir_with_nested_empty_dirs_removed(self, tmp_path: Path) -> None:
+        """Phantom dir empty 'at any depth' (only nested empty dirs) is still removed."""
+        router = _make_router(tmp_path)
+        phantom = tmp_path / "banks" / "somebank" / "banks" / "nested" / "deeper"
+        phantom.mkdir(parents=True)
+        mock = MagicMock()
+        mock.get_stats.return_value = {"working": 10, "banks": ["somebank"]}
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock):
+            client = MnemosyneClient(memory_bank="somebank", data_dir=str(tmp_path), memory_bank_router=router)
+
+        result = client.get_stats()
+
+        assert result.is_ok
+        assert not (tmp_path / "banks" / "somebank" / "banks").exists()
+
+    def test_non_empty_phantom_dir_left_and_warns(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Non-empty phantom <bank_dir>/banks/ is left in place with a warning."""
+        router = _make_router(tmp_path)
+        phantom = tmp_path / "banks" / "somebank" / "banks"
+        phantom.mkdir(parents=True)
+        (phantom / "orphan.txt").write_text("precious")
+        data_file = tmp_path / "banks" / "somebank" / "mnemosyne.db"
+        data_file.write_text("bank data")
+        mock = MagicMock()
+        mock.get_stats.return_value = {"working": 10, "banks": ["somebank"]}
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock):
+            client = MnemosyneClient(memory_bank="somebank", data_dir=str(tmp_path), memory_bank_router=router)
+
+        result = client.get_stats()
+
+        assert result.is_ok
+        assert phantom.is_dir()
+        assert (phantom / "orphan.txt").exists()
+        assert data_file.read_text() == "bank data"
+        # The non-empty phantom dir is flagged with a warning (behavioral check).
+        captured = capsys.readouterr().out
+        assert "warning" in captured.lower()
+        assert "Phantom banks dir left in place" in captured
+
+    def test_without_router_returns_library_result_unchanged(self) -> None:
+        """No router → get_stats() returns the plain library result (no crash, no rewrite)."""
+        mock = MagicMock()
+        mock.get_stats.return_value = {"working": 10, "banks": ["weird-list"]}
+        with patch.object(MnemosyneClient, "_create_instance", return_value=mock):
+            client = MnemosyneClient(memory_bank="default")
+
+        result = client.get_stats()
+
+        assert result.is_ok
+        assert result.value == {"working": 10, "banks": ["weird-list"]}

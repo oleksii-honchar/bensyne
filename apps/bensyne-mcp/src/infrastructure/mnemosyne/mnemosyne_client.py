@@ -7,12 +7,14 @@ DATABASE_ERROR.
 
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.domain.memory_entity import Memory
+    from src.infrastructure.bank.router import MemoryBankRouter
 
 from src.infrastructure.config.data_dir import resolve_data_dir
 from src.utils.result import ErrorWithDetails, Result
@@ -28,12 +30,20 @@ class MnemosyneClient:
     with Result-based error handling.
     """
 
-    def __init__(self, memory_bank: str, data_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        memory_bank: str,
+        data_dir: str | None = None,
+        memory_bank_router: MemoryBankRouter | None = None,
+    ) -> None:
         self.memory_bank = memory_bank
+        self.memory_bank_router = memory_bank_router
         self.created_at = time.time()
         self.last_accessed = time.time()
         # Resolution order: explicit (config/CLI) -> DATA_DIR env -> "./data".
-        self._instance = self._create_instance(memory_bank=memory_bank, data_dir=resolve_data_dir(data_dir))
+        resolved_data_dir = resolve_data_dir(data_dir)
+        self._data_dir = resolved_data_dir
+        self._instance = self._create_instance(memory_bank=memory_bank, data_dir=resolved_data_dir)
 
     def _create_instance(self, memory_bank: str, data_dir: str) -> Any:
         """Create the underlying Mnemosyne library instance.
@@ -43,10 +53,14 @@ class MnemosyneClient:
         # Lazy import to avoid pulling in mnemosyne at import time
         from mnemosyne.core.memory import Mnemosyne
 
-        # Resolve db_path: default bank goes to data_dir/mnemosyne.db,
-        # custom bank goes to data_dir/banks/{memory_bank}/mnemosyne.db
+        # Resolve db_path via the router (single path authority, DEC-0064/U11):
+        # ALL banks incl. default go to {data_dir}/banks/{bank}/mnemosyne.db.
+        # When no router is given (direct construction/tests), keep the legacy
+        # inline behavior so the layout does not silently shift.
         data_path = Path(data_dir)
-        if memory_bank == "default":
+        if self.memory_bank_router is not None:
+            db_path = self.memory_bank_router.get_bank_db_path(memory_bank)
+        elif memory_bank == "default":
             db_path = data_path / "mnemosyne.db"
         else:
             db_path = data_path / "banks" / memory_bank / "mnemosyne.db"
@@ -140,13 +154,58 @@ class MnemosyneClient:
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
     def get_stats(self) -> Result[dict[str, Any]]:
-        """Return memory statistics."""
+        """Return memory statistics.
+
+        When a router is present (DEC-0066/S7): the returned ``banks`` key is
+        overwritten with the canonical filesystem view (``router.list_bank_dirs()``)
+        and the phantom nested ``<bank_dir>/banks`` directory (a mnemosyne library
+        mkdir side effect) is removed when it exists and is empty at any depth.
+        Bank data files are never touched. Without a router the plain library
+        result is returned unchanged.
+        """
         try:
             value = self._instance.get_stats()
+            if self.memory_bank_router is not None:
+                self._remove_phantom_banks_dir()
+                value["banks"] = self.memory_bank_router.list_bank_dirs()
             return Result.ok(value)
         except Exception as exc:
             logger.error("Mnemosyne stats failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
+
+    def _remove_phantom_banks_dir(self) -> None:
+        """Remove the phantom nested <bank_dir>/banks dir created by the library.
+
+        The mnemosyne library mkdirs ``{parent(bank_db)}/banks`` during
+        ``get_stats`` (memory.py side effect). Only removed when it is empty at
+        any depth; otherwise left in place with a warning. Never touches files.
+        """
+        phantom = Path(self._data_dir) / "banks" / self.memory_bank / "banks"
+        if not phantom.is_dir():
+            return
+        if not self._dir_is_empty(phantom):
+            logger.warning(
+                "Phantom banks dir left in place (non-empty)",
+                memory_bank=self.memory_bank,
+                path=str(phantom),
+            )
+            return
+        shutil.rmtree(phantom)
+        logger.info(
+            "Removed empty phantom banks dir",
+            memory_bank=self.memory_bank,
+            path=str(phantom),
+        )
+
+    @staticmethod
+    def _dir_is_empty(path: Path) -> bool:
+        """Return True when the directory contains no entries at any depth."""
+        for entry in path.iterdir():
+            if entry.is_file():
+                return False
+            if entry.is_dir() and not MnemosyneClient._dir_is_empty(entry):
+                return False
+        return True
 
     def get(self, memory_id: str) -> dict | None:
         """Retrieve a single memory by id (callable contract for content composition)."""

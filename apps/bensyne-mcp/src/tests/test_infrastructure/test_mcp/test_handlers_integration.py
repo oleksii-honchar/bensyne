@@ -7,11 +7,12 @@ Tests verify that each handler:
 4. Raises ValidationError on Result.ko
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.domain.exceptions import ValidationError
+from src.infrastructure.bank.router import MemoryBankRouter
 from src.utils.result import ErrorWithDetails, Result
 
 
@@ -370,13 +371,17 @@ class TestHandleSleep:
 
 
 class TestHandleListBanks:
-    """Test handle_list_banks delegates to ListBanksUseCase."""
+    """Test handle_list_banks delegates to ListBanksUseCase (service-backed)."""
 
     @pytest.fixture
     def router(self) -> MagicMock:
         return MagicMock()
 
-    async def test_delegates_to_list_banks_use_case(self, router) -> None:
+    @pytest.fixture
+    def memory_bank_service(self) -> MagicMock:
+        return MagicMock()
+
+    async def test_delegates_to_list_banks_use_case(self, router, memory_bank_service) -> None:
         """handle_list_banks should call ListBanksUseCase.execute."""
         from src.infrastructure.mcp.handlers import handle_list_banks
 
@@ -390,12 +395,17 @@ class TestHandleListBanks:
         with patch(
             "src.infrastructure.mcp.handlers.ListBanksUseCase",
             return_value=mock_use_case,
-        ):
-            result = await handle_list_banks(router, {})
+        ) as mock_cls:
+            result = await handle_list_banks(router, memory_bank_service, {})
 
+        mock_cls.assert_called_once_with(
+            memory_bank_service=memory_bank_service,
+            router=router,
+            logger=ANY,
+        )
         mock_use_case.execute.assert_called_once()
 
-    async def test_returns_result_value_as_dict_on_success(self, router) -> None:
+    async def test_returns_result_value_as_dict_on_success(self, router, memory_bank_service) -> None:
         """handle_list_banks should return the Result.value dict on success."""
         from src.infrastructure.mcp.handlers import handle_list_banks
 
@@ -413,17 +423,21 @@ class TestHandleListBanks:
             "src.infrastructure.mcp.handlers.ListBanksUseCase",
             return_value=mock_use_case,
         ):
-            result = await handle_list_banks(router, {})
+            result = await handle_list_banks(router, memory_bank_service, {})
 
         assert len(result["banks"]) == 2
         assert result["banks"][0]["name"] == "default"
 
 
 class TestHandleRegisterBank:
-    """Test handle_register_bank delegates to RegisterBankUseCase."""
+    """Test handle_register_bank delegates to RegisterBankUseCase (service-backed)."""
 
     @pytest.fixture
     def router(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def memory_bank_service(self) -> MagicMock:
         return MagicMock()
 
     @pytest.fixture
@@ -433,7 +447,7 @@ class TestHandleRegisterBank:
             "description": "A test bank",
         }
 
-    async def test_delegates_to_register_bank_use_case(self, router, arguments) -> None:
+    async def test_delegates_to_register_bank_use_case(self, router, memory_bank_service, arguments) -> None:
         """handle_register_bank should call RegisterBankUseCase.execute with arguments."""
         from src.infrastructure.mcp.handlers import handle_register_bank
 
@@ -448,15 +462,19 @@ class TestHandleRegisterBank:
         with patch(
             "src.infrastructure.mcp.handlers.RegisterBankUseCase",
             return_value=mock_use_case,
-        ):
-            result = await handle_register_bank(router, arguments)
+        ) as mock_cls:
+            result = await handle_register_bank(router, memory_bank_service, arguments)
 
+        mock_cls.assert_called_once_with(
+            memory_bank_service=memory_bank_service,
+            logger=ANY,
+        )
         mock_use_case.execute.assert_called_once()
         call_args = mock_use_case.execute.call_args[0][0]
         assert call_args["name"] == "my-bank"
         assert call_args["description"] == "A test bank"
 
-    async def test_returns_result_value_as_dict_on_success(self, router, arguments) -> None:
+    async def test_returns_result_value_as_dict_on_success(self, router, memory_bank_service, arguments) -> None:
         """handle_register_bank should return the Result.value dict on success."""
         from src.infrastructure.mcp.handlers import handle_register_bank
 
@@ -472,12 +490,12 @@ class TestHandleRegisterBank:
             "src.infrastructure.mcp.handlers.RegisterBankUseCase",
             return_value=mock_use_case,
         ):
-            result = await handle_register_bank(router, arguments)
+            result = await handle_register_bank(router, memory_bank_service, arguments)
 
         assert result["status"] == "registered"
         assert result["name"] == "my-bank"
 
-    async def test_raises_validation_error_on_result_ko(self, router, arguments) -> None:
+    async def test_raises_validation_error_on_result_ko(self, router, memory_bank_service, arguments) -> None:
         """handle_register_bank should raise ValidationError when use case returns Result.ko."""
         from src.infrastructure.mcp.handlers import handle_register_bank
 
@@ -489,7 +507,7 @@ class TestHandleRegisterBank:
             return_value=mock_use_case,
         ):
             with pytest.raises(ValidationError):
-                await handle_register_bank(router, arguments)
+                await handle_register_bank(router, memory_bank_service, arguments)
 
 
 class TestHandleExpandFileRelations:
@@ -532,3 +550,141 @@ class TestHandleExpandFileRelations:
             mock_container.expand_file_relations_use_case.call_args.kwargs["mnemosyne_client"]
             is instance.get
         )
+
+
+class TestBankDirResolution:
+    """All 6 bank_dir sites resolve via router.get_bank_dir → <data_dir>/banks/<bank>/.
+
+    Task 7 (S2/S13): handlers must NOT build `Path(data_dir) / memory_bank` inline
+    (the old v1 layout). With a real router whose config.data_dir = tmp, every
+    file-metadata handler must construct its bundle at `<tmp>/banks/<bank>/` and
+    never at `<tmp>/<bank>/` or the data root.
+    """
+
+    @pytest.fixture
+    def router(self, tmp_path) -> MemoryBankRouter:
+        from src.domain.config_models import InstancePoolConfig
+        from src.infrastructure.bank.router import MemoryBankRouter
+        from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
+
+        config = InstancePoolConfig(
+            max_instances=5,
+            eviction_timeout=300,
+            data_dir=str(tmp_path),
+            default_bank="default",
+        )
+
+        def _mock_client(memory_bank: str) -> MagicMock:
+            client = MagicMock(spec=MnemosyneClient)
+            client.memory_bank = memory_bank
+            return client
+
+        with patch.object(
+            MemoryBankRouter, "_create_instance", side_effect=_mock_client
+        ):
+            return MemoryBankRouter(config=config)
+
+    def _assert_bundle_bank_dir(self, container: MagicMock, tmp_path, memory_bank: str = "default") -> None:
+        """Assert the bundle was built at <tmp>/banks/<bank>/ — not <tmp>/<bank>/."""
+        bundle_call = container.file_metadata_bundle.call_args
+        assert bundle_call is not None, "file_metadata_bundle was not called"
+        bank_dir = bundle_call.kwargs["bank_dir"]
+        assert bank_dir == tmp_path / "banks" / memory_bank
+        # Old-layout guards: no <tmp>/<bank>/ and no bundle at the data root.
+        assert not (tmp_path / memory_bank).exists()
+
+    async def test_handle_remember_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_remember
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"status": "stored"})
+        container = MagicMock()
+        container.remember_memory_use_case.return_value = mock_use_case
+
+        await handle_remember(
+            router,
+            {"memory_bank": "default", "content": "hello"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_recall_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_recall
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"results": []})
+        container = MagicMock()
+        container.recall_memory_use_case.return_value = mock_use_case
+
+        await handle_recall(
+            router,
+            {"memory_bank": "default", "query": "q"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_forget_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_forget
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"status": "deleted"})
+        container = MagicMock()
+        container.forget_memory_use_case.return_value = mock_use_case
+
+        await handle_forget(
+            router,
+            {"memory_bank": "default", "memory_id": "mem-1"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_search_files_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_search_files
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"results": []})
+        container = MagicMock()
+        container.search_files_use_case.return_value = mock_use_case
+
+        await handle_search_files(
+            router,
+            {"memory_bank": "default", "query": "q"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_expand_file_relations_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_expand_file_relations
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"relations": []})
+        container = MagicMock()
+        container.expand_file_relations_use_case.return_value = mock_use_case
+
+        await handle_expand_file_relations(
+            router,
+            {"memory_bank": "default", "file_id": "file-1"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_fetch_file_bundle_at_banks_dir(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_fetch_file
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"file_id": "file-1"})
+        container = MagicMock()
+        container.fetch_file_use_case.return_value = mock_use_case
+
+        await handle_fetch_file(
+            router,
+            {"memory_bank": "default", "file_id": "file-1"},
+            container=container,
+        )
+
+        self._assert_bundle_bank_dir(container, tmp_path)

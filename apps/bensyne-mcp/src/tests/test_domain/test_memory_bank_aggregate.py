@@ -276,6 +276,80 @@ class TestActivate:
         assert not hasattr(result.value, "events")
 
 
+class TestUpdateDescription:
+    """update_description() validates and returns a NEW MemoryBank with the new description."""
+
+    def test_update_description_updates_description_and_preserves_other_fields(self):
+        bank = _make_active_bank()
+        memory = _make_memory("mem1")
+        bank_with_memory = bank.replace(memories=[memory], memory_count=1)
+        created_at = bank_with_memory.created_at
+
+        result = bank_with_memory.update_description("new desc")
+
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.description == "new desc"
+        assert updated.name == bank_with_memory.name
+        assert updated.status == bank_with_memory.status
+        assert updated.created_at == created_at
+        assert updated.memory_count == 1
+        assert updated.memories == [memory]
+
+    def test_update_description_returns_new_instance_and_original_unchanged(self):
+        bank = _make_active_bank()
+        original_description = bank.description
+
+        result = bank.update_description("new desc")
+
+        assert result.is_ok is True
+        assert result.value is not bank
+        assert bank.description == original_description
+        assert result.value.description == "new desc"
+
+    def test_update_description_rejects_empty_description(self):
+        bank = _make_active_bank()
+        original_description = bank.description
+
+        result = bank.update_description("")
+
+        assert result.is_ko is True
+        assert result.value is None
+        assert result.errors[0].error_code == "INVALID_MEMORY_BANK"
+        assert result.errors[0].details["name"] == bank.name
+        assert bank.description == original_description
+
+    def test_update_description_rejects_whitespace_description(self):
+        bank = _make_active_bank()
+
+        result = bank.update_description("   ")
+
+        assert result.is_ko is True
+        assert result.value is None
+        assert result.errors[0].error_code == "INVALID_MEMORY_BANK"
+        assert bank.description != "   "
+
+    def test_update_description_rejects_schema_invalid_description(self):
+        # Directly constructed aggregate whose name violates MemoryBankSchema
+        # (bypassing of()) — update_description must still run full-schema validation.
+        bank = MemoryBank(
+            name="bad name!",
+            description="A test bank",
+            status="registered",
+            created_at=datetime.now(),
+            last_accessed=None,
+            memory_count=0,
+            memories=[],
+        )
+
+        result = bank.update_description("new desc")
+
+        assert result.is_ko is True
+        assert result.value is None
+        assert result.errors[0].error_code == "INVALID_MEMORY_BANK"
+        assert bank.description == "A test bank"
+
+
 class TestSuspend:
     """suspend() suspends bank, produces MemoryBankSuspendedEvent."""
 
