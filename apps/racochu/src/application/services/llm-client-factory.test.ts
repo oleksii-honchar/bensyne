@@ -22,6 +22,7 @@ describe('LlmClientFactory', () => {
       llmUrl: 'https://lite-llm.lan/v1',
       llmModel: 'puma-qwopus3.5-9b',
       apiKey: 'sk-test-key',
+      maxOutputTokens: 1024,
     };
 
     it('should return null when config.enabled is false', () => {
@@ -110,6 +111,66 @@ describe('LlmClientFactory', () => {
 
       expect(result).not.toBeNull();
       expect(mockCallableProvider).toHaveBeenCalledWith('puma-qwopus3.5-9b');
+    });
+
+    it('should return a model whose generations carry a finite maxOutputTokens bound', async () => {
+      const doGenerate = jest.fn().mockResolvedValue({ text: 'ok', finishReason: 'stop' });
+      mockCreateOpenAI.mockReturnValueOnce({
+        chat: jest.fn(() => ({ model: 'puma-qwopus3.5-9b', provider: 'mock', doGenerate })),
+      });
+
+      const result = LlmClientFactory.createCustomLlm(validConfig);
+
+      expect(result).not.toBeNull();
+      const model = result as unknown as {
+        doGenerate: (args: Record<string, unknown>) => Promise<unknown>;
+      };
+
+      await model.doGenerate({ prompt: 'hello', temperature: 0.3 });
+
+      expect(doGenerate).toHaveBeenCalledTimes(1);
+      const args = doGenerate.mock.calls[0][0] as Record<string, unknown>;
+      expect(Number.isFinite(args.maxOutputTokens)).toBe(true);
+      expect((args.maxOutputTokens as number) > 0).toBe(true);
+      // Other call settings are preserved alongside the bound
+      expect(args.temperature).toBe(0.3);
+    });
+
+    it('should apply the maxOutputTokens bound to streaming generations too', async () => {
+      const doStream = jest.fn().mockResolvedValue({});
+      mockCreateOpenAI.mockReturnValueOnce({
+        chat: jest.fn(() => ({ model: 'puma-qwopus3.5-9b', provider: 'mock', doStream })),
+      });
+
+      const result = LlmClientFactory.createCustomLlm(validConfig);
+
+      expect(result).not.toBeNull();
+      const model = result as unknown as {
+        doStream: (args: Record<string, unknown>) => Promise<unknown>;
+      };
+
+      await model.doStream({ prompt: 'hello' });
+
+      expect(doStream).toHaveBeenCalledTimes(1);
+      const args = doStream.mock.calls[0][0] as Record<string, unknown>;
+      expect(Number.isFinite(args.maxOutputTokens)).toBe(true);
+      expect((args.maxOutputTokens as number) > 0).toBe(true);
+    });
+
+    it('should return a wrapper — not mutate the underlying model or set the bound globally', async () => {
+      const doGenerate = jest.fn().mockResolvedValue({ text: 'ok', finishReason: 'stop' });
+      const baseModel = { model: 'puma-qwopus3.5-9b', provider: 'mock', doGenerate };
+      mockCreateOpenAI.mockReturnValueOnce({
+        chat: jest.fn(() => baseModel),
+      });
+
+      const result = LlmClientFactory.createCustomLlm(validConfig);
+
+      // The wrapper is a distinct object; the raw provider-returned model is untouched
+      expect(result).not.toBe(baseModel);
+      expect(baseModel.doGenerate).toBe(doGenerate);
+      // Identity read-through (prototype/own props) still works on the wrapper
+      expect((result as { provider?: string }).provider).toBe('mock');
     });
   });
 });

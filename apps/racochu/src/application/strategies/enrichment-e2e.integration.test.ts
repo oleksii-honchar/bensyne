@@ -92,6 +92,18 @@ describe('Enrichment E2E Integration', () => {
           ]),
         }),
         chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          {
+            text: 'Machine learning is a subset of artificial intelligence',
+            metadata: {
+              enrichment: {
+                title: 'Machine Learning Fundamentals',
+                keywords:
+                  'machine learning, artificial intelligence, supervised, unsupervised, reinforcement',
+              },
+            },
+          },
+        ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
 
@@ -127,6 +139,12 @@ describe('Enrichment E2E Integration', () => {
           ]),
         }),
         chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          {
+            text: 'content',
+            metadata: { enrichment: { title: 'Test Title', keywords: 'test,keywords' } },
+          },
+        ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
 
@@ -139,13 +157,16 @@ describe('Enrichment E2E Integration', () => {
 
 Extract the following fields from the document:
 - title: A concise title describing the content
-- keywords: Comma-separated keywords
+- keywords: At most 10 concise, comma-separated keywords
 - summary: A concise whole-file summary of the document, at most 80 words
+
+ALL THREE fields (title, keywords, summary) are REQUIRED. None may be omitted and none may be null.
 
 Respond in this format:
 {
   "title": "string",
-  "keywords": "keyword1, keyword2, keyword3"
+  "keywords": "keyword1, keyword2, keyword3",
+  "summary": "string"
 }
 
 Do not include any other text, explanations, or markdown formatting.`,
@@ -304,6 +325,26 @@ Do not include any other text, explanations, or markdown formatting.`,
           ]),
         }),
         chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          {
+            text: 'First chunk',
+            metadata: {
+              enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+            },
+          },
+          {
+            text: 'Second chunk',
+            metadata: {
+              enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+            },
+          },
+          {
+            text: 'Third chunk',
+            metadata: {
+              enrichment: { title: 'Multi-Chunk Document Title', keywords: 'multi,chunk,document' },
+            },
+          },
+        ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
 
@@ -331,6 +372,12 @@ Do not include any other text, explanations, or markdown formatting.`,
           ]),
         }),
         chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          {
+            text: 'First chunk',
+            metadata: { enrichment: { title: 'Document Title', keywords: 'doc,keywords' } },
+          },
+        ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
 
@@ -355,6 +402,12 @@ Do not include any other text, explanations, or markdown formatting.`,
           ]),
         }),
         chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([
+          {
+            text: 'enriched content',
+            metadata: { enrichment: { title: 'Enriched', keywords: 'enriched' } },
+          },
+        ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(enrichedDoc as never);
 
