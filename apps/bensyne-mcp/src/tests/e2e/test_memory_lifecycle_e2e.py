@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.domain.exceptions import ValidationError
-from src.utils.result import Result
+from src.utils.result import ErrorWithDetails, Result
 from src.tests.test_domain.domain_test_utils import (
     InMemoryMemoryRepository,
     a_memory,
@@ -433,12 +433,18 @@ class TestBankRegistrationAndListing:
             )
         }
         mock_router.list_bank_dirs.return_value = ["default", "registered_only"]
+        # ADR-7 honest fallback: "registry row, no dir" → get_stats_for returns ko.
+        # The fill loop then keeps the stored memory_count instead of a live value.
+        mock_router.get_stats_for.return_value = Result.ko(
+            [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": "registered_only"})]
+        )
 
         mock_service = MagicMock()
         registered_bank = MagicMock()
         registered_bank.name = "registered_only"
         registered_bank.description = "Registered bank"
-        registered_bank.memory_count = 0
+        # Non-zero stale stored count (ADR-7 honest fallback: kept when db unreadable).
+        registered_bank.memory_count = 3
         registered_bank.status = "registered"
         mock_service.list_memory_banks.return_value = Result.ok([registered_bank])
 
@@ -450,6 +456,14 @@ class TestBankRegistrationAndListing:
         default_bank = [b for b in result["banks"] if b["name"] == "default"][0]
         assert default_bank["status"] == "active"
         assert default_bank["memory_count"] == 7  # total_memories
+
+        # Non-pooled registered_only: live count resolved via router.get_stats_for.
+        # Stubbed ko (MEMORY_BANK_DB_NOT_FOUND, "registry row, no dir") → stored value kept.
+        registered_bank_entry = [b for b in result["banks"] if b["name"] == "registered_only"][0]
+        assert registered_bank_entry["status"] == "registered"
+        assert registered_bank_entry["memory_count"] == 3  # stored value kept on ko
+        # Proves the fill loop actually queried the router for the non-active bank.
+        mock_router.get_stats_for.assert_called_once_with("registered_only")
 
     async def test_register_bank_use_case_validates_name(
         self,
@@ -946,6 +960,10 @@ class TestMCPToolInterfacesPreserved:
         mock_service = MagicMock()
         mock_service.list_memory_banks.return_value = Result.ok([])
         mock_router.list_bank_dirs.return_value = []
+        # Explicit stub so this test never relies on an auto-mocked get_stats_for.
+        mock_router.get_stats_for.return_value = Result.ko(
+            [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": "none"})]
+        )
 
         result = await handle_list_banks(mock_router, mock_service, {})
 

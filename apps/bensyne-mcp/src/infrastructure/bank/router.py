@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 from src.domain.config_models import InstancePoolConfig
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.infrastructure.bank.pool import evict_if_over_limit
+from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -150,6 +151,33 @@ class MemoryBankRouter:
         path = self.get_bank_dir(memory_bank) / "mnemosyne.db"
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
+
+    def get_mnemosyne_db_path(self, memory_bank: str) -> Path:
+        """Return the mnemosyne db path (read-side, NO mkdir).
+
+        Uniform for ALL banks incl. default: {data_dir}/banks/{bank}/mnemosyne.db.
+        Does NOT create any directories or files — safe for listing/guarding.
+        """
+        return self._banks_root() / memory_bank / "mnemosyne.db"
+
+    def get_stats_for(self, memory_bank: str) -> Result[dict]:
+        """Return memory stats for the named bank via a TRANSIENT client.
+
+        Resolves the memory entity repository for the bank named in the request
+        (R6). The client is transient — it is NEVER added to self.instances, so
+        no status flip, no LRU churn, no pool-state side effects.
+
+        Existence guard (ADR-8): a bank without an on-disk mnemosyne.db yields
+        MEMORY_BANK_DB_NOT_FOUND and never constructs a client, so no directory
+        or database file is created by a stats lookup.
+        """
+        db_path = self.get_mnemosyne_db_path(memory_bank)
+        if not db_path.exists():
+            return Result.ko(
+                [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": memory_bank})]
+            )
+        client = self._create_instance(memory_bank)  # transient — NOT pooled
+        return client.get_stats()
 
     def get_file_metadata_path(self, memory_bank: str) -> Path:
         """Return the file metadata db path (read-side, NO mkdir)."""

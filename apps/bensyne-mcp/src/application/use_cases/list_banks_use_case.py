@@ -95,6 +95,24 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
             description = existing["description"] if existing else ""
             banks[bank_name] = self._entry(bank_name, description, memory_count, "active")
 
+        # 4. Non-active (non-pooled) entries — live count via router.get_stats_for
+        # (R6: the router resolves the memory entity from the incoming bank name).
+        # On ko (missing/corrupt db) keep the stored value (ADR-7 honest fallback).
+        for bank_name, entry in banks.items():
+            if entry["status"] == "active":
+                continue
+            stats_result = self.router.get_stats_for(bank_name)
+            if stats_result.is_ok and stats_result.value is not None:
+                entry["memory_count"] = stats_result.value.get("total_memories", 0)
+            else:
+                self.logger.warning(
+                    "Could not read live memory count; keeping stored value",
+                    use_case="list_banks",
+                    method="execute_internal",
+                    memory_bank=bank_name,
+                    errors=stats_result.get_formatted_errors(),
+                )
+
         result = [banks[name] for name in sorted(banks)]
 
         self.logger.info(

@@ -181,6 +181,9 @@ class TestListBanksUseCase:
     def test_bank_present_only_on_disk_is_on_disk(self, router, use_case) -> None:
         """A dir-only bank → status='on_disk', empty description, memory_count 0."""
         router.list_bank_dirs.return_value = ["disk-only"]
+        router.get_stats_for.return_value = Result.ko(
+            [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": "disk-only"})]
+        )
 
         result = use_case.execute({})
 
@@ -191,10 +194,15 @@ class TestListBanksUseCase:
         assert bank["description"] == ""
         assert bank["memory_count"] == 0
 
-    def test_bank_present_only_in_registry_uses_stored_fields(self, memory_bank_service, use_case) -> None:
-        """Registry-only bank → stored status + description + stored memory_count."""
+    def test_bank_present_only_in_registry_uses_stored_fields(
+        self, memory_bank_service, router, use_case
+    ) -> None:
+        """Registry-only bank, db unreadable → stored status + description + stored memory_count KEPT."""
         memory_bank_service.list_memory_banks.return_value = Result.ok(
             [_bank("reg-only", description="Stored description", status="suspended", memory_count=4)]
+        )
+        router.get_stats_for.return_value = Result.ko(
+            [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": "reg-only"})]
         )
 
         result = use_case.execute({})
@@ -205,6 +213,23 @@ class TestListBanksUseCase:
         assert bank["status"] == "suspended"
         assert bank["description"] == "Stored description"
         assert bank["memory_count"] == 4
+
+    def test_registry_only_bank_with_db_gets_live_memory_count(
+        self, memory_bank_service, router, use_case
+    ) -> None:
+        """Registry-only bank with a readable db → live total_memories overrides stale stored count."""
+        memory_bank_service.list_memory_banks.return_value = Result.ok(
+            [_bank("reg-only", description="Stored description", status="registered", memory_count=4)]
+        )
+        router.get_stats_for.return_value = Result.ok({"total_memories": 252})
+
+        result = use_case.execute({})
+
+        assert result.is_ok is True
+        bank = result.value["banks"][0]
+        assert bank["name"] == "reg-only"
+        assert bank["status"] == "registered"
+        assert bank["memory_count"] == 252
 
     def test_bank_in_pool_is_active_with_live_memory_count(self, router, use_case) -> None:
         """Pool bank → status='active' + live memory_count from get_stats."""
@@ -220,6 +245,7 @@ class TestListBanksUseCase:
         assert bank["name"] == "pooled"
         assert bank["status"] == "active"
         assert bank["memory_count"] == 11
+        router.get_stats_for.assert_not_called()
 
     def test_duplicate_names_deduped_precedence_active(self, router, memory_bank_service, use_case) -> None:
         """A bank in ALL three sources yields exactly ONE entry, status active (pool wins),
@@ -243,6 +269,7 @@ class TestListBanksUseCase:
         assert bank["status"] == "active"
         assert bank["memory_count"] == 9
         assert bank["description"] == "Stored desc"
+        router.get_stats_for.assert_not_called()
 
     def test_all_entries_have_shape_with_name_equal_bank(self, router, memory_bank_service, use_case) -> None:
         """Every entry is {name, bank, description, memory_count, status} with name == bank."""
@@ -253,6 +280,9 @@ class TestListBanksUseCase:
         router.list_bank_dirs.return_value = ["disk-only"]
         memory_bank_service.list_memory_banks.return_value = Result.ok(
             [_bank("reg-only", description="desc", status="registered", memory_count=1)]
+        )
+        router.get_stats_for.return_value = Result.ko(
+            [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": "reg-only"})]
         )
 
         result = use_case.execute({})

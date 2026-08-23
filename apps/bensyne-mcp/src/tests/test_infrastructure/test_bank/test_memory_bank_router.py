@@ -251,6 +251,37 @@ class TestRouterPathAuthority:
         router = _make_router(tmp_path)
         assert router.get_bank_db_path("custom") == tmp_path / "banks" / "custom" / "mnemosyne.db"
 
+    def test_get_mnemosyne_db_path_default_bank(self, tmp_path: Path) -> None:
+        """get_mnemosyne_db_path returns uniform v2 path for default bank."""
+        router = _make_router(tmp_path)
+        path = router.get_mnemosyne_db_path("default")
+        assert path == tmp_path / "banks" / "default" / "mnemosyne.db"
+
+    def test_get_mnemosyne_db_path_custom_bank(self, tmp_path: Path) -> None:
+        """get_mnemosyne_db_path returns uniform v2 path for non-default banks."""
+        router = _make_router(tmp_path)
+        path = router.get_mnemosyne_db_path("foo")
+        assert path == tmp_path / "banks" / "foo" / "mnemosyne.db"
+
+    def test_get_mnemosyne_db_path_does_not_create_dir_or_file(self, tmp_path: Path) -> None:
+        """get_mnemosyne_db_path has NO mkdir side effects (read-only path helper)."""
+        router = _make_router(tmp_path)
+        bank_name = "nonexistent-bank"
+        path = router.get_mnemosyne_db_path(bank_name)
+        # Path is correct
+        assert path == tmp_path / "banks" / bank_name / "mnemosyne.db"
+        # But no directory or file was created
+        assert not (tmp_path / "banks" / bank_name).exists()
+        assert not path.exists()
+
+    def test_get_mnemosyne_db_path_has_read_only_docstring(self, tmp_path: Path) -> None:
+        """get_mnemosyne_db_path docstring mentions read-side/NO mkdir."""
+        docstring = MemoryBankRouter.get_mnemosyne_db_path.__doc__
+        assert docstring is not None
+        # Should indicate it's read-side with no mkdir (case-insensitive check)
+        docstring_lower = docstring.lower()
+        assert "read" in docstring_lower or "no mkdir" in docstring_lower
+
 
 class TestRouterListBankDirs:
     """list_bank_dirs is a read-only scan of <data_dir>/banks/."""
@@ -336,3 +367,74 @@ class TestRouterStructuredLogging:
                 assert "ns3" in router.instances
 
             asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# get_stats_for — transient entity resolution (ADR-8 / R6)
+# ---------------------------------------------------------------------------
+
+
+class TestRouterGetStatsFor:
+    """get_stats_for resolves a TRANSIENT MnemosyneClient (never pooled)."""
+
+    def _real_router(self, tmp_path: Path, max_instances: int = 5) -> MemoryBankRouter:
+        """Router with a REAL _create_instance (no mock) so get_stats_for uses a real client."""
+        config = InstancePoolConfig(
+            max_instances=max_instances,
+            eviction_timeout=300,
+            data_dir=str(tmp_path),
+            default_bank="default",
+        )
+        return MemoryBankRouter(config=config)
+
+    def _seed_bank(self, tmp_path: Path, bank: str, n: int) -> None:
+        """Seed a bank's mnemosyne.db with N memories using a real MnemosyneClient."""
+        client = MnemosyneClient(memory_bank=bank, data_dir=str(tmp_path))
+        for i in range(n):
+            r = client.remember(content=f"memory-{i}", source="test")
+            assert r.is_ok
+
+    def test_get_stats_for_existing_bank_returns_total_memories(self, tmp_path: Path) -> None:
+        """Bank WITH an existing mnemosyne.db holding N memories -> ok(total_memories == N)."""
+        router = self._real_router(tmp_path)
+        self._seed_bank(tmp_path, "stats-bank", 3)
+
+        result = router.get_stats_for("stats-bank")
+
+        assert result.is_ok
+        assert result.value is not None
+        assert result.value["total_memories"] == 3
+
+    def test_get_stats_for_missing_db_returns_ko_memory_bank_db_not_found(self, tmp_path: Path) -> None:
+        """Bank WITHOUT a mnemosyne.db -> ko(MEMORY_BANK_DB_NOT_FOUND) with bank in details."""
+        router = self._real_router(tmp_path)
+
+        result = router.get_stats_for("ghost-bank")
+
+        assert result.is_ko
+        assert result.value is None
+        errors = result.get_errors()
+        assert len(errors) == 1
+        assert errors[0].error_code == "MEMORY_BANK_DB_NOT_FOUND"
+        assert errors[0].details.get("bank") == "ghost-bank"
+
+    def test_get_stats_for_is_transient_and_does_not_pool(self, tmp_path: Path) -> None:
+        """A successful get_stats_for does NOT add the bank to router.instances."""
+        router = self._real_router(tmp_path)
+        self._seed_bank(tmp_path, "stats-bank", 2)
+        before = set(router.instances.keys())
+
+        result = router.get_stats_for("stats-bank")
+
+        assert result.is_ok
+        assert set(router.instances.keys()) == before
+        assert "stats-bank" not in router.instances
+
+    def test_get_stats_for_missing_db_creates_no_dir(self, tmp_path: Path) -> None:
+        """A ko result leaves NO {data_dir}/banks/{bank} directory behind."""
+        router = self._real_router(tmp_path)
+
+        result = router.get_stats_for("ghost-bank")
+
+        assert result.is_ko
+        assert not (tmp_path / "banks" / "ghost-bank").exists()
