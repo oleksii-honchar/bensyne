@@ -29,6 +29,7 @@ watchSources:
     exclude:
       - '**/Thumbs.db'
       - '**/.env*'
+      - '**/tool-responses/**'
     debounceMs: 1000
 chunking:
   maxSizes:
