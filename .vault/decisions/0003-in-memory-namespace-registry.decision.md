@@ -3,9 +3,10 @@ type: decision
 id: DEC-0003
 system: shared
 title: "In-Memory Memory Bank Registry"
-status: accepted
+status: superseded
+superseded_by: [DEC-0063]
 createdAt: "2026-08-16"
-updatedAt: "2026-08-16"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [memory-bank, mcp, protocol, infrastructure]
 see_also:
   - decisions/0006-in-memory-namespace-registry.decision.md
@@ -59,3 +60,5 @@ Store memory-bank descriptions in an **in-memory registry** — a `Dict[str, str
 > **2026-08-12:** `NamespaceRegistry` was renamed to `MemoryBankRegistry` (`src/infrastructure/bank/registry.py`) during the memory-bank terminology migration. Still an in-memory dict, still re-registered on startup.
 >
 > **2026-08-16:** Merged from bensyne-mcp DEC-0006 and racochu DEC-0031 into this protocol-level shared decision.
+>
+> **2026-08-23:** **SUPERSEDED by DEC-0063** (persistent bank registry). `MemoryBankRegistry` (`src/infrastructure/bank/registry.py`) deleted; bank descriptions now persist in `memory_banks.db` via `MemoryBankRepository` (`ON CONFLICT DO UPDATE`). `registerMemoryBank` is durable; descriptions survive restarts independent of racochu re-registration.

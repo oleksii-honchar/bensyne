@@ -3,7 +3,7 @@ type: concept
 system: bensyne-mcp
 title: "HashIndex"
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-17T11:32:38Z"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [hash-index, deduplication, sqlite]
 see_also:
   - decisions/0008-sqlite-hash-index.decision.md
@@ -26,7 +26,7 @@ When the same file is ingested from multiple devices, its chunk SHA-256 hash is 
 
 ## Key Details
 
-- **Location:** `data/{memory_bank}/hash_index.db` — one database per memory bank
+- **Location:** `data/banks/<bank>/hash_index.db` — one database per memory bank (v2 canonical layout, DEC-0062; supersedes `data/{memory_bank}/hash_index.db`)
 - **Mode:** WAL mode for concurrent reads
 - **Implementation:** `HashIndexService` in `src/infrastructure/mcp/hash_index_service.py` — SQLAlchemy ORM, thread-safe via per-operation `threading.Lock`, returns `Result[T]`
 - **Operations:**

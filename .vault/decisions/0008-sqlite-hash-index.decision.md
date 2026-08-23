@@ -5,7 +5,7 @@ system: bensyne-mcp
 title: "Use SQLite HashIndex for File Hash Deduplication"
 status: accepted
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-17T11:32:38Z"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [deduplication, hash-index, sqlite]
 see_also: [concepts/0001-hash-index.concept.md, decisions/0048-dual-hash-wire-contract.decision.md]
 ---
@@ -51,3 +51,7 @@ CREATE TABLE IF NOT EXISTS hash_index (
 - **Positive:** Simple, persistent, fast exact-match lookups, no external dependencies
 - **Negative:** Additional SQLite file per memory bank
 - **Mitigation:** SQLite is already a dependency; WAL mode supports concurrent access
+
+## Status Note
+
+> **2026-08-23:** Stated path `data/{memory_bank}/hash_index.db` is **superseded** by the canonical v2 layout `data/banks/<bank>/hash_index.db` (DEC-0062). Path resolution now flows from the `MemoryBankRouter` path authority (`get_hash_index_path`, `src/infrastructure/bank/router.py:158`). The pre-vault ADR-005 path rules (previously documented in the `mnemosyne/bank_manager.py` docstring) are likewise superseded by the router; `bank_manager.py` was deleted in the bank layout normalization round.

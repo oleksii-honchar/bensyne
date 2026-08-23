@@ -3,7 +3,7 @@ type: memory
 system: racochu
 title: "SHA-256 Collision Probability is Negligible"
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-17T11:32:38Z"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [hash, sha256, deduplication]
 see_also:
   - concepts/0020-file-hash-deduplication.concept.md
@@ -25,4 +25,4 @@ The file hash deduplication feature uses SHA-256 to detect duplicate file conten
 
 ## Impact
 
-No impact. With ~10^6 files, the birthday bound probability is still ~10^-30. The design decision to ignore collisions (DEC-0039) is sound and doesn't require mitigation. The dedup index is PER-BANK (`data/{memory_bank}/hash_index.db`), so collision exposure for `chunk_hash` is bounded to one bank's chunk population — with ~10^6 chunks, the birthday-bound probability remains ~10^-30. No defensive logic required (DEC-0048).
+No impact. With ~10^6 files, the birthday bound probability is still ~10^-30. The design decision to ignore collisions (DEC-0039) is sound and doesn't require mitigation. The dedup index is PER-BANK (`data/banks/<bank>/hash_index.db` — v2 canonical layout, DEC-0062; supersedes `data/{memory_bank}/hash_index.db`), so collision exposure for `chunk_hash` is bounded to one bank's chunk population — with ~10^6 chunks, the birthday-bound probability remains ~10^-30. No defensive logic required (DEC-0048).

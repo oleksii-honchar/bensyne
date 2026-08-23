@@ -3,9 +3,10 @@ type: decision
 id: DEC-0006
 system: bensyne-mcp
 title: "In-Memory Namespace Registry"
-status: accepted
+status: superseded
+superseded_by: [DEC-0063]
 createdAt: "2026-08-01T12:00:00Z"
-updatedAt: "2026-08-16T00:00:00Z"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [namespace, infrastructure]
 see_also: [decisions/0004-namespace-registration-tool.decision.md, decisions/0003-in-memory-namespace-registry.decision.md]
 ---
@@ -39,3 +40,5 @@ Use in-memory `NamespaceRegistry` class with `Dict[str, str]` for namespace → 
 > **2026-08-12:** `NamespaceRegistry` was renamed to `MemoryBankRegistry` (`src/infrastructure/bank/registry.py`) during the memory-bank terminology migration. Still an in-memory dict, still re-registered on startup.
 >
 > **2026-08-16:** Merged into shared DEC-0003 (`../../decisions/0003-in-memory-namespace-registry.decision.md`) — the protocol-level decision; this node remains the bensyne-mcp system-specific record.
+>
+> **2026-08-23:** **SUPERSEDED by DEC-0063** (persistent bank registry), consistent with DEC-0003. In-memory descriptions replaced by durable `memory_banks.db` storage.

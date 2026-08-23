@@ -5,7 +5,7 @@ title: "Dual-Hash Deduplication for Cross-Device Sync"
 kind: feature
 status: completed
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-17T11:32:38Z"
+updatedAt: "2026-08-23T14:33:06Z"
 tags: [deduplication, dual-hash, chunk-hash, file-hash, cross-device, sync]
 owner: ""
 target: null
@@ -38,7 +38,7 @@ Prevent duplicate memories when the same Obsidian vault is synced across multipl
 
 ### Phase 2 — Deduplication (Bensyne)
 
-- [x] HashIndex: SQLite WAL-mode per memory bank at `data/{memory_bank}/hash_index.db`
+- [x] HashIndex: SQLite WAL-mode per memory bank at `data/banks/<bank>/hash_index.db` (v2 canonical layout, DEC-0062; supersedes `data/{memory_bank}/hash_index.db`)
 - [x] memory_remember handler: extract fileHash → lookup HashIndex → return "deduplicated" if found
 - [x] memory_remember handler: index hash after successful memory creation
 - [x] memory_forget handler: clean up HashIndex entry (non-fatal)

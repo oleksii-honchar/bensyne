@@ -2,7 +2,7 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-22"
+updatedAt: "2026-08-23"
 tags: []
 ---
 
