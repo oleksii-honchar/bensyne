@@ -7,10 +7,16 @@ import * as chokidar from 'chokidar';
 import { EventEmitter } from 'node:events';
 import * as os from 'os';
 import * as path from 'path';
+import { makeRe } from 'picomatch';
 import { WatchSourceConfig } from '../config/config-schemas';
 import { ConfigurationService } from '../config/configuration.service';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { BensyneClient } from './bensyne-client.service';
+
+// chokidar tests ignore patterns against the FULL absolute path, so patterns
+// must be normalized to a '**/' prefix; dot: true so dotfile dirs (e.g. .smart-env) match.
+const normalizeGlob = (g: string): string => (g.startsWith('**/') ? g : '**/' + g);
+const globToRegex = (glob: string): RegExp => makeRe(normalizeGlob(glob), { dot: true });
 
 @Injectable()
 export class FileWatcherService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -179,7 +185,7 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     return path.resolve(filePath);
   }
 
-  private buildIgnorePatterns(source: WatchSourceConfig): (string | RegExp)[] {
+  private buildIgnorePatterns(source: WatchSourceConfig): RegExp[] {
     return [
       ...source.exclude,
       '.git/**',
@@ -189,6 +195,6 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
       '**/.DS_Store',
       '**/Thumbs.db',
       '**/.env*',
-    ];
+    ].map(globToRegex);
   }
 }

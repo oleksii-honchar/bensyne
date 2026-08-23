@@ -47,15 +47,17 @@ export function resolveEnvVars(obj: unknown): unknown {
   return obj;
 }
 
-export const DEFAULT_CONFIG: Configuration = {
+// Seed is the canonical, human-editable default config (no derived fields).
+// `memoryBank` is intentionally absent — it derives from `id` via the schema
+// transform (config-schemas.ts), the same way the YAML load path does (ADR-5).
+export const DEFAULT_CONFIG_SEED = {
   watchSources: [
     {
       id: 'agent-sessions',
       path: '~/.agent-sessions',
-      memoryBank: 'agent-sessions',
-      exclude: ['archive/**', '**/archive/**', '.smart-env/**'],
+      exclude: ['archive/**', '**/archive/**', '.smart-env/**', '**/tool-responses/**'],
       debounceMs: 5000,
-      sourceType: SOURCE_TYPES.VAULT,
+      sourceType: SOURCE_TYPES.AGENT_SESSIONS,
     },
   ],
   chunking: {
@@ -123,6 +125,10 @@ export const DEFAULT_CONFIG: Configuration = {
     },
   },
 };
+
+// Derived, schema-validated default config. `memoryBank` is populated from
+// `id` by the same transform the YAML load path uses — never hardcoded.
+export const DEFAULT_CONFIG: Configuration = configurationSchema.parse(DEFAULT_CONFIG_SEED);
 
 @Injectable()
 export class ConfigurationService implements OnApplicationBootstrap {
@@ -212,7 +218,7 @@ export class ConfigurationService implements OnApplicationBootstrap {
       const dir = path.dirname(this.configFilePath);
       await fs.mkdir(dir, { recursive: true });
 
-      const yamlContent = yaml.dump(DEFAULT_CONFIG, {
+      const yamlContent = yaml.dump(DEFAULT_CONFIG_SEED, {
         indent: 2,
         noRefs: true,
         lineWidth: 120,

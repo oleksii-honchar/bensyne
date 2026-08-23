@@ -193,24 +193,74 @@ describe('FileWatcherService', () => {
   });
 
   describe('ignore patterns', () => {
-    it('applies ignore patterns correctly including defaults', async () => {
+    const getIgnoredPatterns = (): RegExp[] => {
+      const watchCall = mockWatchFn.mock.calls[0];
+      const options = watchCall?.[1] as Record<string, unknown>;
+      return options.ignored as RegExp[];
+    };
+
+    it('builds all ignore patterns as RegExp instances', async () => {
+      configService.getWatchSources.mockReturnValue([aWatchSourceConfig()]);
+
+      await service.start();
+
+      const ignored = getIgnoredPatterns();
+
+      expect(Array.isArray(ignored)).toBe(true);
+      expect(ignored.length).toBeGreaterThan(0);
+      for (const pattern of ignored) {
+        expect(pattern).toBeInstanceOf(RegExp);
+      }
+    });
+
+    it('ignores config exclude globs matched against full absolute paths', async () => {
       const source = aWatchSourceConfig({
-        exclude: ['**/node_modules/**', '**/temp/**'],
+        exclude: ['**/tool-responses/**', '.smart-env/**'],
       });
       configService.getWatchSources.mockReturnValue([source]);
 
       await service.start();
 
-      const watchCall = mockWatchFn.mock.calls[0];
-      const options = watchCall?.[1] as Record<string, unknown>;
-      const ignored = options.ignored as (string | RegExp)[];
+      const ignored = getIgnoredPatterns();
 
-      expect(Array.isArray(ignored)).toBe(true);
-      expect(ignored).toContain('**/node_modules/**');
-      expect(ignored).toContain('**/temp/**');
-      expect(ignored).toContain('**/.DS_Store');
-      expect(ignored).toContain('**/Thumbs.db');
-      expect(ignored).toContain('**/.env*');
+      expect(
+        ignored.some(r => r.test('/abs/.agent-sessions/26/08/23/x/tool-responses/a.json')),
+      ).toBe(true);
+      // dot: true — dotfile dirs like .smart-env must match
+      expect(ignored.some(r => r.test('/abs/x/.smart-env/f.yaml'))).toBe(true);
+    });
+
+    it('ignores default patterns: .git, node_modules, .DS_Store, .env (dot: true)', async () => {
+      configService.getWatchSources.mockReturnValue([aWatchSourceConfig()]);
+
+      await service.start();
+
+      const ignored = getIgnoredPatterns();
+
+      expect(ignored.some(r => r.test('/abs/.agent-sessions/.git/FETCH_HEAD'))).toBe(true);
+      expect(ignored.some(r => r.test('/abs/x/node_modules/pkg/index.js'))).toBe(true);
+      expect(ignored.some(r => r.test('/abs/x/.DS_Store'))).toBe(true);
+      expect(ignored.some(r => r.test('/abs/x/.env.local'))).toBe(true);
+    });
+
+    it('never matches material session files (no false positives)', async () => {
+      const source = aWatchSourceConfig({
+        exclude: ['**/tool-responses/**', '.smart-env/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredPatterns();
+      const materialPaths = [
+        '/abs/.agent-sessions/x/session.md',
+        '/abs/.agent-sessions/x/specifications/spec.md',
+        '/abs/.agent-sessions/x/materials/notes.txt',
+      ];
+
+      for (const materialPath of materialPaths) {
+        expect(ignored.some(r => r.test(materialPath))).toBe(false);
+      }
     });
   });
 

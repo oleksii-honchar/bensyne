@@ -6,7 +6,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { Configuration } from './config-schemas';
-import { ConfigurationService } from './configuration.service';
+import { ConfigurationService, DEFAULT_CONFIG, DEFAULT_CONFIG_SEED } from './configuration.service';
+import { SOURCE_TYPES } from './source-types';
 
 // Mock chokidar
 jest.mock('chokidar', () => ({
@@ -301,6 +302,41 @@ describe('ConfigurationService', () => {
     });
   });
 
+  describe('DEFAULT_CONFIG_SEED / DEFAULT_CONFIG (ADR-5)', () => {
+    it('seed watch source has NO memoryBank, AGENT_SESSIONS sourceType, tool-responses exclude', () => {
+      const seedSource = DEFAULT_CONFIG_SEED.watchSources[0];
+      expect('memoryBank' in seedSource).toBe(false);
+      expect(seedSource.sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
+      expect(seedSource.exclude).toContain('**/tool-responses/**');
+      // existing exclude entries preserved
+      expect(seedSource.exclude).toContain('archive/**');
+      expect(seedSource.exclude).toContain('**/archive/**');
+      expect(seedSource.exclude).toContain('.smart-env/**');
+    });
+
+    it('DEFAULT_CONFIG watch source memoryBank derives from id via schema transform', () => {
+      const source = DEFAULT_CONFIG.watchSources[0];
+      expect(source.id).toBe('agent-sessions');
+      expect(source.memoryBank).toBe('agent-sessions');
+      expect(source.sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
+      expect(source.exclude).toContain('**/tool-responses/**');
+    });
+
+    it('initializeDefaultConfig writes SEED: no memoryBank key, agent-sessions sourceType', async () => {
+      await createModule();
+      const result = await service.initializeDefaultConfig();
+      expect(result.isOk()).toBe(true);
+
+      const content = await fs.readFile(configPath, 'utf-8');
+      expect(content).not.toMatch(/^memoryBank:/m);
+      const parsed = yaml.load(content) as Record<string, unknown> | null;
+      const watchSources = (parsed as { watchSources: unknown[] }).watchSources;
+      const firstSource = watchSources[0] as Record<string, unknown>;
+      expect('memoryBank' in firstSource).toBe(false);
+      expect(firstSource.sourceType).toBe(SOURCE_TYPES.AGENT_SESSIONS);
+    });
+  });
+
   describe('initializeDefaultConfig()', () => {
     it('creates config directory if it does not exist', async () => {
       const newDir = path.join(testDir, 'new-config-dir');
@@ -340,7 +376,7 @@ describe('ConfigurationService', () => {
       const parsed = yaml.load(content) as unknown as Configuration;
 
       expect(parsed.chunking?.maxSizes?.agentSessions).toBe(400);
-      expect(parsed.watchSources?.[0]?.sourceType).toBe('vault');
+      expect(parsed.watchSources?.[0]?.sourceType).toBe('agent-sessions');
     });
 
     it('includes default MCP configuration', async () => {
