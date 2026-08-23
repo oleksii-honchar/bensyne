@@ -2,8 +2,7 @@
 
 Task 7 rewire: business goes through ``MemoryBankService``, technical data
 (instance pool + filesystem scan) through the router. The use cases no longer
-touch ``router.registry`` / ``router.get_bank_description`` / ``router.register_bank``
-(removed in Task 3).
+touch the router's removed registry duties (removed in Task 3).
 """
 
 from datetime import datetime

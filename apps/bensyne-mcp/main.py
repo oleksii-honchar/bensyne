@@ -88,6 +88,11 @@ def main() -> None:
             config,
             instance_pool=dataclasses.replace(config.instance_pool, data_dir=args.data_dir),
         )
+        # The repository singleton resolves its path via resolve_data_dir()
+        # (DATA_DIR env / ./data default) — surface the CLI flag through the
+        # same channel so --data-dir governs EVERY data path, not just the
+        # router's (Task 9: live servers must never write to ./data).
+        os.environ["DATA_DIR"] = args.data_dir
     if args.log_level is not None:
         config = dataclasses.replace(
             config,
@@ -95,7 +100,6 @@ def main() -> None:
         )
 
     # Step 2: Setup logging with configured level and file
-    import os
     os.environ["LOG_LEVEL"] = config.logging.level
     logger = setup_logging(log_file=config.logging.log_file)
     logger.info("Starting Bensyne")

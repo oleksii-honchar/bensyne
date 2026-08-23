@@ -214,10 +214,14 @@ class TestMountHealthRoutes:
 class TestMainEntryPoints:
     """Test main.py CLI argument parsing and startup sequence."""
 
-    def test_main_parses_cli_args(self) -> None:
+    def test_main_parses_cli_args(self, monkeypatch) -> None:
         """main.py parses --port, --data-dir, --log-level arguments."""
         import sys
         from unittest.mock import patch
+
+        # main() surfaces --data-dir through the DATA_DIR env channel for the
+        # repository singleton — restore afterwards so it doesn't leak.
+        monkeypatch.setenv("DATA_DIR", "TEST_DATADIR_SENTINEL")
 
         test_args = ["main.py", "--port", "8080", "--data-dir", "/tmp/data", "--log-level", "DEBUG"]
 
@@ -466,6 +470,81 @@ class TestMainEntryPoints:
 
             assert isinstance(service, MemoryBankService)
             assert container.memory_bank_service() is service
+
+    def test_main_data_dir_flag_governs_repository_singleton(self, tmp_path, monkeypatch) -> None:
+        """--data-dir CLI flag must route the repository singleton's memory_banks.db
+        into that dir — not the CWD-relative ./data default.
+
+        Task 8 wired the real repository via ``resolve_data_dir()`` (env/./data);
+        ``--data-dir`` previously patched only the router config, so a live server
+        with ``--data-dir <tmp>`` wrote memory_banks.db into the real app data dir.
+        """
+        import sys
+        from unittest.mock import patch, MagicMock
+
+        # Ensure no DATA_DIR env leak — the flag alone must win.
+        monkeypatch.setenv("DATA_DIR", "TEST_DATADIR_SENTINEL")
+        test_args = ["main.py", "--data-dir", str(tmp_path)]
+
+        mock_server = MagicMock()
+        mock_server.port = 3000
+        mock_server.host = "0.0.0.0"
+
+        mock_logging_cfg = MagicMock()
+        mock_logging_cfg.level = "INFO"
+        mock_logging_cfg.format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        mock_logging_cfg.log_file = None
+
+        mock_instance_pool = MagicMock()
+        mock_instance_pool.data_dir = "./data"
+        mock_instance_pool.default_bank = "default"
+        mock_instance_pool.max_instances = 50
+        mock_instance_pool.eviction_timeout = 300
+
+        mock_config = MagicMock()
+        mock_config.server = mock_server
+        mock_config.logging = mock_logging_cfg
+        mock_config.instance_pool = mock_instance_pool
+
+        with (
+            patch.object(sys, "argv", test_args),
+            patch("src.infrastructure.config.manager.ConfigManager") as MockConfigManager,
+            patch("src.utils.logging.setup_logging") as mock_setup_logging,
+            patch("src.infrastructure.bank.router.MemoryBankRouter") as MockMemoryBankRouter,
+            patch("src.app.create_application") as mock_create_app,
+            patch("src.middleware.health.mark_default_instance_ready"),
+            patch("asyncio.get_event_loop") as mock_get_loop,
+            patch("dataclasses.replace", side_effect=lambda obj, **kwargs: obj),
+        ):
+
+            MockConfigManager.return_value.load.return_value = mock_config
+            mock_setup_logging.return_value = MagicMock()
+
+            mock_router_instance = MagicMock()
+            MockMemoryBankRouter.return_value = mock_router_instance
+
+            mock_app = MagicMock()
+            mock_create_app.return_value = mock_app
+
+            mock_loop = MagicMock()
+            mock_get_loop.return_value = mock_loop
+
+            import importlib
+            import main
+
+            importlib.reload(main)
+
+            try:
+                main.main()
+            except SystemExit:
+                pass
+
+            # Real ProductionContainer ran the seed — memory_banks.db must land
+            # under the --data-dir target, never the CWD-relative ./data default.
+            from src.infrastructure.bank.memory_bank_repository import memory_banks_db_path
+
+            assert memory_banks_db_path(tmp_path).exists()
+            assert not memory_banks_db_path("./data").exists()
 
 
 class TestGracefulShutdown:
