@@ -961,7 +961,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       expect(result.isOk()).toBe(true);
       expect(result.getValue()).toHaveLength(1);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('[enrichment] ExtractMetadata failed'),
+        expect.stringContaining('[mastra-chunking:enrichment] ExtractMetadata failed'),
         expect.objectContaining({ error: 'LLM unavailable' }),
       );
     });
@@ -1920,7 +1920,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Attempting enrichment',
+        '[mastra-chunking:enrichment] Attempting enrichment',
         expect.objectContaining({
           enabled: true,
           llmUrl: 'present',
@@ -1950,7 +1950,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Skipped',
+        '[mastra-chunking:enrichment] Skipped',
         expect.objectContaining({
           reason: 'enabled=false',
           filePath: 'README.md',
@@ -1978,7 +1978,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Skipped',
+        '[mastra-chunking:enrichment] Skipped',
         expect.objectContaining({
           reason: 'missing apiKey',
           filePath: 'README.md',
@@ -2006,7 +2006,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Skipped',
+        '[mastra-chunking:enrichment] Skipped',
         expect.objectContaining({
           reason: 'missing llmUrl',
           filePath: 'README.md',
@@ -2032,7 +2032,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        '[enrichment] ExtractMetadata failed',
+        '[mastra-chunking:enrichment] ExtractMetadata failed',
         expect.objectContaining({
           error: 'LLM unavailable',
           filePath: 'README.md',
@@ -2082,7 +2082,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[enrichment] Extracted metadata; hasTitle=true, hasKeywords=true, hasSummary=true',
+        '[mastra-chunking:enrichment] Extracted metadata; hasTitle=true, hasKeywords=true, hasSummary=true',
         expect.objectContaining({
           hasTitle: true,
           hasKeywords: true,
@@ -2126,7 +2126,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('[enrichment] Extracted metadata'),
+        expect.stringContaining('[mastra-chunking:enrichment] Extracted metadata'),
         expect.objectContaining({
           hasTitle: true,
           hasKeywords: true,
@@ -2166,7 +2166,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       await service.chunkFile('# Title', 'README.md', 'test-source');
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('[enrichment] Extracted metadata'),
+        expect.stringContaining('[mastra-chunking:enrichment] Extracted metadata'),
         expect.objectContaining({
           hasTitle: true,
           hasKeywords: true,

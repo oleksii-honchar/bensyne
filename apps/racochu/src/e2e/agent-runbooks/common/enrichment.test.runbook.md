@@ -131,8 +131,8 @@ Wait **≥3s** for debounce + chunking + enrichment (the LLM call is slower than
 #### Step 6: Check Logs (enrichment executed)
 
 - Check logs at `~/.local/share/racochu/logs` to verify enrichment executed for the test file.
-- **PASS:** the logs contain enrichment activity, e.g. `[enrichment] Attempting enrichment` followed by `[enrichment] LLM created` (and a successful metadata extraction) for the fixture.
-- **FAIL signature:** the logs show `[enrichment] Skipped` or `[enrichment] ExtractMetadata failed` ⇒ the enrichment path was not taken, or the LLM failed — confirm the LLM endpoint is reachable and `enrichment.enabled: true` in `dev.yaml`.
+- **PASS:** the logs contain enrichment activity, e.g. `[mastra-chunking:enrichment] Attempting enrichment` followed by `[mastra-chunking:enrichment] LLM client created` (and a successful metadata extraction) for the fixture.
+- **FAIL signature:** the logs show `[mastra-chunking:enrichment] Skipped` or `[mastra-chunking:enrichment] ExtractMetadata failed` ⇒ the enrichment path was not taken, or the LLM failed — confirm the LLM endpoint is reachable and `enrichment.enabled: true` in `dev.yaml`.
 
 #### Step 7: Cleanup
 
@@ -151,7 +151,7 @@ Wait **≥3s** for debounce + chunking + enrichment (the LLM call is slower than
 |-------|----------|
 | Bank scoping | Every bank-scoped call uses `memory_bank="tmp-vault"` (vault path) or `memory_bank="tmp-agent-sessions"` (edge path); never omitted, never mixed |
 | Fixture identifiable | Unique `RB_ENRICH_001` (vault) + `RB_ENRICH_EDGE_001` (edge) tokens |
-| Enrichment executed | Logs show `[enrichment] Attempting enrichment` + `[enrichment] LLM created` |
+| Enrichment executed | Logs show `[mastra-chunking:enrichment] Attempting enrichment` + `[mastra-chunking:enrichment] LLM client created` |
 | LLM responded | Enriched metadata present on recalled chunks |
 | Enriched metadata | Non-empty `mastraDocTitle` + `mastraDocKeywords` + `mastraDocSummary` |
 | Title meaningful | `mastraDocTitle` reflects the document's semantic topic (not a raw path) |

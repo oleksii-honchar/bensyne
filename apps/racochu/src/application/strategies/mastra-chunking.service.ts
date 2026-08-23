@@ -230,7 +230,7 @@ Do not include any other text, explanations, or markdown formatting.`;
       // All 429 backoff retries exhausted — transient, a corrective prompt would
       // not help. Leave the chunk un-enriched; the remaining chunks still enrich.
       if (isRateLimitError(error)) {
-        this.logger.warn('[enrichment] Rate limit retries exhausted', {
+        this.logger.warn('[mastra-chunking:enrichment] Rate limit retries exhausted', {
           error: error instanceof Error ? error.message : String(error),
           retries: ENRICHMENT_429_MAX_RETRIES,
           filePath,
@@ -245,7 +245,7 @@ Do not include any other text, explanations, or markdown formatting.`;
         this.applyEnrichmentToChunk(chunk, enrichedDoc);
       } catch (error2) {
         const err = error2 instanceof Error ? error2 : new Error(String(error2));
-        this.logger.warn('[enrichment] ExtractMetadata failed', {
+        this.logger.warn('[mastra-chunking:enrichment] ExtractMetadata failed', {
           error: err.message,
           stack: err.stack ?? 'no stack',
           filePath,
@@ -330,7 +330,7 @@ Do not include any other text, explanations, or markdown formatting.`;
       const docDocs = document.getDocs();
 
       if (enrichmentConfig.enabled && enrichmentConfig.llmUrl && enrichmentConfig.apiKey) {
-        this.logger.info('[enrichment] Attempting enrichment', {
+        this.logger.info('[mastra-chunking:enrichment] Attempting enrichment', {
           enabled: enrichmentConfig.enabled,
           llmUrl: 'present',
           apiKey: 'present',
@@ -345,12 +345,12 @@ Do not include any other text, explanations, or markdown formatting.`;
           });
 
           if (!customLLM) {
-            this.logger.warn('[enrichment] LLM creation returned null', {
+            this.logger.warn('[mastra-chunking:enrichment] LLM creation returned null', {
               model: enrichmentConfig.llmModel,
               filePath,
             });
           } else {
-            this.logger.info('[enrichment] LLM created', {
+            this.logger.info('[mastra-chunking:enrichment] LLM client created', {
               model: enrichmentConfig.llmModel,
               filePath,
             });
@@ -377,7 +377,7 @@ Do not include any other text, explanations, or markdown formatting.`;
             const hasSummary = typeof enrichmentData?.summary === 'string';
 
             this.logger.info(
-              `[enrichment] Extracted metadata; hasTitle=${hasTitle}, hasKeywords=${hasKeywords}, hasSummary=${hasSummary}`,
+              `[mastra-chunking:enrichment] Extracted metadata; hasTitle=${hasTitle}, hasKeywords=${hasKeywords}, hasSummary=${hasSummary}`,
               {
                 hasTitle,
                 hasKeywords,
@@ -389,7 +389,7 @@ Do not include any other text, explanations, or markdown formatting.`;
         } catch (error) {
           // Non-fatal — log warning, continue without enrichment
           const err = error instanceof Error ? error : new Error(String(error));
-          this.logger.warn('[enrichment] ExtractMetadata failed', {
+          this.logger.warn('[mastra-chunking:enrichment] ExtractMetadata failed', {
             error: err.message,
             stack: err.stack ?? 'no stack',
             filePath,
@@ -406,7 +406,7 @@ Do not include any other text, explanations, or markdown formatting.`;
           reason = 'missing apiKey';
         }
 
-        this.logger.info('[enrichment] Skipped', {
+        this.logger.info('[mastra-chunking:enrichment] Skipped', {
           reason,
           filePath,
         });
