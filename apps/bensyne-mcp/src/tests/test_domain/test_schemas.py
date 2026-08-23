@@ -294,6 +294,24 @@ class TestMemoryBankSchemaValidName:
         )
         assert schema.name == "bank2"
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "tmp-vault",
+            "tmp-obsidian",
+            "tmp-agent-sessions",
+            "my-bank",
+        ],
+    )
+    def test_accepts_hyphenated_name(self, name):
+        schema = MemoryBankSchema.model_validate(
+            {
+                "name": name,
+                "description": "A test bank",
+            }
+        )
+        assert schema.name == name
+
     def test_accepts_long_name_up_to_100(self):
         long_name = "a" * 100
         schema = MemoryBankSchema.model_validate(
@@ -311,12 +329,13 @@ class TestMemoryBankSchemaRejectsInvalidName:
     @pytest.mark.parametrize(
         "name",
         [
-            "my-bank",  # hyphen
             "my bank",  # space
+            "bank name",  # space
             "my@bank",  # special char
             "my.bank",  # dot
             "my/bank",  # slash
             "my!bank",  # exclamation
+            "bank!",  # exclamation
         ],
     )
     def test_rejects_name_with_special_characters(self, name):
@@ -333,6 +352,15 @@ class TestMemoryBankSchemaRejectsInvalidName:
             MemoryBankSchema.model_validate(
                 {
                     "name": "",
+                    "description": "A test bank",
+                }
+            )
+
+    def test_rejects_whitespace_only_name(self):
+        with pytest.raises(ValidationError):
+            MemoryBankSchema.model_validate(
+                {
+                    "name": "   ",
                     "description": "A test bank",
                 }
             )

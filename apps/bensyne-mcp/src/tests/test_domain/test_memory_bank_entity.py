@@ -38,6 +38,14 @@ class TestMemoryBankOfValidData:
         bank = result.value
         assert before <= bank.created_at <= after
 
+    def test_of_accepts_hyphenated_name(self):
+        result = MemoryBank.of("tmp-vault", "Vault knowledge")
+        assert result.is_ok is True
+        bank = result.value
+        assert bank.name == "tmp-vault"
+        assert bank.description == "Vault knowledge"
+        assert bank.status == "registered"
+
 
 class TestMemoryBankOfRejectsInvalidData:
     """MemoryBank.of rejects empty name/description and returns Result.ko."""
@@ -67,7 +75,7 @@ class TestMemoryBankOfRejectsInvalidData:
         assert result.value is None
 
     def test_of_rejects_invalid_name_with_special_chars(self):
-        result = MemoryBank.of("my-bank!", "A test bank")
+        result = MemoryBank.of("bank!", "A test bank")
         assert result.is_ko is True
         assert result.value is None
 

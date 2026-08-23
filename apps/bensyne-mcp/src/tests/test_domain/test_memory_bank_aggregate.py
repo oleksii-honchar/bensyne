@@ -307,6 +307,17 @@ class TestUpdateDescription:
         assert bank.description == original_description
         assert result.value.description == "new desc"
 
+    def test_update_description_works_for_hyphen_named_bank(self):
+        bank = MemoryBank.of("tmp-vault", "Vault knowledge").value
+
+        result = bank.update_description("Vault knowledge (recall-only)")
+
+        assert result.is_ok is True
+        updated = result.value
+        assert updated.description == "Vault knowledge (recall-only)"
+        assert updated.name == "tmp-vault"
+        assert updated.status == bank.status
+
     def test_update_description_rejects_empty_description(self):
         bank = _make_active_bank()
         original_description = bank.description

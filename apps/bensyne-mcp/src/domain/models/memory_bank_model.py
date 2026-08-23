@@ -15,6 +15,6 @@ class MemoryBankSchema(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        if not re.fullmatch(r"[a-zA-Z0-9_]+", v):
-            raise ValueError("Memory bank name must contain only alphanumeric characters and underscores")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", v):
+            raise ValueError("Memory bank name must contain only alphanumeric characters, underscores and hyphens")
         return v
