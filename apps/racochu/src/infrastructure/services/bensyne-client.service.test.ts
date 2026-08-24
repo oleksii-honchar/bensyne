@@ -1218,6 +1218,105 @@ describe('BensyneClient (Streamable HTTP)', () => {
     });
   });
 
+  describe('forgetByFile', () => {
+    let client: BensyneClient;
+    let sendRequestMock: jest.Mock;
+
+    const mockSendRequest = (impl: (...args: unknown[]) => unknown) => {
+      sendRequestMock = jest.fn(impl);
+      // Shadow the private sendRequest with a controlled mock.
+      (client as unknown as { sendRequest: unknown }).sendRequest = sendRequestMock;
+      return sendRequestMock;
+    };
+
+    const toolResponse = (payload: Record<string, unknown>) => ({
+      result: {
+        content: [{ type: 'text', text: JSON.stringify(payload) }],
+      },
+      _sessionId: null,
+    });
+
+    beforeEach(async () => {
+      client = await createClient();
+    });
+
+    it('sends a tools/call for forgetFile with file_path and memory_bank arguments', async () => {
+      mockSendRequest(() => toolResponse({ status: 'forgotten', file_id: 'file-1', files_affected: 3 }));
+
+      const result = await client.forgetByFile('/notes/a.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(sendRequestMock).toHaveBeenCalledTimes(1);
+      const sent = sendRequestMock.mock.calls[0][0];
+      expect(sent.method).toBe('tools/call');
+      expect(sent.params.name).toBe('forgetFile');
+      expect(sent.params.arguments).toEqual({ file_path: '/notes/a.md', memory_bank: 'default' });
+    });
+
+    it('returns ok with the parsed forgotten payload on success', async () => {
+      mockSendRequest(() =>
+        toolResponse({ status: 'forgotten', file_id: 'file-42', files_affected: 7 }),
+      );
+
+      const result = await client.forgetByFile('/notes/a.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({
+        status: 'forgotten',
+        file_id: 'file-42',
+        files_affected: 7,
+      });
+    });
+
+    it('returns ok (no-op) when response status is already_deleted', async () => {
+      mockSendRequest(() => toolResponse({ status: 'already_deleted', file_id: 'file-42' }));
+
+      const result = await client.forgetByFile('/notes/gone.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue().status).toBe('already_deleted');
+    });
+
+    it('returns ok (no-op) when response status is FILE_NOT_FOUND', async () => {
+      mockSendRequest(() => toolResponse({ status: 'FILE_NOT_FOUND', file_id: 'file-42' }));
+
+      const result = await client.forgetByFile('/notes/unknown.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue().status).toBe('FILE_NOT_FOUND');
+    });
+
+    it('returns ko on transport error after exhausting retries', async () => {
+      mockSendRequest(() => Promise.reject(new Error('ECONNREFUSED')));
+
+      const result = await client.forgetByFile('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('ECONNREFUSED');
+    });
+
+    it('returns ko on MCP error response', async () => {
+      mockSendRequest(() => ({
+        error: { code: -32603, message: 'Internal error' },
+        _sessionId: null,
+      }));
+
+      const result = await client.forgetByFile('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('Internal error');
+    });
+
+    it('returns ko on an unexpected non-no-op status', async () => {
+      mockSendRequest(() => toolResponse({ status: 'internal_failure', error: 'something broke' }));
+
+      const result = await client.forgetByFile('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('something broke');
+    });
+  });
+
   describe('registerBank', () => {
     let client: BensyneClient;
 

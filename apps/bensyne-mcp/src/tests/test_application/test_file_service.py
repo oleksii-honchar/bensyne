@@ -585,6 +585,46 @@ class TestReadPassthroughs:
         file_repo.get_file_by_id.assert_called_once_with("f2")
 
 
+class TestGetFileByPath:
+    """get_file_by_path returns a File entity when found, or FILE_NOT_FOUND when not."""
+
+    def test_returns_file_when_found(self, service: FileService, file_repo: MagicMock) -> None:
+        """When the repository finds a file by path, return it."""
+        file = _a_file(id="f1", path="/vault/notes/test.md")
+        file_repo.get_file_by_path.return_value = Result.ok(file)
+
+        result = service.get_file_by_path("/vault/notes/test.md")
+
+        assert result.is_ok is True
+        assert result.value.id == "f1"
+        assert result.value.path == "/vault/notes/test.md"
+        file_repo.get_file_by_path.assert_called_once_with("/vault/notes/test.md")
+
+    def test_returns_file_not_found_when_path_does_not_exist(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """When the repository returns None for a path, return FILE_NOT_FOUND."""
+        file_repo.get_file_by_path.return_value = Result.ok(None)
+
+        result = service.get_file_by_path("/vault/notes/nonexistent.md")
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "FILE_NOT_FOUND"
+
+    def test_returns_ko_when_repository_returns_ko(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """When the repository returns ko, propagate the error."""
+        file_repo.get_file_by_path.return_value = Result.ko(
+            [ErrorWithDetails("FILE_GET_BY_PATH_ERROR", {"error": "DB error"})]
+        )
+
+        result = service.get_file_by_path("/vault/notes/test.md")
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "FILE_GET_BY_PATH_ERROR"
+
+
 # ===================================================================
 # Structured logging — each method emits info at entry, debug for
 # complex operations, with service="file_service", method="...", key

@@ -1,5 +1,6 @@
 import { FileMemoryTracker } from '@/domain/file-memory-tracker.aggregate';
 import { AggregateResult } from '@/utils/aggregate-result';
+import { ErrorWithDetails } from '@/utils/error-with-details';
 import { Test, TestingModule } from '@nestjs/testing';
 import { FileMemoryTrackerRepository } from '../repositories/file-memory-tracker.repository';
 import {
@@ -205,6 +206,51 @@ describe('FileMemoryTrackerService', () => {
       const result = await service.getMemoryIds('/nonexistent/file.txt');
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('findBySourceId', () => {
+    it('delegates to repository and returns trackers', async () => {
+      const sourceId = 'src-1';
+      const tracker1 = aFileMemoryTracker({ sourceId });
+      const tracker2 = aFileMemoryTracker({ sourceId });
+      repository.findBySourceId.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => [tracker1, tracker2],
+        getErrors: () => [],
+      });
+
+      const result = await service.findBySourceId(sourceId);
+
+      expect(repository.findBySourceId).toHaveBeenCalledWith(sourceId);
+      expect(result).toEqual([tracker1, tracker2]);
+    });
+
+    it('returns empty array when no trackers exist for the source', async () => {
+      repository.findBySourceId.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => [],
+        getErrors: () => [],
+      });
+
+      const result = await service.findBySourceId('no-such-source');
+
+      expect(result).toEqual([]);
+    });
+
+    it('throws when the repository returns a ko result', async () => {
+      repository.findBySourceId.mockResolvedValue({
+        isOk: () => false,
+        isKo: () => true,
+        getValue: () => {
+          throw new Error('Cannot get value from a Ko result');
+        },
+        getErrors: () => [new ErrorWithDetails('repository failure', 'RepoFailure')],
+      });
+
+      await expect(service.findBySourceId('src-1')).rejects.toThrow('repository failure');
     });
   });
 

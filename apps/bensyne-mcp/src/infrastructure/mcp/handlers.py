@@ -171,6 +171,45 @@ async def handle_forget(
     return _raise_on_ko(result, "forgetMemory")
 
 
+@log_tool_call("forgetFile")
+async def handle_forget_file(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
+    """Delete a file and its unique memories from the specified memory bank.
+
+    Operator-only file-granular forget: removes a whole file's mnemosyne
+    memories (shared-memory-safely), hash-index entries, chunk rows, and the
+    file row (DELETED tombstone). Intentionally bypasses the forgetMemory
+    bank-type guard — file-level deletion is an operator action, not a
+    recall-only-surface operation.
+    """
+    memory_bank = require_memory_bank(arguments)
+    file_path = arguments.get("file_path")
+
+    if not file_path:
+        raise ValidationError("file_path is required")
+
+    instance = await router.get_instance(memory_bank)
+
+    # Per-bank file metadata dependencies via DI container (D25)
+    container = _resolve_container(container)
+    bank_dir = router.get_bank_dir(memory_bank)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
+    hash_index_service = container.hash_index_service(
+        memory_bank=memory_bank, memory_bank_router=router
+    )
+
+    use_case = container.forget_file_use_case(
+        file_service=file_service,
+        hash_index_service=hash_index_service,
+        mnemosyne_client=instance,
+        memory_bank=memory_bank,
+    )
+    result = use_case.execute({"memory_bank": memory_bank, "file_path": file_path})
+    return _raise_on_ko(result, "forgetFile")
+
+
 @log_tool_call("updateMemory")
 async def handle_update(router: MemoryBankRouter, arguments: dict) -> dict:
     """Update memory content or importance in the specified memory bank."""

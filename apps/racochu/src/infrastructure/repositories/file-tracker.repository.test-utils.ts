@@ -60,6 +60,7 @@ export function aPrismaFileTrackerMemory(
 export function aMockPrismaFileTracker() {
   return {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
     upsert: jest.fn(),
     delete: jest.fn(),
     updateMany: jest.fn(),

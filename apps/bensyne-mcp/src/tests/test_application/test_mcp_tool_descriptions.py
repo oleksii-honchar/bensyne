@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 
 from src.app import register_tools
 
-# The 11 tools that must be exposed.
+# The 12 tools that must be exposed.
 EXPECTED_TOOLS = {
     "rememberMemory",
     "recallMemory",
@@ -34,6 +34,7 @@ EXPECTED_TOOLS = {
     "searchFiles",
     "expandFileRelations",
     "fetchFile",
+    "forgetFile",
 }
 
 # Tools that accept a ``memory_bank`` parameter.
@@ -47,6 +48,7 @@ MEMORY_BANK_TOOLS = {
     "searchFiles",
     "expandFileRelations",
     "fetchFile",
+    "forgetFile",
 }
 
 
@@ -78,8 +80,8 @@ def _memory_bank_param_desc(mcp_tools: dict[str, object]) -> dict[str, str]:
 
 
 class TestToolRegistrationCompleteness:
-    async def test_all_eleven_tools_are_registered(self, mcp_tools) -> None:
-        """All 11 bensyne tools must be present in the tool registry."""
+    async def test_all_twelve_tools_are_registered(self, mcp_tools) -> None:
+        """All 12 bensyne tools must be present in the tool registry."""
         missing = EXPECTED_TOOLS - set(mcp_tools)
         assert not missing, f"Missing tools in registry: {sorted(missing)}"
 
@@ -187,3 +189,17 @@ class TestWriteDisciplineEncoded:
             assert "file" in desc or "source" in desc, (
                 f"{name} must explain it works on file/source memories"
             )
+
+    async def test_forget_file_marks_operator_only_destructive(self, mcp_tools) -> None:
+        """forgetFile is an operator-only, destructive, file-granular tool — the schema
+        must say so, since it is NOT part of the skills recall-only surface agents use."""
+        desc = _tool_descriptions(mcp_tools)["forgetFile"].lower()
+        assert "operator" in desc, (
+            "forgetFile must state it is an operator-only tool"
+        )
+        assert any(
+            cue in desc for cue in ("destructive", "permanently", "irreversible")
+        ), "forgetFile must state it is destructive"
+        assert (
+            "not part of" in desc or "not for agents" in desc or "not recall" in desc
+        ), "forgetFile must clarify it is outside the agent recall-only surface"

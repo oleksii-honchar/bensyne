@@ -35,6 +35,46 @@ export class FileMemoryTrackerRepository {
   }
 
   /**
+   * Find all tracked files for a given sourceId, each mapped to a FileMemoryTracker
+   * aggregate. Used by reconciliation to iterate over every file tracked for a source.
+   *
+   * Empty result is Result.ok([]). Malformed rows (that fail aggregate construction)
+   * are skipped so a single bad record never blocks reconciliation of the rest;
+   * Prisma-level errors still propagate.
+   */
+  async findBySourceId(sourceId: string): Promise<Result<FileMemoryTracker[]>> {
+    const trackers = await this.prisma.fileTracker.findMany({
+      where: { sourceId },
+      include: { memories: true },
+    });
+
+    if (trackers.length === 0) {
+      return Result.ok([]);
+    }
+
+    const aggregates: FileMemoryTracker[] = [];
+    for (const tracker of trackers) {
+      const memoryIds = tracker.memories.map((m: { memoryId: string }) => m.memoryId);
+
+      const result = FileMemoryTracker.of({
+        id: tracker.id,
+        filePath: tracker.filePath,
+        memoryIds,
+        sourceId: tracker.sourceId,
+        memoryBank: tracker.memoryBank,
+      });
+
+      if (result.isKo()) {
+        continue;
+      }
+
+      aggregates.push(result.getValue());
+    }
+
+    return Result.ok(aggregates);
+  }
+
+  /**
    * Find existing tracker by filePath, or save the provided aggregate with a pre-generated ID.
    * Aggregate-first: caller creates the aggregate with domain logic, repository just persists it.
    */

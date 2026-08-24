@@ -413,6 +413,45 @@ def register_tools(
             args["adjacent_chunks"] = adjacent_chunks
         return await handlers.handle_fetch_file(router, args, container)
 
+    # Operator-only, file-granular destructive tool. Deliberately NOT part of the
+    # skills recall-only surface: only racochu reconciliation or explicit
+    # user/operator direction should call it.
+    @mcp.tool(name="forgetFile")
+    async def forget_file(
+        file_path: Annotated[
+            str,
+            "Required. The exact absolute path stored in the bank's file table "
+            "(the same path used at ingestion). No globbing — a wrong path is a "
+            "safe 'not_found' no-op.",
+        ],
+        memory_bank: Annotated[
+            str,
+            "Required. The memory bank (namespace) holding the file. Destructive "
+            "operator tool: use for racochu reconciliation or explicit "
+            "user-directed file removal, not for routine agent workflows.",
+        ],
+    ):
+        """Permanently delete a file and its memories (DESTRUCTIVE, operator-only).
+
+        When to use: only for racochu reconciliation of excluded files or explicit
+        user/operator-directed removal of an ingested file from a bank.
+
+        When NOT to use / HARD RULE:
+          - This is an OPERATOR-ONLY destructive tool. It is NOT part of the
+            skills recall-only surface and must not be used for routine agent
+            workflows.
+          - It permanently removes a whole file's mnemosyne memories
+            (shared-memory-safely: memories still referenced by other files are
+            preserved), hash-index entries, chunk rows, and tombstones the file.
+          - The path must exactly match a stored path; a wrong path is a safe
+            'not_found' no-op, but a correct path is destructive and irreversible.
+
+        Idempotent: forgetting an already-deleted file is a no-op.
+        """
+        return await handlers.handle_forget_file(
+            router, {"file_path": file_path, "memory_bank": memory_bank}, container
+        )
+
 
 def mount_health_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:
     """Mount health check endpoints onto the FastMCP server using custom_route.

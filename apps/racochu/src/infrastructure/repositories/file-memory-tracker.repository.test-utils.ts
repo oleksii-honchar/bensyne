@@ -81,6 +81,7 @@ export function aPrismaFileMemoryTrackerMemory(
 export function aFileMemoryTrackerRepositoryService() {
   return {
     findByFilePath: jest.fn().mockResolvedValue(null),
+    findBySourceId: jest.fn().mockResolvedValue([]),
     findOrCreate: jest
       .fn()
       .mockImplementation((tracker: FileMemoryTracker) =>

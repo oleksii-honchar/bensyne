@@ -40,6 +40,7 @@ from src.application.use_cases.expand_file_relations_use_case import (
     ExpandFileRelationsUseCase,
 )
 from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
+from src.application.use_cases.forget_file_use_case import ForgetFileUseCase
 from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
 from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
@@ -218,6 +219,11 @@ class Container(containers.DeclarativeContainer):
         logger=logger,
     )
 
+    # Operator-only file-granular forget: file_service / hash_index_service /
+    # mnemosyne_client / memory_bank are per-request call-time arguments (D25),
+    # resolved by the handler and passed into the factory.
+    forget_file_use_case = providers.Factory(ForgetFileUseCase, logger=logger)
+
     search_files_use_case = providers.Factory(
         SearchFilesUseCase,
         logger=logger,
@@ -288,6 +294,8 @@ class TestContainer(Container):
     recall_memory_use_case = providers.Factory(RecallMemoryUseCase, logger=logger)
 
     forget_memory_use_case = providers.Factory(ForgetMemoryUseCase, logger=logger)
+
+    forget_file_use_case = providers.Factory(ForgetFileUseCase, logger=logger)
 
     search_files_use_case = providers.Factory(SearchFilesUseCase, logger=logger)
 

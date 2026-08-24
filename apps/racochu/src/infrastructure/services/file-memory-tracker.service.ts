@@ -8,6 +8,18 @@ export class FileMemoryTrackerService {
   constructor(private readonly repository: FileMemoryTrackerRepository) {}
 
   /**
+   * Return all tracked files for a given sourceId.
+   * Delegates to the repository; throws on a ko result (consistent with service style).
+   */
+  async findBySourceId(sourceId: string): Promise<FileMemoryTracker[]> {
+    const result = await this.repository.findBySourceId(sourceId);
+    if (result.isKo()) {
+      throw new Error('Failed to find FileMemoryTrackers by source: ' + result.getErrors()[0].message);
+    }
+    return result.getValue();
+  }
+
+  /**
    * Track a memory for a file.
    * Uses aggregate business logic (remember) then persists via repository.
    * Returns the FileMemoryTracker aggregate after tracking.

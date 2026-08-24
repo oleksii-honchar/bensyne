@@ -86,6 +86,99 @@ describe('FileMemoryTrackerRepository', () => {
     });
   });
 
+  describe('findBySourceId', () => {
+    it('returns all trackers for the given sourceId with their memories', async () => {
+      const sourceId = 'src-1';
+      const filePath1 = '/test/file-1.txt';
+      const filePath2 = '/test/file-2.txt';
+      const id1 = aFileMemoryTracker({ filePath: filePath1 }).toJson().id;
+      const id2 = aFileMemoryTracker({ filePath: filePath2 }).toJson().id;
+
+      prismaFileTracker.findMany.mockResolvedValue([
+        aPrismaFileMemoryTracker({
+          id: id1,
+          filePath: filePath1,
+          sourceId,
+          memoryBank: 'bank-a',
+          memories: [
+            aPrismaFileMemoryTrackerMemory({ id: 9101n, memoryId: 'mem-001', fileTrackerId: id1 }),
+            aPrismaFileMemoryTrackerMemory({ id: 9102n, memoryId: 'mem-002', fileTrackerId: id1 }),
+          ],
+        }),
+        aPrismaFileMemoryTracker({
+          id: id2,
+          filePath: filePath2,
+          sourceId,
+          memoryBank: 'bank-b',
+          memories: [
+            aPrismaFileMemoryTrackerMemory({ id: 9103n, memoryId: 'mem-003', fileTrackerId: id2 }),
+          ],
+        }),
+      ]);
+
+      const result = await repository.findBySourceId(sourceId);
+
+      expect(prismaFileTracker.findMany).toHaveBeenCalledWith({
+        where: { sourceId },
+        include: { memories: true },
+      });
+      expect(result.isOk()).toBe(true);
+      const trackers = result.getValue();
+      expect(trackers).toHaveLength(2);
+      expect(trackers.map(t => t.filePath)).toEqual([filePath1, filePath2]);
+      expect(trackers[0].memoryIds).toEqual(['mem-001', 'mem-002']);
+      expect(trackers[1].memoryIds).toEqual(['mem-003']);
+    });
+
+    it('returns Result.ok([]) when no trackers exist for the source', async () => {
+      prismaFileTracker.findMany.mockResolvedValue([]);
+
+      const result = await repository.findBySourceId('no-such-source');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual([]);
+    });
+
+    it('skips malformed rows and returns only valid trackers', async () => {
+      const sourceId = 'src-1';
+      const validFilePath = '/test/valid.txt';
+      const validId = aFileMemoryTracker({ filePath: validFilePath }).toJson().id;
+
+      prismaFileTracker.findMany.mockResolvedValue([
+        aPrismaFileMemoryTracker({
+          id: validId,
+          filePath: validFilePath,
+          sourceId,
+          memoryBank: 'bank-a',
+          memories: [
+            aPrismaFileMemoryTrackerMemory({ id: 9104n, memoryId: 'mem-001', fileTrackerId: validId }),
+          ],
+        }),
+        // Malformed: empty filePath fails the aggregate schema.
+        aPrismaFileMemoryTracker({
+          id: aFileMemoryTracker().toJson().id,
+          filePath: '',
+          sourceId,
+          memoryBank: 'bank-a',
+          memories: [],
+        }),
+      ]);
+
+      const result = await repository.findBySourceId(sourceId);
+
+      expect(result.isOk()).toBe(true);
+      const trackers = result.getValue();
+      expect(trackers).toHaveLength(1);
+      expect(trackers[0].filePath).toBe(validFilePath);
+    });
+
+    it('propagates Prisma errors', async () => {
+      prismaFileTracker.findMany.mockRejectedValue(new Error('DB connection failed'));
+
+      await expect(repository.findBySourceId('src-1')).rejects.toThrow('DB connection failed');
+    });
+  });
+
   describe('deleteByFilePath', () => {
     it('deletes FileTracker record (cascade deletes memories)', async () => {
       prismaFileTracker.delete.mockResolvedValue(

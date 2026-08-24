@@ -193,24 +193,20 @@ describe('FileWatcherService', () => {
   });
 
   describe('ignore patterns', () => {
-    const getIgnoredPatterns = (): RegExp[] => {
+    // chokidar calls this predicate with the FULL absolute path for both
+    // files and directories; it must return true to ignore a path.
+    const getIgnoredCallback = (): (candidatePath: string) => boolean => {
       const watchCall = mockWatchFn.mock.calls[0];
       const options = watchCall?.[1] as Record<string, unknown>;
-      return options.ignored as RegExp[];
+      return options.ignored as (candidatePath: string) => boolean;
     };
 
-    it('builds all ignore patterns as RegExp instances', async () => {
+    it('exposes ignored as a predicate function', async () => {
       configService.getWatchSources.mockReturnValue([aWatchSourceConfig()]);
 
       await service.start();
 
-      const ignored = getIgnoredPatterns();
-
-      expect(Array.isArray(ignored)).toBe(true);
-      expect(ignored.length).toBeGreaterThan(0);
-      for (const pattern of ignored) {
-        expect(pattern).toBeInstanceOf(RegExp);
-      }
+      expect(typeof getIgnoredCallback()).toBe('function');
     });
 
     it('ignores config exclude globs matched against full absolute paths', async () => {
@@ -221,13 +217,29 @@ describe('FileWatcherService', () => {
 
       await service.start();
 
-      const ignored = getIgnoredPatterns();
+      const ignored = getIgnoredCallback();
 
-      expect(
-        ignored.some(r => r.test('/abs/.agent-sessions/26/08/23/x/tool-responses/a.json')),
-      ).toBe(true);
+      expect(ignored('/abs/.agent-sessions/26/08/23/x/tool-responses/a.json')).toBe(true);
       // dot: true — dotfile dirs like .smart-env must match
-      expect(ignored.some(r => r.test('/abs/x/.smart-env/f.yaml'))).toBe(true);
+      expect(ignored('/abs/x/.smart-env/f.yaml')).toBe(true);
+    });
+
+    it('ignores excluded directories themselves (directory avoidance)', async () => {
+      const source = aWatchSourceConfig({
+        exclude: ['**/node_modules/**', '**/tool-responses/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+
+      // chokidar receives the directory path before recursing; returning
+      // true here avoids descending into the excluded directory.
+      expect(ignored('/abs/x/node_modules')).toBe(true);
+      expect(ignored('/abs/x/node_modules/pkg/index.js')).toBe(true);
+      expect(ignored('/abs/x/tool-responses')).toBe(true);
+      expect(ignored('/abs/x/tool-responses/a.json')).toBe(true);
     });
 
     it('ignores default patterns: .git, node_modules, .DS_Store, .env (dot: true)', async () => {
@@ -235,12 +247,12 @@ describe('FileWatcherService', () => {
 
       await service.start();
 
-      const ignored = getIgnoredPatterns();
+      const ignored = getIgnoredCallback();
 
-      expect(ignored.some(r => r.test('/abs/.agent-sessions/.git/FETCH_HEAD'))).toBe(true);
-      expect(ignored.some(r => r.test('/abs/x/node_modules/pkg/index.js'))).toBe(true);
-      expect(ignored.some(r => r.test('/abs/x/.DS_Store'))).toBe(true);
-      expect(ignored.some(r => r.test('/abs/x/.env.local'))).toBe(true);
+      expect(ignored('/abs/.agent-sessions/.git/FETCH_HEAD')).toBe(true);
+      expect(ignored('/abs/x/node_modules/pkg/index.js')).toBe(true);
+      expect(ignored('/abs/x/.DS_Store')).toBe(true);
+      expect(ignored('/abs/x/.env.local')).toBe(true);
     });
 
     it('never matches material session files (no false positives)', async () => {
@@ -251,7 +263,7 @@ describe('FileWatcherService', () => {
 
       await service.start();
 
-      const ignored = getIgnoredPatterns();
+      const ignored = getIgnoredCallback();
       const materialPaths = [
         '/abs/.agent-sessions/x/session.md',
         '/abs/.agent-sessions/x/specifications/spec.md',
@@ -259,7 +271,7 @@ describe('FileWatcherService', () => {
       ];
 
       for (const materialPath of materialPaths) {
-        expect(ignored.some(r => r.test(materialPath))).toBe(false);
+        expect(ignored(materialPath)).toBe(false);
       }
     });
   });

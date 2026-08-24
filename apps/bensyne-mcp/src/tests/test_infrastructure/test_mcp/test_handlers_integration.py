@@ -236,6 +236,98 @@ class TestHandleForget:
             await handle_forget(router, arguments, container=mock_container)
 
 
+class TestHandleForgetFile:
+    """Test handle_forget_file delegates to ForgetFileUseCase via the DI container."""
+
+    @pytest.fixture
+    def router(self) -> MagicMock:
+        router = MagicMock()
+        router.get_instance = AsyncMock()
+        return router
+
+    @pytest.fixture
+    def arguments(self) -> dict:
+        return {
+            "memory_bank": "default",
+            "file_path": "/tmp/tool-responses/x.json",
+        }
+
+    async def test_delegates_to_forget_file_use_case(self, router, arguments) -> None:
+        """handle_forget_file should call the container's forget_file_use_case."""
+        from src.infrastructure.mcp.handlers import handle_forget_file
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {"status": "forgotten", "memory_bank": "default"}
+        )
+
+        mock_container = MagicMock()
+        mock_container.forget_file_use_case.return_value = mock_use_case
+        result = await handle_forget_file(router, arguments, container=mock_container)
+
+        mock_container.forget_file_use_case.assert_called_once()
+        mock_use_case.execute.assert_called_once()
+        call_args = mock_use_case.execute.call_args[0][0]
+        assert call_args["file_path"] == "/tmp/tool-responses/x.json"
+        assert call_args["memory_bank"] == "default"
+        # The factory receives the per-bank mnemosyne client + memory bank.
+        factory_kwargs = mock_container.forget_file_use_case.call_args.kwargs
+        assert factory_kwargs["mnemosyne_client"] is router.get_instance.return_value
+        assert factory_kwargs["memory_bank"] == "default"
+
+    async def test_returns_result_value_as_dict_on_success(self, router, arguments) -> None:
+        """handle_forget_file should return the Result.value dict on success."""
+        from src.infrastructure.mcp.handlers import handle_forget_file
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "forgotten",
+                "memory_bank": "default",
+                "file_id": "f1",
+            }
+        )
+
+        mock_container = MagicMock()
+        mock_container.forget_file_use_case.return_value = mock_use_case
+        result = await handle_forget_file(router, arguments, container=mock_container)
+
+        assert result["status"] == "forgotten"
+        assert result["file_id"] == "f1"
+
+    async def test_raises_validation_error_on_result_ko(self, router, arguments) -> None:
+        """handle_forget_file should raise ValidationError when use case returns Result.ko."""
+        from src.infrastructure.mcp.handlers import handle_forget_file
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ko(
+            [ErrorWithDetails("FILE_NOT_FOUND", {})]
+        )
+
+        mock_container = MagicMock()
+        mock_container.forget_file_use_case.return_value = mock_use_case
+        with pytest.raises(ValidationError):
+            await handle_forget_file(router, arguments, container=mock_container)
+
+    async def test_raises_validation_error_without_file_path(self, router) -> None:
+        """handle_forget_file should reject arguments without file_path."""
+        from src.infrastructure.mcp.handlers import handle_forget_file
+
+        with pytest.raises(ValidationError, match="file_path is required"):
+            await handle_forget_file(
+                router, {"memory_bank": "default"}, container=MagicMock()
+            )
+
+    async def test_raises_validation_error_without_memory_bank(self, router) -> None:
+        """handle_forget_file should reject arguments without memory_bank."""
+        from src.infrastructure.mcp.handlers import handle_forget_file
+
+        with pytest.raises(ValidationError, match="memory_bank parameter is required"):
+            await handle_forget_file(
+                router, {"file_path": "/x"}, container=MagicMock()
+            )
+
+
 class TestHandleUpdate:
     """Test handle_update delegates to UpdateMemoryUseCase."""
 

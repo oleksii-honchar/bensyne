@@ -336,6 +336,89 @@ export class BensyneClient implements OnApplicationBootstrap {
   }
 
   /**
+   * Forget (delete) all memories for a given file via the forgetFile MCP tool.
+   *
+   * This is the transport-layer counterpart to bensyne-mcp's `forgetFile` tool.
+   * Retries up to maxRetries times on transient failures (mirroring remember).
+   * Idempotent no-op statuses (already_deleted, FILE_NOT_FOUND) are treated as
+   * success, not errors.
+   *
+   * @param filePath - File path whose memories should be forgotten
+   * @param memoryBank - Memory bank where the memories reside
+   * @returns Result.ok with {status, file_id?, files_affected?} on success or no-op;
+   *          Result.ko after all retries exhausted
+   */
+  async forgetByFile(
+    filePath: string,
+    memoryBank: string,
+  ): Promise<Result<{ status: string; file_id?: string; files_affected?: number }>> {
+    const request: McpToolRequest = {
+      jsonrpc: '2.0',
+      id: this.nextRequestId++,
+      method: 'tools/call',
+      params: {
+        name: 'forgetFile',
+        arguments: { file_path: filePath, memory_bank: memoryBank },
+      },
+    };
+
+    this.logger.debug(`Forgetting file: filePath="${filePath}", memoryBank="${memoryBank}"`);
+
+    let lastError: Error | null = null;
+
+    this.ensureConfigLoaded();
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.sendRequest(request);
+
+        if (response.error) {
+          const errMsg = `MCP error: ${response.error.message}`;
+          this.logger.warn(`MCP tool error: filePath="${filePath}", error="${errMsg}"`);
+          lastError = new ErrorWithDetails(errMsg, 'McpToolError');
+        } else {
+          // Parse MCP response — result.content[0].text contains JSON from Mnemosyne
+          const parsed = this.parseMcpResponse(response);
+          const status = String(parsed.status ?? '');
+
+          // forgotten = success; already_deleted / FILE_NOT_FOUND = idempotent no-ops
+          if (status === 'forgotten' || status === 'already_deleted' || status === 'FILE_NOT_FOUND') {
+            const fileId = parsed.file_id != null ? String(parsed.file_id) : undefined;
+            const filesAffected =
+              typeof parsed.files_affected === 'number' ? parsed.files_affected : undefined;
+            this.logger.debug(
+              `File forgotten; filePath="${filePath}", status="${status}", attempt=${attempt}`,
+            );
+            return Result.ok({ status, file_id: fileId, files_affected: filesAffected });
+          }
+
+          const errMsg =
+            typeof parsed.error === 'string'
+              ? parsed.error
+              : JSON.stringify(parsed) || 'Unexpected forgetByFile response';
+          this.logger.warn(`Unexpected forgetByFile response: filePath="${filePath}", response="${errMsg}"`);
+          lastError = new ErrorWithDetails(errMsg, 'UnexpectedMcpResponse');
+        }
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Request failed, retrying: filePath="${filePath}", attempt=${attempt}/${this.maxRetries}, error="${errMsg}"`,
+        );
+        lastError = new ErrorWithDetails(errMsg, 'McpRequestError');
+      }
+
+      if (attempt < this.maxRetries) {
+        await this.delay(this.retryDelayMs * attempt);
+      }
+    }
+
+    this.logger.error(
+      `Failed to forget file after ${this.maxRetries} retries: filePath="${filePath}", lastError="${lastError?.message}"`,
+    );
+
+    return Result.ko([lastError || new ErrorWithDetails('Failed to forget file', 'ForgetFileFailed')]);
+  }
+
+  /**
    * Register a memory bank with a description via the registerMemoryBank MCP tool.
    *
    * @param name - Memory bank name

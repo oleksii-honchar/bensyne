@@ -154,6 +154,120 @@ describe('ForceReprocessService', () => {
     });
   });
 
+  describe('exclude patterns (glob-matcher migration regression)', () => {
+    it('skips a directory matching **/X/** and processes files outside it', async () => {
+      const source = aWatchSourceConfig({
+        id: 'test',
+        path: '/tmp/test',
+        exclude: ['**/tool-responses/**'],
+      });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([
+          mockDirent('tool-responses', true), // excluded directory
+          mockDirent('normal', true), // kept directory
+        ])
+        .mockResolvedValueOnce([mockDirent('kept.md', false)]); // normal/kept.md
+
+      await service.forceReprocessAll([source]);
+
+      // Only the file outside the excluded directory is processed.
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: '/tmp/test/normal/kept.md' }),
+      );
+    });
+
+    it('excludes a top-level directory named per the pattern', async () => {
+      const source = aWatchSourceConfig({
+        id: 'test',
+        path: '/tmp/test',
+        exclude: ['**/tool-responses/**'],
+      });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('tool-responses', true), // excluded top-level directory
+        mockDirent('file.md', false), // kept top-level file
+      ]);
+
+      await service.forceReprocessAll([source]);
+
+      // Only the top-level file is processed; the excluded directory is never scanned.
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: '/tmp/test/file.md' }),
+      );
+    });
+
+    it('excludes files inside a nested directory matching the pattern', async () => {
+      const source = aWatchSourceConfig({
+        id: 'test',
+        path: '/tmp/test',
+        exclude: ['**/tool-responses/**'],
+      });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('sub', true)])
+        .mockResolvedValueOnce([
+          mockDirent('tool-responses', true), // nested excluded directory
+          mockDirent('kept.md', false), // nested kept file
+        ]);
+
+      await service.forceReprocessAll([source]);
+
+      // Only the kept file is processed; the nested excluded directory is skipped.
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: '/tmp/test/sub/kept.md' }),
+      );
+    });
+
+    it('processes all files when none match an exclude pattern', async () => {
+      const source = aWatchSourceConfig({
+        id: 'test',
+        path: '/tmp/test',
+        exclude: ['**/tool-responses/**'],
+      });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('a.md', false),
+        mockDirent('b.md', false),
+      ]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+    });
+
+    it('honors multiple exclude patterns', async () => {
+      const source = aWatchSourceConfig({
+        id: 'test',
+        path: '/tmp/test',
+        exclude: ['**/node_modules/**', '**/tool-responses/**'],
+      });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([
+          mockDirent('node_modules', true), // excluded (pattern 1)
+          mockDirent('tool-responses', true), // excluded (pattern 2)
+          mockDirent('src', true), // kept
+        ])
+        .mockResolvedValueOnce([mockDirent('index.ts', false)]); // src/index.ts
+
+      await service.forceReprocessAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: '/tmp/test/src/index.ts' }),
+      );
+    });
+  });
+
   describe('direct execution (new contract)', () => {
     it('should call execute directly for each file with correct args', async () => {
       const source = aWatchSourceConfig({ id: 'my-source', path: '/tmp/test' });

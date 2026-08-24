@@ -473,6 +473,31 @@ class TestFileUseCaseFactories:
         assert use_case.hash_index_service is hash_index_service
         assert use_case.bank_type_checker is checker
 
+    def test_forget_file_use_case_shares_container_objects(self, tmp_path, router) -> None:
+        """forget_file_use_case shares FileService and hash index; takes client + bank."""
+        from src.application.use_cases.forget_file_use_case import ForgetFileUseCase
+
+        container = ProductionContainer()
+        bundle = container.file_metadata_bundle(bank_dir=tmp_path / "bank")
+        file_service = container.file_service(bundle=bundle)
+        hash_index_service = container.hash_index_service(
+            memory_bank="bank", memory_bank_router=router
+        )
+        instance = MagicMock()
+
+        use_case = container.forget_file_use_case(
+            file_service=file_service,
+            hash_index_service=hash_index_service,
+            mnemosyne_client=instance,
+            memory_bank="bank",
+        )
+
+        assert isinstance(use_case, ForgetFileUseCase)
+        assert use_case.file_service is file_service
+        assert use_case.hash_index_service is hash_index_service
+        assert use_case.mnemosyne_client is instance
+        assert use_case.memory_bank == "bank"
+
     def test_search_files_use_case_shares_injected_file_service(self, tmp_path) -> None:
         """search_files_use_case injects the exact FileService instance given."""
         from src.application.use_cases.search_files_use_case import SearchFilesUseCase

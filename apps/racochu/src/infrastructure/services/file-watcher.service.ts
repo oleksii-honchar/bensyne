@@ -7,16 +7,24 @@ import * as chokidar from 'chokidar';
 import { EventEmitter } from 'node:events';
 import * as os from 'os';
 import * as path from 'path';
-import { makeRe } from 'picomatch';
+import { buildIgnoreRegexes } from '../../application/glob-matcher';
 import { WatchSourceConfig } from '../config/config-schemas';
 import { ConfigurationService } from '../config/configuration.service';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { BensyneClient } from './bensyne-client.service';
 
-// chokidar tests ignore patterns against the FULL absolute path, so patterns
-// must be normalized to a '**/' prefix; dot: true so dotfile dirs (e.g. .smart-env) match.
-const normalizeGlob = (g: string): string => (g.startsWith('**/') ? g : '**/' + g);
-const globToRegex = (glob: string): RegExp => makeRe(normalizeGlob(glob), { dot: true });
+// Glob patterns always excluded, on top of per-source excludes. chokidar
+// matches these against the FULL absolute path, so the shared matcher
+// normalizes them with a '**/' prefix (see glob-matcher.ts).
+const DEFAULT_IGNORE_GLOBS: readonly string[] = [
+  '.git/**',
+  '**/.git/**',
+  'node_modules/**',
+  '**/node_modules/**',
+  '**/.DS_Store',
+  '**/Thumbs.db',
+  '**/.env*',
+];
 
 @Injectable()
 export class FileWatcherService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -112,10 +120,17 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     const resolvedPath = this.resolvePath(source.path);
     this.logger.info(`Watching source; id="${source.id}", path="${resolvedPath}"`);
 
+    // Compile the shared exclude patterns into regexes once per source. The
+    // predicate receives the FULL absolute path (chokidar always passes
+    // absolute paths); the '**/' normalization in buildIgnoreRegexes makes
+    // patterns match at any depth, including the excluded directory itself
+    // so chokidar avoids descending into it.
+    const ignoreRegexes = buildIgnoreRegexes([...source.exclude, ...DEFAULT_IGNORE_GLOBS]);
+
     let watcher: chokidar.FSWatcher;
     try {
       watcher = chokidar.watch(resolvedPath, {
-        ignored: this.buildIgnorePatterns(source),
+        ignored: (candidatePath: string) => ignoreRegexes.some(regex => regex.test(candidatePath)),
         persistent: true,
         ignoreInitial: true,
         awaitWriteFinish: {
@@ -183,18 +198,5 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
       return path.join(os.homedir(), filePath.slice(1));
     }
     return path.resolve(filePath);
-  }
-
-  private buildIgnorePatterns(source: WatchSourceConfig): RegExp[] {
-    return [
-      ...source.exclude,
-      '.git/**',
-      '**/.git/**',
-      'node_modules/**',
-      '**/node_modules/**',
-      '**/.DS_Store',
-      '**/Thumbs.db',
-      '**/.env*',
-    ].map(globToRegex);
   }
 }

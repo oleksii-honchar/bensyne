@@ -614,6 +614,21 @@ class FileService:
         self._log_info("Getting file by id", method="get_file_by_id", file_id=file_id)
         return self.file_repository.get_file_by_id(file_id)
 
+    def get_file_by_path(self, path: str) -> Result[File]:
+        """Retrieve a file entity by its path.
+
+        Returns Result.ok(file) when found.
+        Returns Result.ko with FILE_NOT_FOUND when the path does not exist in the DB.
+        """
+        self._log_info("Getting file by path", method="get_file_by_path", path=path)
+        result = self.file_repository.get_file_by_path(path)
+        if result.is_ko:
+            return result  # type: ignore[return-value]
+        file = result.value
+        if file is None:
+            return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {"path": path})])
+        return Result.ok(file)
+
     def get_chunks_by_file_id(self, file_id: str) -> Result[list[FileChunk]]:
         """Passthrough to the chunk repository (enrichment consumer)."""
         self._log_info("Getting chunks by file id", method="get_chunks_by_file_id", file_id=file_id)

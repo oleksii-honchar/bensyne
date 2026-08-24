@@ -7,6 +7,7 @@ import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
+import { isPathExcluded } from './glob-matcher';
 
 @Injectable()
 export class ForceReprocessService {
@@ -176,21 +177,21 @@ export class ForceReprocessService {
 
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      const sourceRoot = this.resolvePath(source.path);
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
+        const relPath = path.relative(sourceRoot, fullPath);
 
         if (entry.isDirectory()) {
-          // Skip excluded directories - check both relative path and directory name
-          const relPath = path.relative(this.resolvePath(source.path), dirPath);
-          if (this.isExcluded(relPath, source.exclude) || this.isExcluded(entry.name, source.exclude)) {
+          // Skip excluded directories using the shared glob matcher.
+          if (isPathExcluded(relPath, source.exclude)) {
             continue;
           }
           const subFiles = await this.scanDirectory(fullPath, source);
           files.push(...subFiles);
         } else if (entry.isFile()) {
-          const relPath = path.relative(this.resolvePath(source.path), fullPath);
-          if (!this.isExcluded(relPath, source.exclude)) {
+          if (!isPathExcluded(relPath, source.exclude)) {
             files.push(fullPath);
           }
         }
@@ -202,29 +203,6 @@ export class ForceReprocessService {
     }
 
     return files;
-  }
-
-  private isExcluded(relPath: string, patterns: string[]): boolean {
-    for (const pattern of patterns) {
-      if (this.matchGlob(relPath, pattern) || this.matchGlob(path.basename(relPath), pattern)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private matchGlob(filename: string, pattern: string): boolean {
-    // Simple glob matching for common patterns
-    if (pattern === '*') return true;
-    if (pattern.startsWith('*.') && filename.endsWith(pattern.slice(1))) return true;
-    if (pattern.startsWith('**/') && pattern.endsWith('/**')) {
-      // Pattern like **/node_modules/** matches any path containing node_modules
-      const middle = pattern.slice(3, -3);
-      return filename.includes(middle);
-    }
-    if (pattern.startsWith('**/') && filename.includes(pattern.slice(3))) return true;
-    if (pattern.startsWith('**/') && filename === pattern.slice(3)) return true;
-    return filename === pattern;
   }
 
   private resolvePath(filePath: string): string {
