@@ -30,6 +30,7 @@ watchSources:
       - '**/Thumbs.db'
       - '**/.env*'
       - '**/tool-responses/**'
+      - '**/plans/**'
     debounceMs: 1000
 chunking:
   maxSizes:
