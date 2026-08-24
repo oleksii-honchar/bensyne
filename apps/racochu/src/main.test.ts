@@ -24,6 +24,7 @@ const EMPTY_SUMMARY: ReconciliationSummary = {
   skipped: 0,
   forgotten: 0,
   failed: 0,
+  refusedMassForget: 0,
 };
 
 interface Harness {

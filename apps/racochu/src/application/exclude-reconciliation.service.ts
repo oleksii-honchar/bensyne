@@ -7,6 +7,17 @@ import { BensyneClient } from '../infrastructure/services/bensyne-client.service
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { isPathExcluded } from './glob-matcher';
 
+// Mass-forget safeguard configuration.
+//
+// A single reconciliation run should NEVER forget more than this many files from
+// a single source without an explicit override. This protects against catastrophic
+// exclude patterns (e.g. `**/.*/**` that match the whole watch root) from silently
+// mass-forgetting the bank.
+//
+// Override: set RACOCHU_RECONCILE_FORCE_FORGET=1 to bypass the guard.
+const MASS_FORGET_THRESHOLD = 20;
+const FORCE_FORGET_ENV_VAR = 'RACOCHU_RECONCILE_FORCE_FORGET';
+
 /**
  * Outcome of a single reconciliation run.
  *
@@ -17,6 +28,8 @@ import { isPathExcluded } from './glob-matcher';
  *   rows were deleted successfully.
  * - failed: files for which forgetByFile returned ko, or whose tracker cleanup
  *   (deleteByFilePath) threw (logged, non-fatal).
+ * - refusedMassForget: sources where the mass-forget guard triggered (toForget >
+ *   threshold) and the guard refused to proceed without an explicit override.
  */
 export interface ReconciliationSummary {
   sourcesChecked: number;
@@ -24,6 +37,7 @@ export interface ReconciliationSummary {
   skipped: number;
   forgotten: number;
   failed: number;
+  refusedMassForget: number;
 }
 
 /**
@@ -42,10 +56,14 @@ export interface ReconciliationSummary {
  *   files, so running twice is safe.
  * - Mode-independent: no awareness of the run mode; the caller decides when.
  * - Never touches non-excluded files.
+ * - Mass-forget safeguard: refuses to forget more than MASS_FORGET_THRESHOLD
+ *   files from a single source in one run unless RACOCHU_RECONCILE_FORCE_FORGET=1.
  */
 @Injectable()
 export class ExcludeReconciliationService {
   private readonly logger: BasePinoLogger;
+  private readonly forceForget: boolean;
+  private readonly massForgetThreshold: number;
 
   constructor(
     private readonly fileMemoryTrackerService: FileMemoryTrackerService,
@@ -54,6 +72,8 @@ export class ExcludeReconciliationService {
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'ExcludeReconciliationService' });
+    this.forceForget = process.env[FORCE_FORGET_ENV_VAR] === '1';
+    this.massForgetThreshold = MASS_FORGET_THRESHOLD;
   }
 
   /**
@@ -67,6 +87,7 @@ export class ExcludeReconciliationService {
       skipped: 0,
       forgotten: 0,
       failed: 0,
+      refusedMassForget: 0,
     };
 
     let sources;
@@ -91,7 +112,8 @@ export class ExcludeReconciliationService {
 
     this.logger.info(
       `Reconciliation complete: sources=${summary.sourcesChecked}, excluded=${summary.excludedMatched}, ` +
-        `forgotten=${summary.forgotten}, skipped=${summary.skipped}, failed=${summary.failed}`,
+        `forgotten=${summary.forgotten}, skipped=${summary.skipped}, failed=${summary.failed}, ` +
+        `refused=${summary.refusedMassForget}`,
     );
 
     return summary;
@@ -102,11 +124,25 @@ export class ExcludeReconciliationService {
     const excludePatterns = source.exclude ?? [];
     const memoryBank = source.memoryBank ?? source.id;
 
-    for (const tracker of trackers) {
-      if (!isPathExcluded(tracker.filePath, excludePatterns)) {
-        continue;
-      }
+    // Identify files that match exclude patterns
+    const excludedTrackers = trackers.filter(t => isPathExcluded(t.filePath, excludePatterns));
 
+    // Mass-forget safeguard: refuse if more than threshold files would be forgotten
+    // without an explicit override. This prevents catastrophic patterns (e.g.
+    // `**/.*/**`) from silently mass-forgetting the bank.
+    if (excludedTrackers.length > this.massForgetThreshold && !this.forceForget) {
+      summary.refusedMassForget += 1;
+      this.logger.warn(
+        `MASS-FORGET REFUSED: source="${source.id}", tracked=${trackers.length}, ` +
+          `excludedMatched=${excludedTrackers.length}, threshold=${this.massForgetThreshold}. ` +
+          `Offending patterns: [${excludePatterns.join(', ')}]. ` +
+          `Set ${FORCE_FORGET_ENV_VAR}=1 to bypass this safeguard.`,
+      );
+      return;
+    }
+
+    // Process each excluded tracker
+    for (const tracker of excludedTrackers) {
       summary.excludedMatched += 1;
 
       if (!fs.existsSync(tracker.filePath)) {

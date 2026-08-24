@@ -285,4 +285,166 @@ describe('ExcludeReconciliationService', () => {
       expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('mass-forget safeguard', () => {
+    let savedForceForgetEnv: string | undefined;
+
+    beforeEach(() => {
+      savedForceForgetEnv = process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+    });
+
+    afterEach(() => {
+      // Restore original env
+      if (savedForceForgetEnv === undefined) {
+        delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      } else {
+        process.env.RACOCHU_RECONCILE_FORCE_FORGET = savedForceForgetEnv;
+      }
+    });
+
+    // Helper to create service (re-reads env vars)
+    const createService = () =>
+      new ExcludeReconciliationService(
+        mockFileMemoryTrackerService as unknown as FileMemoryTrackerService,
+        mockBensyneClient as unknown as BensyneClient,
+        mockConfigurationService as unknown as ConfigurationService,
+        aLogger() as unknown as BasePinoLogger,
+      );
+
+    it('REFUSES to mass-forget: source with 100 tracked files, excludes match all 100 → no forgets, refusedMassForget=1', async () => {
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createService();
+
+      const source = aSourceConfig({
+        id: 'src-mass',
+        memoryBank: 'bank-mass',
+        exclude: ['**/.*/**'],
+      });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const trackers = Array.from({ length: 100 }, (_, i) =>
+        aFileMemoryTracker({ filePath: `/repo/.hidden/file-${i}.md`, sourceId: 'src-mass' }),
+      );
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
+      existsSyncSpy.mockReturnValue(true);
+
+      const summary = await testService.run();
+
+      // No files should be forgotten
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(summary.forgotten).toBe(0);
+      expect(summary.failed).toBe(0);
+      // Refusal should be recorded
+      expect(summary.refusedMassForget).toBe(1);
+    });
+
+    it('REFUSES when excludes match more than threshold (50 > 20)', async () => {
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createService();
+
+      const source = aSourceConfig({
+        id: 'src-many',
+        memoryBank: 'bank-many',
+        exclude: ['**/excluded/**'],
+      });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const trackers = Array.from({ length: 50 }, (_, i) =>
+        aFileMemoryTracker({ filePath: `/repo/excluded/file-${i}.log`, sourceId: 'src-many' }),
+      );
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
+      existsSyncSpy.mockReturnValue(true);
+
+      const summary = await testService.run();
+
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(summary.forgotten).toBe(0);
+      expect(summary.refusedMassForget).toBe(1);
+    });
+
+    it('PRESERVES normal small-forget: 5 tracked files, 2 match excludes (under threshold)', async () => {
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createService();
+
+      const source = aSourceConfig({
+        id: 'src-small',
+        memoryBank: 'bank-small',
+        exclude: ['**/tool-responses/**'],
+      });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const trackers = [
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/a.log', sourceId: 'src-small' }),
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/b.log', sourceId: 'src-small' }),
+        aFileMemoryTracker({ filePath: '/repo/notes/x.md', sourceId: 'src-small' }),
+        aFileMemoryTracker({ filePath: '/repo/notes/y.md', sourceId: 'src-small' }),
+        aFileMemoryTracker({ filePath: '/repo/notes/z.md', sourceId: 'src-small' }),
+      ];
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
+      existsSyncSpy.mockReturnValue(true);
+
+      const summary = await testService.run();
+
+      // Should forget the 2 excluded files
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(2);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenNthCalledWith(
+        1,
+        '/repo/tool-responses/a.log',
+        'bank-small',
+      );
+      expect(mockBensyneClient.forgetByFile).toHaveBeenNthCalledWith(
+        2,
+        '/repo/tool-responses/b.log',
+        'bank-small',
+      );
+      expect(summary.forgotten).toBe(2);
+      expect(summary.refusedMassForget).toBe(0);
+    });
+
+    it('OVERRIDE bypass: force-forget enabled → mass-forget proceeds despite exceeding threshold', async () => {
+      process.env.RACOCHU_RECONCILE_FORCE_FORGET = '1';
+      const testService = createService();
+
+      const source = aSourceConfig({
+        id: 'src-forced',
+        memoryBank: 'bank-forced',
+        exclude: ['**/.*/**'],
+      });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const trackers = Array.from({ length: 50 }, (_, i) =>
+        aFileMemoryTracker({ filePath: `/repo/.hidden/file-${i}.md`, sourceId: 'src-forced' }),
+      );
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
+      existsSyncSpy.mockReturnValue(true);
+
+      const summary = await testService.run();
+
+      // All files should be forgotten
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(50);
+      expect(summary.forgotten).toBe(50);
+      expect(summary.refusedMassForget).toBe(0);
+    });
+
+    it('NEVER throws on guard path (non-fatal)', async () => {
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createService();
+
+      const source = aSourceConfig({
+        id: 'src-guard',
+        memoryBank: 'bank-guard',
+        exclude: ['**/.*/**'],
+      });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const trackers = Array.from({ length: 100 }, (_, i) =>
+        aFileMemoryTracker({ filePath: `/repo/.hidden/file-${i}.md`, sourceId: 'src-guard' }),
+      );
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
+      existsSyncSpy.mockReturnValue(true);
+
+      // Should not throw
+      await expect(testService.run()).resolves.not.toThrow();
+    });
+  });
 });
