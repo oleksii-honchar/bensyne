@@ -13,8 +13,10 @@ import { isPathExcluded } from './glob-matcher';
  * - sourcesChecked: watch sources iterated over.
  * - excludedMatched: tracked files that match a source exclude pattern.
  * - skipped: excluded files no longer present on disk (nothing to forget).
- * - forgotten: files for which forgetByFile was called and returned ok.
- * - failed: files for which forgetByFile returned ko (logged, non-fatal).
+ * - forgotten: files for which forgetByFile returned ok AND the racochu tracker
+ *   rows were deleted successfully.
+ * - failed: files for which forgetByFile returned ko, or whose tracker cleanup
+ *   (deleteByFilePath) threw (logged, non-fatal).
  */
 export interface ReconciliationSummary {
   sourcesChecked: number;
@@ -121,7 +123,20 @@ export class ExcludeReconciliationService {
               `memoryBank="${memoryBank}", error="${result.getErrors()[0].message}"`,
           );
         } else {
-          summary.forgotten += 1;
+          // Spec 3.3 step 3: once bensyne has forgotten the file, remove the
+          // racochu tracker rows (Prisma cascade removes FileTracker +
+          // FileMemoryTracker). Cleanup failure is non-fatal: count it as
+          // failed and continue — the service never throws.
+          try {
+            await this.fileMemoryTrackerService.deleteByFilePath(tracker.filePath);
+            summary.forgotten += 1;
+          } catch (error) {
+            summary.failed += 1;
+            this.logger.warn(
+              `Failed to delete tracker for excluded file; filePath="${tracker.filePath}", ` +
+                `error="${(error as Error).message}"`,
+            );
+          }
         }
       } catch (error) {
         summary.failed += 1;

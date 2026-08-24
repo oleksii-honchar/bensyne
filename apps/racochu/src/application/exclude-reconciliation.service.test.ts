@@ -12,14 +12,18 @@ import { ExcludeReconciliationService } from './exclude-reconciliation.service';
 
 describe('ExcludeReconciliationService', () => {
   let service: ExcludeReconciliationService;
-  let mockFileMemoryTrackerService: jest.Mocked<{ findBySourceId: jest.Mock }>;
+  let mockFileMemoryTrackerService: jest.Mocked<{
+    findBySourceId: jest.Mock;
+    deleteByFilePath: jest.Mock;
+  }>;
   let mockBensyneClient: jest.Mocked<{ forgetByFile: jest.Mock }>;
   let mockConfigurationService: jest.Mocked<{ getWatchSources: jest.Mock }>;
-  let existsSyncSpy: jest.SpyInstance<boolean, [string]>;
+  let existsSyncSpy: jest.SpyInstance<boolean, [path: fs.PathLike]>;
 
   beforeEach(() => {
     mockFileMemoryTrackerService = {
       findBySourceId: jest.fn().mockResolvedValue([]),
+      deleteByFilePath: jest.fn().mockResolvedValue(undefined),
     };
     mockBensyneClient = {
       forgetByFile: jest.fn().mockResolvedValue(Result.ok({ status: 'forgotten' })),
@@ -143,6 +147,86 @@ describe('ExcludeReconciliationService', () => {
       await service.run();
 
       expect(existsSyncSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('tracker cleanup', () => {
+    const excludedSource = aSourceConfig({
+      id: 'src-1',
+      memoryBank: 'bank-1',
+      exclude: ['**/tool-responses/**'],
+    });
+
+    it('calls deleteByFilePath for each excluded file when forgetByFile returns ok', async () => {
+      mockConfigurationService.getWatchSources.mockReturnValue([excludedSource]);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/a.log', sourceId: 'src-1' }),
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/b.log', sourceId: 'src-1' }),
+      ]);
+      existsSyncSpy.mockReturnValue(true);
+
+      await service.run();
+
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledTimes(2);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenNthCalledWith(
+        1,
+        '/repo/tool-responses/a.log',
+      );
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenNthCalledWith(
+        2,
+        '/repo/tool-responses/b.log',
+      );
+    });
+
+    it('does NOT call deleteByFilePath when forgetByFile returns ko (counted as failed, continues)', async () => {
+      mockConfigurationService.getWatchSources.mockReturnValue([excludedSource]);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/a.log', sourceId: 'src-1' }),
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/b.log', sourceId: 'src-1' }),
+      ]);
+      existsSyncSpy.mockReturnValue(true);
+      mockBensyneClient.forgetByFile.mockResolvedValueOnce(
+        Result.ko([new ErrorWithDetails('FORGET_FAILED', 'Bensyne unreachable')]),
+      );
+
+      const summary = await service.run();
+
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(
+        '/repo/tool-responses/b.log',
+      );
+      expect(summary.failed).toBe(1);
+      expect(summary.forgotten).toBe(1);
+    });
+
+    it('when deleteByFilePath throws, reconciliation counts failed, logs warn, and continues (never throws)', async () => {
+      mockConfigurationService.getWatchSources.mockReturnValue([excludedSource]);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/a.log', sourceId: 'src-1' }),
+        aFileMemoryTracker({ filePath: '/repo/tool-responses/b.log', sourceId: 'src-1' }),
+      ]);
+      existsSyncSpy.mockReturnValue(true);
+      mockFileMemoryTrackerService.deleteByFilePath.mockRejectedValueOnce(new Error('DB locked'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(2);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledTimes(2);
+      expect(summary.failed).toBe(1);
+      expect(summary.forgotten).toBe(1);
+    });
+
+    it('non-excluded files never trigger deleteByFilePath', async () => {
+      mockConfigurationService.getWatchSources.mockReturnValue([excludedSource]);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: '/repo/notes/x.md', sourceId: 'src-1' }),
+      ]);
+      existsSyncSpy.mockReturnValue(true);
+
+      await service.run();
+
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
     });
   });
 
