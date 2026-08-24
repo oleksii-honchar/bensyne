@@ -352,26 +352,20 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
       return Result.ok(undefined as unknown as void);
     }
 
-    this.logger.debug(`Forgetting ${memoryIds.length} memories for deleted file; path="${params.filePath}"`);
+    this.logger.debug(`Forgetting file for deleted file; path="${params.filePath}"`);
 
-    let failedCount = 0;
-    for (const memoryId of memoryIds) {
-      try {
-        const result = await this.bensyneClient.forget(memoryId, params.memoryBank);
-        if (result.isKo()) {
-          failedCount++;
-          this.logger.warn(
-            `Failed to forget memory; memoryId="${memoryId}", memoryBank="${params.memoryBank}", error="${result.getFormattedErrors()}"`,
-          );
-        }
-      } catch (error) {
-        failedCount++;
-        this.logger.warn(
-          `Error forgetting memory; memoryId="${memoryId}", memoryBank="${params.memoryBank}", error="${error instanceof Error ? error.message : String(error)}"`,
-        );
-      }
+    // Use file-level forget (forgetFile tool) instead of per-memory loop.
+    // The forgetFile tool bypasses the recall-only gate and handles the
+    // shared-memory guard on the bensyne side. Failure is non-blocking:
+    // a single-file delete failure must not block the queue.
+    const forgetResult = await this.bensyneClient.forgetByFile(params.filePath, params.memoryBank);
+    if (forgetResult.isKo()) {
+      this.logger.warn(
+        `forgetByFile failed, continuing with tracker cleanup: path="${params.filePath}", memoryBank="${params.memoryBank}", error="${forgetResult.getFormattedErrors()}"`,
+      );
     }
 
+    // Tracker cleanup — always performed, non-fatal.
     try {
       await this.fileMemoryTrackerService.deleteByFilePath(params.filePath);
     } catch (error) {
@@ -380,9 +374,7 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
       );
     }
 
-    this.logger.info(
-      `Delete completed; path="${params.filePath}", memoriesForgotten="${memoryIds.length - failedCount}", failures="${failedCount}"`,
-    );
+    this.logger.info(`Delete completed; path="${params.filePath}"`);
 
     return Result.ok(undefined as unknown as void);
   }

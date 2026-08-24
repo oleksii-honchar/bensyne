@@ -13,6 +13,11 @@ export function aBensyneClientService() {
     initialize: jest.fn().mockResolvedValue(Result.ok(undefined as unknown as void)),
     remember: jest.fn().mockResolvedValue(Result.ok({ memory_id: 'mock-memory-id', status: 'stored' })),
     forget: jest.fn().mockResolvedValue(Result.ok(undefined as unknown as void)),
+    forgetByFile: jest
+      .fn()
+      .mockResolvedValue(
+        Result.ok({ status: 'forgotten', file_id: 'mock-file-id', files_affected: 1 } as never),
+      ),
     registerBank: jest.fn().mockResolvedValue(Result.ok(undefined as unknown as void)),
     healthCheck: jest.fn().mockResolvedValue(Result.ok(true)),
     close: jest.fn().mockResolvedValue(undefined),

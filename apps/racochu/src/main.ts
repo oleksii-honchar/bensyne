@@ -10,6 +10,7 @@ import { Logger } from 'nestjs-pino';
 import pino from 'pino';
 import 'reflect-metadata';
 import { AppModule } from './app.module';
+import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
@@ -18,7 +19,7 @@ import { CliArgsService } from './infrastructure/services/cli-args.service';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
 import { FileWatcherService } from './infrastructure/services/file-watcher.service';
 
-async function bootstrap(): Promise<void> {
+export async function bootstrap(): Promise<void> {
   // Parse CLI args before NestJS bootstrap (need minimal logger for help/version)
   const tempLogger = new NestjsPinoLogger(pino({ level: 'warn' }));
   const args = new CliArgsService(tempLogger).parse(process.argv.slice(2));
@@ -57,6 +58,7 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(BasePinoLogger);
   const configurationService = app.get(ConfigurationService);
   const forceReprocessService = app.get(ForceReprocessService);
+  const excludeReconciliationService = app.get(ExcludeReconciliationService);
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
@@ -79,6 +81,20 @@ async function bootstrap(): Promise<void> {
 
   const mcpConfig = configurationService.getMcpConfig();
   logger.info(`MCP endpoint: ${mcpConfig.url}`);
+
+  // Startup exclude reconciliation: forget tracked files that match exclude
+  // patterns and still exist on disk. Runs in ALL four modes (placed before
+  // mode-specific dispatch) and is never fatal — a failure is logged, startup
+  // continues.
+  try {
+    await excludeReconciliationService.run();
+  } catch (error) {
+    logger.warn(
+      `Exclude reconciliation failed at startup, continuing: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 
   // Handle resume (re-ingest only files with missing chunks)
   if (args.resume) {
@@ -158,7 +174,11 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-bootstrap().catch((error: unknown) => {
-  console.error('Failed to start racochu:', error);
-  process.exit(1);
-});
+// Auto-run only when executed as the main script (node dist/src/main.js / ts-node).
+// Guarded so importing this module in tests does not trigger bootstrap.
+if (require.main === module) {
+  bootstrap().catch((error: unknown) => {
+    console.error('Failed to start racochu:', error);
+    process.exit(1);
+  });
+}

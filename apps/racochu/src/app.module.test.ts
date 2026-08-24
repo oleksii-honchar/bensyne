@@ -4,6 +4,7 @@ import './infrastructure/services/file-watcher.service.test-utils';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppBootstrapService } from './app-bootstrap.service';
 import { AppModule } from './app.module';
+import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { Configuration } from './infrastructure/config/config-schemas';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { aConfigServiceStub, aSourceConfig } from './infrastructure/config/configuration.service.test-utils';
@@ -47,6 +48,7 @@ describe('AppModule Integration', () => {
   let bootstrapService: AppBootstrapService;
   let configService: ConfigurationService;
   let logger: BasePinoLogger;
+  let excludeReconciliationService: ExcludeReconciliationService;
 
   const compileWith = async (config: Configuration): Promise<void> => {
     configService = aConfigServiceStub(config);
@@ -69,6 +71,7 @@ describe('AppModule Integration', () => {
 
     bootstrapService = module.get(AppBootstrapService);
     logger = module.get(BasePinoLogger);
+    excludeReconciliationService = module.get(ExcludeReconciliationService);
   };
 
   afterEach(async () => {
@@ -101,6 +104,10 @@ describe('AppModule Integration', () => {
 
     it('should inject BasePinoLogger into AppBootstrapService', () => {
       expect(typeof logger.info).toBe('function');
+    });
+
+    it('should register ExcludeReconciliationService as a resolvable provider', () => {
+      expect(excludeReconciliationService).toBeInstanceOf(ExcludeReconciliationService);
     });
   });
 

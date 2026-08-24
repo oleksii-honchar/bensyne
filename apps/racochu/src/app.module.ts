@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppBootstrapService } from './app-bootstrap.service';
 import { AppConfig } from './app.config';
 import { validateAppEnv } from './app.env.validation';
+import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
@@ -73,6 +74,7 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
 
     // Application services
     ForceReprocessService,
+    ExcludeReconciliationService,
 
     // Infrastructure
     FileProcessingQueue,

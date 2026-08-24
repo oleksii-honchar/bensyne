@@ -772,7 +772,7 @@ describe('ProcessFileUseCase', () => {
   });
 
   describe('execute with DELETE event', () => {
-    it('should get memoryIds, forget each, then deleteByFilePath on delete', async () => {
+    it('should get memoryIds, call forgetByFile, then deleteByFilePath on delete', async () => {
       const filePath = '/path/to/file.md';
       const sourceId = 'test-source';
       const memoryBank = 'test-memoryBank';
@@ -780,7 +780,9 @@ describe('ProcessFileUseCase', () => {
       const memoryIds = ['mem-1', 'mem-2', 'mem-3'];
 
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
-      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockBensyneClient.forgetByFile.mockResolvedValue(
+        Result.ok({ status: 'forgotten', file_id: 'file-1', files_affected: 1 } as never),
+      );
       mockFileMemoryTrackerService.deleteByFilePath.mockResolvedValue(undefined);
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
@@ -794,16 +796,15 @@ describe('ProcessFileUseCase', () => {
 
       expect(result.isOk()).toBe(true);
       expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(filePath);
-      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(3);
-      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-1', memoryBank);
-      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-2', memoryBank);
-      expect(mockBensyneClient.forget).toHaveBeenCalledWith('mem-3', memoryBank);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(filePath, memoryBank);
+      // Per-memory forget should NOT be called
+      expect(mockBensyneClient.forget).not.toHaveBeenCalled();
       expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
       expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
       expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should log debug and skip forgets when no mappings found', async () => {
+    it('should be an idempotent no-op when no mappings found', async () => {
       const filePath = '/path/to/file.md';
       const sourceId = 'test-source';
       const memoryBank = 'test-memoryBank';
@@ -822,63 +823,8 @@ describe('ProcessFileUseCase', () => {
 
       expect(result.isOk()).toBe(true);
       expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(filePath);
-      expect(mockBensyneClient.forget).not.toHaveBeenCalled();
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
       expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
-    });
-
-    it('should continue with remaining memories when forget fails for one', async () => {
-      const filePath = '/path/to/file.md';
-      const sourceId = 'test-source';
-      const memoryBank = 'test-memoryBank';
-      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
-      const memoryIds = ['mem-1', 'mem-2', 'mem-3'];
-
-      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
-      mockBensyneClient.forget
-        .mockResolvedValueOnce(Result.ok(undefined as unknown as void))
-        .mockResolvedValueOnce(Result.ko([new Error('MCP error')]))
-        .mockResolvedValueOnce(Result.ok(undefined as unknown as void));
-      mockFileMemoryTrackerService.deleteByFilePath.mockResolvedValue(undefined);
-      mockProcessingQueue.addToQueue.mockImplementation(task => task());
-
-      const result = await useCase.execute({
-        filePath,
-        eventType: 'delete',
-        sourceId,
-        memoryBank,
-        sourceConfig,
-      });
-
-      expect(result.isOk()).toBe(true);
-      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(3);
-      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
-    });
-
-    it('should continue with remaining memories when forget throws', async () => {
-      const filePath = '/path/to/file.md';
-      const sourceId = 'test-source';
-      const memoryBank = 'test-memoryBank';
-      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
-      const memoryIds = ['mem-1', 'mem-2'];
-
-      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
-      mockBensyneClient.forget
-        .mockResolvedValueOnce(Result.ok(undefined as unknown as void))
-        .mockRejectedValueOnce(new Error('Connection error'));
-      mockFileMemoryTrackerService.deleteByFilePath.mockResolvedValue(undefined);
-      mockProcessingQueue.addToQueue.mockImplementation(task => task());
-
-      const result = await useCase.execute({
-        filePath,
-        eventType: 'delete',
-        sourceId,
-        memoryBank,
-        sourceConfig,
-      });
-
-      expect(result.isOk()).toBe(true);
-      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(2);
-      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
     });
 
     it('should return ok even when deleteByFilePath fails', async () => {
@@ -889,7 +835,9 @@ describe('ProcessFileUseCase', () => {
       const memoryIds = ['mem-1'];
 
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
-      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockBensyneClient.forgetByFile.mockResolvedValue(
+        Result.ok({ status: 'forgotten', file_id: 'file-1', files_affected: 1 } as never),
+      );
       mockFileMemoryTrackerService.deleteByFilePath.mockRejectedValue(new Error('DB error'));
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
@@ -902,19 +850,23 @@ describe('ProcessFileUseCase', () => {
       });
 
       expect(result.isOk()).toBe(true);
-      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(1);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(filePath, memoryBank);
       expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
     });
+  });
 
-    it('should complete delete flow for all memory IDs', async () => {
+  describe('execute with DELETE event — forgetByFile flow', () => {
+    it('should call forgetByFile instead of per-memory forget on successful delete', async () => {
       const filePath = '/path/to/file.md';
       const sourceId = 'test-source';
       const memoryBank = 'test-memoryBank';
       const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
-      const memoryIds = ['mem-1', 'mem-2'];
+      const memoryIds = ['mem-1', 'mem-2', 'mem-3'];
 
       mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
-      mockBensyneClient.forget.mockResolvedValue(Result.ok(undefined as unknown as void));
+      mockBensyneClient.forgetByFile.mockResolvedValue(
+        Result.ok({ status: 'forgotten', file_id: 'file-1', files_affected: 1 }),
+      );
       mockFileMemoryTrackerService.deleteByFilePath.mockResolvedValue(undefined);
       mockProcessingQueue.addToQueue.mockImplementation(task => task());
 
@@ -927,8 +879,66 @@ describe('ProcessFileUseCase', () => {
       });
 
       expect(result.isOk()).toBe(true);
-      expect(mockBensyneClient.forget).toHaveBeenCalledTimes(2);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(1);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(filePath, memoryBank);
+      // Per-memory forget should NOT be called
+      expect(mockBensyneClient.forget).not.toHaveBeenCalled();
+      // Tracker cleanup should still occur
       expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
+    });
+
+    it('should log forgetByFile failure, continue tracker cleanup, and return ok (non-blocking)', async () => {
+      const filePath = '/path/to/file.md';
+      const sourceId = 'test-source';
+      const memoryBank = 'test-memoryBank';
+      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
+      const memoryIds = ['mem-1'];
+
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(memoryIds);
+      mockBensyneClient.forgetByFile.mockResolvedValue(
+        Result.ko([new Error('MCP transport error')]),
+      );
+      mockFileMemoryTrackerService.deleteByFilePath.mockResolvedValue(undefined);
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'delete',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      // Result should be ok (failure is non-blocking)
+      expect(result.isOk()).toBe(true);
+      // forgetByFile was attempted
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(filePath, memoryBank);
+      // Tracker cleanup still occurs despite forgetByFile failure
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(filePath);
+    });
+
+    it('should be an idempotent no-op when no memory mappings exist', async () => {
+      const filePath = '/path/to/file.md';
+      const sourceId = 'test-source';
+      const memoryBank = 'test-memoryBank';
+      const sourceConfig = aSourceConfig({ id: sourceId, memoryBank });
+
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'delete',
+        sourceId,
+        memoryBank,
+        sourceConfig,
+      });
+
+      expect(result.isOk()).toBe(true);
+      // Early return — no bensyne call, no tracker cleanup
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockBensyneClient.forget).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
     });
   });
 
