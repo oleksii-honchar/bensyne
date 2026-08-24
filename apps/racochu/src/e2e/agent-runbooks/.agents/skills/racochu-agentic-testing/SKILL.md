@@ -71,7 +71,7 @@ Conventions that apply to every runbook. Treat these as hard rules, not suggesti
 **file_id discovery:** Never hardcode `file_id`. Discover it via a unique token:
 
 - `searchFiles` → take `file.id` from the file-backed group result (`file != null`)
-- `recallMemory` → take `file_enrichment.traversal.file_id` from the memory row
+- `recallMemory` → take `file_enrichment.file.id` from the memory row
 - Note: the additive `file_enrichment` key on `searchFiles` top-level group rows is structurally `null` (enrichment keys off the row's `id`, which only memory rows have) — do not rely on it there.
 
 **Debounce:** Wait ≥3s after writing fixtures; if a search returns 0 hits, retry once after +3s before declaring FAIL.

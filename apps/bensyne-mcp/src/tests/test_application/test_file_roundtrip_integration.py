@@ -286,25 +286,27 @@ class TestRememberRecallEnrichedRoundTrip:
             expected_chunk_hash = CHASH_F1 if row["id"] == mid1 else CHASH_F2
             assert enrichment["chunk_hash"] == expected_chunk_hash
 
-            # relations — F→G present (edge from chunk 1).
+            # relations — unified list, ONE entry per edge with embedded
+            # target (RD-1): F→G present (edge from chunk 1), target G
+            # resolved via the stub row created by the edge.
             relation_rows = enrichment["relations"]
             assert len(relation_rows) == 1
             rel = relation_rows[0]
             assert rel["relation_type"] == "backlink"
             assert rel["strength"] == 0.8
+            assert rel["description"] == "wikilink from F to G"
+            assert rel["target"] is not None
+            assert rel["target"]["id"] == FILE_ID_G
+            assert rel["target"]["path"] == PATH_G
+            # Stub row has no summary yet — target.summary is None (not omitted).
+            assert rel["target"]["summary"] is None
 
-            # related_files — G resolved via the stub row created by the edge.
-            related = enrichment["related_files"]
-            assert len(related) == 1
-            assert related[0]["id"] == FILE_ID_G
-            assert related[0]["path"] == PATH_G
-            assert related[0]["relation"] == "backlink"
-
-            # traversal — handles for expandFileRelations/fetchFile.
-            traversal = enrichment["traversal"]
-            assert traversal["file_id"] == FILE_ID_F
-            assert len(traversal["relation_ids"]) == 1
-            assert rel["id"] == traversal["relation_ids"][0]
+            # Redundant edge-view keys removed (RD-1/RD-2): traversal handles
+            # are derivable from rel["id"] (expandFileRelations) and
+            # enrichment["file"]["id"] (fetchFile).
+            assert "related_files" not in enrichment
+            assert "traversal" not in enrichment
+            assert "source_type_enrichment" not in enrichment
 
     def test_chunk_rows_and_file_state_after_remember(
         self, file_service: FileService, hash_index: HashIndexService

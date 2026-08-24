@@ -5,8 +5,12 @@ block built from REAL entity values (File, FileChunk, FileRelation) via
 FileService read passthroughs. Pure memories (no chunk row) pass through
 with `file_enrichment: None` and all other fields byte-identical to input.
 
-TDD: these tests were written before the service existed (red), then the
-service was implemented to make them green.
+The unified `relations[]` block carries ONE entry per edge, each with:
+{id, relation_type, strength, description, target} where target is
+{id, path, summary} for resolvable edges, or None for self-referencing
+or dangling edges (the edge is still listed — honest view).
+
+TDD: tests written first (red), then the service is implemented to pass (green).
 """
 
 from __future__ import annotations
@@ -138,7 +142,11 @@ def _make_service(
     relations: Optional[list[FileRelation]] = None,
     related_files: Optional[dict[str, File]] = None,
 ) -> tuple[FileEnrichmentService, MagicMock]:
-    """Build a service over a fake FileService with the given row data."""
+    """Build a service over a fake FileService with the given row data.
+
+    `related_files` maps target_file_id → File; used to stub the
+    get_related_file_by_id lookup.
+    """
     file_service = MagicMock()
 
     chunk_by_memory: dict[str, FileChunk] = {c.memory_id: c for c in (chunks or [])}
@@ -163,7 +171,198 @@ def _make_service(
 
 
 # ---------------------------------------------------------------------------
-# AC 1 — file-based memory: real values, sorted relations, related files
+# Exact block keys — the file_enrichment block shape (RD-1)
+# ---------------------------------------------------------------------------
+
+
+class TestExactBlockKeys:
+    """The enrichment block carries exactly file, relations, summary_chain, chunk_hash.
+
+    No related_files, no traversal, no source_type_enrichment (removed in RD-1).
+    """
+
+    def test_enrichment_block_has_exactly_file_relations_summary_chain_chunk_hash(self) -> None:
+        source = _a_file(total_chunks=1, summary="S")
+        chunks = [_a_chunk(content_hash="c" * 64)]
+        relations = [_a_relation(id="r1", target_file_id="f2")]
+        related_files = {"f2": _a_file(id="f2", path="/b.md")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+
+        assert set(enrichment.keys()) == {"file", "relations", "summary_chain", "chunk_hash"}
+
+    def test_enrichment_block_has_no_related_files_key(self) -> None:
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [_a_relation(id="r1", target_file_id="f2")]
+        related_files = {"f2": _a_file(id="f2")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+
+        assert "related_files" not in enrichment
+
+    def test_enrichment_block_has_no_traversal_key(self) -> None:
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        service, _ = _make_service(source, chunks)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+
+        assert "traversal" not in enrichment
+
+    def test_enrichment_block_has_no_source_type_enrichment_key(self) -> None:
+        source = _a_file(total_chunks=1, metadata={"session.id": "x"})
+        chunks = [_a_chunk()]
+        service, _ = _make_service(source, chunks)
+
+        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
+
+        assert "source_type_enrichment" not in enrichment
+
+
+# ---------------------------------------------------------------------------
+# Unified relations[] — each entry carries all keys including target (RD-1)
+# ---------------------------------------------------------------------------
+
+
+class TestUnifiedRelations:
+    """relations[] entries: {id, relation_type, strength, description, target}."""
+
+    def test_relation_entry_carries_all_unified_keys(self) -> None:
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(
+                id="r1",
+                target_file_id="f2",
+                relation_type=RelationType.BACKLINK,
+                strength=0.9,
+                description="B backlinks A",
+            ),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/vault/b.md", summary="File B summary")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        entry = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"][0]
+
+        assert entry["id"] == "r1"
+        assert entry["relation_type"] == "backlink"
+        assert entry["strength"] == 0.9
+        assert entry["description"] == "B backlinks A"
+        assert entry["target"] == {
+            "id": "f2",
+            "path": "/vault/b.md",
+            "summary": "File B summary",
+        }
+
+    def test_relation_target_carries_id_path_summary(self) -> None:
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [_a_relation(id="r1", target_file_id="f2")]
+        related_files = {"f2": _a_file(id="f2", path="/c.md", summary="C summary")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        entry = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"][0]
+
+        assert set(entry["target"].keys()) == {"id", "path", "summary"}
+        assert entry["target"]["id"] == "f2"
+        assert entry["target"]["path"] == "/c.md"
+        assert entry["target"]["summary"] == "C summary"
+
+    def test_relation_target_none_when_dangling_edge(self) -> None:
+        """Dangling edge (target File row missing) → entry present, target is None."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        # f_gone is NOT in related_files → get_related_file_by_id returns None
+        relations = [
+            _a_relation(id="r_ok", target_file_id="f2", strength=0.9),
+            _a_relation(id="r_dangling", target_file_id="f_gone", strength=0.5),
+        ]
+        related_files = {"f2": _a_file(id="f2")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        rels = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"]
+
+        # Both entries listed (honest view)
+        assert [r["id"] for r in rels] == ["r_ok", "r_dangling"]
+        assert rels[1]["target"] is None
+
+    def test_relation_entry_preserves_description_none_when_unset(self) -> None:
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [_a_relation(id="r1", target_file_id="f2", description=None)]
+        related_files = {"f2": _a_file(id="f2")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        entry = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"][0]
+
+        assert "description" in entry
+        assert entry["description"] is None
+
+
+# ---------------------------------------------------------------------------
+# Self-referencing edges → target is None (RD-1)
+# ---------------------------------------------------------------------------
+
+
+class TestSelfReferencingEdge:
+    def test_self_referencing_edge_entry_present_with_null_target(self) -> None:
+        """Edge pointing at itself → entry listed, target is None."""
+        source = _a_file(id="f1", total_chunks=1)
+        chunks = [_a_chunk()]
+        # self-loop: source_file_id == target_file_id == "f1"
+        relations = [_a_relation(id="r_self", source_file_id="f1", target_file_id="f1", strength=0.7)]
+        service, _ = _make_service(source, chunks, relations, related_files={})
+
+        rels = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"]
+
+        assert len(rels) == 1
+        assert rels[0]["id"] == "r_self"
+        assert rels[0]["target"] is None
+
+    def test_self_referencing_edge_does_not_trigger_related_file_lookup(self) -> None:
+        """Self-referencing edges must not call get_related_file_by_id."""
+        source = _a_file(id="f1", total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [_a_relation(id="r_self", source_file_id="f1", target_file_id="f1", strength=0.7)]
+        service, file_service = _make_service(source, chunks, relations, related_files={})
+
+        service.enrich([_a_memory()])
+
+        file_service.get_related_file_by_id.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# No dedup by target — 2 edges to same target → 2 entries (RD-1)
+# ---------------------------------------------------------------------------
+
+
+class TestNoDedupByTarget:
+    def test_two_edges_same_target_yield_two_entries(self) -> None:
+        """2 edges to the same target file → relations has 2 entries (per-edge handles)."""
+        source = _a_file(total_chunks=1)
+        chunks = [_a_chunk()]
+        relations = [
+            _a_relation(id="r_a", target_file_id="f2", strength=0.9),
+            _a_relation(id="r_b", target_file_id="f2", relation_type=RelationType.BACKLINK, strength=0.8),
+        ]
+        related_files = {"f2": _a_file(id="f2", path="/b.md", summary="B summary")}
+        service, _ = _make_service(source, chunks, relations, related_files)
+
+        rels = service.enrich([_a_memory()])[0]["file_enrichment"]["relations"]
+
+        assert len(rels) == 2
+        assert rels[0]["id"] == "r_a"
+        assert rels[1]["id"] == "r_b"
+        # Targets may repeat
+        assert rels[0]["target"]["id"] == "f2"
+        assert rels[1]["target"]["id"] == "f2"
+
+
+# ---------------------------------------------------------------------------
+# File-based memory: real values, sorted relations, limit (existing ACs)
 # ---------------------------------------------------------------------------
 
 
@@ -171,8 +370,8 @@ class TestFileBasedMemoryEnrichment:
     def test_enriches_file_based_memory_with_real_file_values(self) -> None:
         """Fixture: file with 3 chunks, relations to 2 files (0.9 / 0.4).
 
-        file.total_chunks is the REAL entity value; relations sorted
-        strength-descending; related_files carries id/path/summary/relation.
+        relations[] is unified: sorted strength-descending, each entry has
+        id/relation_type/strength/description/target.
         """
         source = _a_file(
             total_chunks=3,
@@ -201,33 +400,32 @@ class TestFileBasedMemoryEnrichment:
         enrichment = results[0]["file_enrichment"]
         assert enrichment is not None
 
-        # file block — REAL entity values (no hardcoded zeros/empty dict)
+        # file block — REAL entity values
         assert enrichment["file"]["id"] == "f1"
         assert enrichment["file"]["path"] == "/vault/notes/a.md"
         assert enrichment["file"]["total_chunks"] == 3
         assert enrichment["file"]["average_importance"] == pytest.approx(0.82)
         assert enrichment["file"]["metadata"] == {"session.id": "sess_42"}
 
-        # relations — capped at limit (default 5, both fit), strength-descending
+        # relations — unified, capped at limit (default 5, both fit), strength-descending
         strengths = [r["strength"] for r in enrichment["relations"]]
         assert strengths == [0.9, 0.4]
         relation_ids = [r["id"] for r in enrichment["relations"]]
         assert relation_ids == ["r_high", "r_low"]
 
-        # related_files — one entry per relation's other end
-        related = enrichment["related_files"]
-        assert len(related) == 2
-        top = related[0]
-        assert top["id"] == "f2"
-        assert top["path"] == "/vault/notes/b.md"
-        assert top["summary"] == "File B summary"
-        assert top["relation"] == "backlink"
-        second = related[1]
-        assert second["id"] == "f3"
-        assert second["relation"] == "sibling"
+        top = enrichment["relations"][0]
+        assert top["relation_type"] == "backlink"
+        assert top["target"]["id"] == "f2"
+        assert top["target"]["path"] == "/vault/notes/b.md"
+        assert top["target"]["summary"] == "File B summary"
 
-    def test_related_file_missing_from_storage_is_skipped(self) -> None:
-        """A relation whose other end has no File row is skipped (no crash)."""
+        second = enrichment["relations"][1]
+        assert second["relation_type"] == "sibling"
+        assert second["target"]["id"] == "f3"
+        assert second["target"]["path"] == "/vault/notes/c.md"
+
+    def test_dangling_edge_entry_still_listed_with_null_target(self) -> None:
+        """A relation whose other end has no File row → entry present, target is None."""
         source = _a_file(total_chunks=1)
         chunks = [_a_chunk()]
         relations = [
@@ -241,7 +439,8 @@ class TestFileBasedMemoryEnrichment:
         enrichment = results[0]["file_enrichment"]
 
         assert [r["id"] for r in enrichment["relations"]] == ["r_ok", "r_dangling"]
-        assert [rf["id"] for rf in enrichment["related_files"]] == ["f2"]
+        assert enrichment["relations"][1]["target"] is None
+        assert enrichment["relations"][0]["target"]["id"] == "f2"
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +467,11 @@ class TestRelationLimitCap:
         enrichment = results[0]["file_enrichment"]
 
         assert [r["id"] for r in enrichment["relations"]] == ["r_high"]
-        assert [rf["id"] for rf in enrichment["related_files"]] == ["f2"]
+        assert enrichment["relations"][0]["target"]["id"] == "f2"
 
 
 # ---------------------------------------------------------------------------
-# AC 3 — summary_chain (three separate tests)
+# AC 3 — summary_chain (unchanged)
 # ---------------------------------------------------------------------------
 
 
@@ -369,68 +568,6 @@ class TestPureMemoryPassthrough:
 
 
 # ---------------------------------------------------------------------------
-# AC 5 — source_type_enrichment from File.metadata extra keys
-# ---------------------------------------------------------------------------
-
-
-class TestSourceTypeEnrichment:
-    def test_source_type_enrichment_carries_metadata_extra_keys(self) -> None:
-        """agent-sessions file with session.* metadata ⇒ same keys in enrichment."""
-        source = _a_file(
-            source_type=SourceType.AGENT_SESSIONS,
-            metadata={"session.id": "sess_42", "session.started_at": "2026-08-16T10:00:00Z"},
-        )
-        chunks = [_a_chunk()]
-        service, _ = _make_service(source, chunks)
-
-        results = service.enrich([_a_memory()])
-        enrichment = results[0]["file_enrichment"]
-
-        assert enrichment["source_type_enrichment"] == {
-            "session.id": "sess_42",
-            "session.started_at": "2026-08-16T10:00:00Z",
-        }
-
-    def test_source_type_enrichment_empty_dict_only_when_no_extra_keys(self) -> None:
-        """File.metadata has no extra keys ⇒ empty dict (deliberate, documented)."""
-        source = _a_file(metadata={})
-        chunks = [_a_chunk()]
-        service, _ = _make_service(source, chunks)
-
-        results = service.enrich([_a_memory()])
-        enrichment = results[0]["file_enrichment"]
-
-        assert enrichment["source_type_enrichment"] == {}
-
-
-# ---------------------------------------------------------------------------
-# AC 6 — traversal block
-# ---------------------------------------------------------------------------
-
-
-class TestTraversalBlock:
-    def test_traversal_carries_file_id_and_relation_ids(self) -> None:
-        """traversal = {file_id, relation_ids} in the same (capped, sorted) order."""
-        source = _a_file(total_chunks=1)
-        chunks = [_a_chunk()]
-        relations = [
-            _a_relation(id="r_low", target_file_id="f3", strength=0.4),
-            _a_relation(id="r_high", target_file_id="f2", strength=0.9),
-        ]
-        related_files = {
-            "f2": _a_file(id="f2", path="/b.md"),
-            "f3": _a_file(id="f3", path="/c.md"),
-        }
-        service, _ = _make_service(source, chunks, relations, related_files)
-
-        results = service.enrich([_a_memory()], limit=1)
-        traversal = results[0]["file_enrichment"]["traversal"]
-
-        assert traversal["file_id"] == "f1"
-        assert traversal["relation_ids"] == ["r_high"]
-
-
-# ---------------------------------------------------------------------------
 # Edge cases — lookup failures degrade gracefully (no exception across boundary)
 # ---------------------------------------------------------------------------
 
@@ -479,8 +616,6 @@ class TestEdgeCases:
 
         assert enrichment is not None
         assert enrichment["relations"] == []
-        assert enrichment["related_files"] == []
-        assert enrichment["traversal"]["relation_ids"] == []
 
     def test_multiple_memories_same_file_share_one_enrichment(self) -> None:
         """Two memories of the same file ⇒ both enriched; lookups not duplicated."""
@@ -596,85 +731,3 @@ class TestHashSurfacing:
         results = service.enrich([_a_memory(id="mem_pure")])
 
         assert results[0]["file_enrichment"] is None
-
-
-# ---------------------------------------------------------------------------
-# AC 8 — D44 edges population: relations[] + related_files[] carry description
-# ---------------------------------------------------------------------------
-
-
-class TestRelationDescriptionSurfacing:
-    """D44 (spec §3.1): every relation surfaced on retrieval gains the
-    relation's own `description` — additive-only, both the compact
-    `relations[]` block and the sibling `related_files[]` entries."""
-
-    def test_relations_block_carries_relation_description_when_set(self) -> None:
-        """A relation WITH a description ⇒ its relations[] entry carries
-        `description` equal to it."""
-        source = _a_file(total_chunks=1)
-        chunks = [_a_chunk()]
-        relations = [
-            _a_relation(id="r_desc", target_file_id="f2", strength=0.9,
-                        description="Shared context between A and B"),
-        ]
-        related_files = {"f2": _a_file(id="f2", path="/b.md")}
-        service, _ = _make_service(source, chunks, relations, related_files)
-
-        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
-        block = enrichment["relations"][0]
-
-        assert block["id"] == "r_desc"
-        assert block["description"] == "Shared context between A and B"
-
-    def test_relations_block_carries_none_description_when_unset(self) -> None:
-        """A relation WITHOUT a description (None) ⇒ its relations[] entry
-        carries `description: None` (additive key always present)."""
-        source = _a_file(total_chunks=1)
-        chunks = [_a_chunk()]
-        relations = [
-            _a_relation(id="r_none", target_file_id="f2", strength=0.9, description=None),
-        ]
-        related_files = {"f2": _a_file(id="f2", path="/b.md")}
-        service, _ = _make_service(source, chunks, relations, related_files)
-
-        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
-        block = enrichment["relations"][0]
-
-        assert block["id"] == "r_none"
-        assert "description" in block
-        assert block["description"] is None
-
-    def test_related_files_entries_carry_traversed_relation_description(self) -> None:
-        """related_files[] entries carry the traversed relation's `description`."""
-        source = _a_file(total_chunks=1)
-        chunks = [_a_chunk()]
-        relations = [
-            _a_relation(id="r_desc", target_file_id="f2", strength=0.9,
-                        description="Target B links to A"),
-        ]
-        related_files = {"f2": _a_file(id="f2", path="/b.md", summary="File B summary")}
-        service, _ = _make_service(source, chunks, relations, related_files)
-
-        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
-        related = enrichment["related_files"][0]
-
-        assert related["id"] == "f2"
-        assert related["relation"] == "sibling"
-        assert related["description"] == "Target B links to A"
-
-    def test_related_files_entries_carry_none_description_when_unset(self) -> None:
-        """related_files[] entry for a relation with no description carries
-        `description: None` (additive key always present)."""
-        source = _a_file(total_chunks=1)
-        chunks = [_a_chunk()]
-        relations = [
-            _a_relation(id="r_none", target_file_id="f2", strength=0.9, description=None),
-        ]
-        related_files = {"f2": _a_file(id="f2", path="/b.md")}
-        service, _ = _make_service(source, chunks, relations, related_files)
-
-        enrichment = service.enrich([_a_memory()])[0]["file_enrichment"]
-        related = enrichment["related_files"][0]
-
-        assert "description" in related
-        assert related["description"] is None

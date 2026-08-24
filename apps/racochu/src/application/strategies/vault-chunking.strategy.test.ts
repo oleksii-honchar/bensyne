@@ -141,7 +141,6 @@ describe('extractVaultNoteMetadata', () => {
     expect(meta.properties.id).toBe('DEC-0001');
     expect(meta.properties.system).toBe('racochu');
     expect(meta.properties.title).toBe('Alpha decision');
-    expect(meta.properties.see_also).toBe(JSON.stringify(['concepts/0001-x.concept.md']));
     expect(meta.properties.superseded_by).toBe('DEC-0002');
     expect(meta.properties.deprecated).toBe('true');
     // other keys → lowercased
@@ -152,12 +151,20 @@ describe('extractVaultNoteMetadata', () => {
     expect(meta.properties).not.toHaveProperty('tags');
     expect(meta.properties).not.toHaveProperty('createdat');
     expect(meta.properties).not.toHaveProperty('updatedat');
+    // see_also is relation-aware → typed key (normalized note.see_also written by attachRelations)
+    expect(meta.properties).not.toHaveProperty('see_also');
   });
 
   it('stringifies object-valued keys (deprecated block)', () => {
     const frontmatter = ['deprecated:', '  by: DEC-0002', '  reason: outdated'].join('\n');
     const meta = extractVaultNoteMetadata(frontmatter);
     expect(meta.properties.deprecated).toBe(JSON.stringify({ by: 'DEC-0002', reason: 'outdated' }));
+  });
+
+  it('excludes see_also from properties (typed-key exclusion)', () => {
+    const frontmatter = ['see_also:', '  - concepts/0001-x.concept.md'].join('\n');
+    const meta = extractVaultNoteMetadata(frontmatter);
+    expect(meta.properties).not.toHaveProperty('see_also');
   });
 
   it('returns empty metadata for invalid YAML', () => {

@@ -7,7 +7,7 @@ Response contract (stable per result):
 - Non-file memory: memory_id, file=None, matched_memories=[], related_files_count,
   content_preview, importance, relevance_score (+ additive file_enrichment key).
 - File-backed group: file{...}, matched_memories[...], related_files_count,
-  related_files, summary, source_type_enrichment (+ additive file_enrichment block).
+  related_files, summary (+ additive file_enrichment block).
 
 Filters (source_type / file_role) apply to phase-2 grouping only — pure memories
 are never dropped.
@@ -346,9 +346,40 @@ class TestSearchFilesUseCaseFileMemories:
             "related_files_count",
             "related_files",
             "summary",
-            "source_type_enrichment",
         }
         assert legacy_keys <= set(r.keys())
+
+    def test_file_result_has_no_source_type_enrichment_key(
+        self,
+        use_case: SearchFilesUseCase,
+        mnemosyne_client: MagicMock,
+        file_service: MagicMock,
+    ) -> None:
+        """RD-2: source_type_enrichment removed from the file-backed group.
+
+        It was a verbatim copy of file.metadata (latent bug + token waste);
+        consumers read session.* extras via file_enrichment.file.metadata or
+        file.metadata directly.
+        """
+        file = _a_file(id="f1", path="/tmp/test.txt", metadata={"session.id": "ses_123"})
+        chunk = _a_chunk(file_id="f1", memory_id="mem_1", chunk_index=0)
+
+        mnemosyne_client.recall.return_value = [
+            {"id": "mem_1", "content": "Content", "importance": 0.7, "relevance_score": 0.85},
+        ]
+        file_service.get_chunk_by_memory_id.return_value = Result.ok(chunk)
+        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.get_relations_by_file_id.return_value = Result.ok([])
+        file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
+
+        result = use_case.execute({"query": "q", "memory_bank": "my_bank"})
+        assert result.is_ok is True
+
+        r = result.value["results"][0]
+        assert "source_type_enrichment" not in r
+        # Metadata still reachable via the file dict and the enrichment block.
+        assert r["file"]["metadata"] == {"session.id": "ses_123"}
+        assert r["file_enrichment"]["file"]["metadata"] == {"session.id": "ses_123"}
 
     def test_file_dict_has_stable_key_set(
         self,

@@ -10,7 +10,7 @@ Response contract (stable per result, additive-only changes):
 - Non-file memory: memory_id, file=None, matched_memories=[], related_files_count,
   content_preview, importance, relevance_score (+ additive file_enrichment key).
 - File-backed group: file{...}, matched_memories[...], related_files_count,
-  related_files, summary, source_type_enrichment (+ additive file_enrichment block).
+  related_files, summary (+ additive file_enrichment block).
 
 Filters (source_type / file_role) apply to phase-2 grouping only: a recalled
 memory whose file does not match the filter is emitted as a non-file result.
@@ -220,8 +220,6 @@ class SearchFilesUseCase(BaseUseCase[dict, dict]):
             "related_files_count": related_files_count,
             "related_files": related_files,
             "summary": self.file_enrichment_service._mechanical_summary(file) if not file.summary else file.summary,
-            # Real File.metadata extra keys (service contract: empty dict only when none)
-            "source_type_enrichment": dict(file.metadata),
         }
 
     def _build_matched_memory(self, memory: dict, chunk: FileChunk) -> dict:

@@ -17,7 +17,7 @@ import { formatNoteMetadata } from './obsidian-chunking.strategy';
 const INDEX_FILENAMES = new Set(['_index.md', '_Vault-Home.md']);
 
 /** Vault frontmatter keys that map to explicit NoteMetadata fields (lowercased). */
-const VAULT_TYPED_KEYS = new Set(['type', 'status', 'tags', 'createdat', 'updatedat']);
+const VAULT_TYPED_KEYS = new Set(['type', 'status', 'tags', 'createdat', 'updatedat', 'see_also']);
 
 /** Lazy bounded vault walk limits (spec §3.2). */
 const MAX_WALK_DEPTH = 5;
@@ -65,8 +65,10 @@ export function parseFrontmatterRecord(frontmatter: string): Record<string, unkn
  * Mapping (ADR-V6 / spec §5.3):
  * - `type`, `status`, `tags` → typed fields
  * - `createdAt` → `created`; `updatedAt` → `modified`
- * - `title`, `id`, `system`, `see_also`, `supersedes`, `superseded_by`, `deprecated`,
+ * - `title`, `id`, `system`, `supersedes`, `superseded_by`, `deprecated`,
  *   and any other key → `properties.<lowercased>` (stringified)
+ * - `see_also` is relation-aware: excluded from properties; the canonical
+ *   normalized key is `note.see_also` (written by `attachRelations`, step 10).
  */
 export function extractVaultNoteMetadata(frontmatter: string): NoteMetadata {
   const record = parseFrontmatterRecord(frontmatter);

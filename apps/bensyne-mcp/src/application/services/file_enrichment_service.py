@@ -13,14 +13,16 @@ memory the service probes the file layer:
     - `chunk_hash`: the recalled memory's chunk row content_hash (per-memory;
       null for legacy/absent rows — S7). Applied OUTSIDE the per-file cache so
       multiple memories of the same file each surface their own chunk hash.
-    - `relations`: capped at `limit`, sorted strength-descending
-    - `related_files`: per surviving relation's other end — id, path, summary, relation type
+    - `relations`: UNIFIED list, capped at `limit`, sorted strength-descending.
+      One entry per edge (no dedup). Each entry:
+        {id, relation_type, strength, description, target}
+      where `target` = {id, path, summary} for resolvable edges, or None when:
+        - the edge is self-referencing (other-end id == source file_id), or
+        - the target File row is missing/lookup failed (dangling edge)
+      The edge entry is always listed even when target is None (honest view).
     - `summary_chain`: File.summary (or a mechanical path+keywords+tags fallback
       when File.summary is null) followed by the distinct parent-unit summaries
       of the file's chunks
-    - `traversal`: {file_id, relation_ids} — handles for expandFileRelations/fetchFile
-    - `source_type_enrichment`: extra keys from File.metadata (e.g. session.*);
-      empty dict only when there are none
 - Pure memory (no chunk row) ⇒ `file_enrichment: None` and every other field
   of the result is byte-identical to the input.
 
@@ -138,11 +140,8 @@ class FileEnrichmentService:
 
         return {
             "file": file.to_dict(),
-            "relations": [self._relation_block(rel) for rel in relations],
-            "related_files": self._resolve_related_files(relations, file_id),
+            "relations": [self._relation_block(rel, file_id) for rel in relations],
             "summary_chain": self._build_summary_chain(file, chunks),
-            "traversal": {"file_id": file_id, "relation_ids": [rel.id for rel in relations]},
-            "source_type_enrichment": dict(file.metadata),
         }
 
     # ------------------------------------------------------------------
@@ -157,41 +156,38 @@ class FileEnrichmentService:
         ordered = sorted(relations_result.value, key=lambda rel: rel.strength, reverse=True)
         return ordered[:limit]
 
-    def _relation_block(self, relation: FileRelation) -> dict:
-        """Compact relation row (id + type + strength + description) for the enrichment block."""
+    def _relation_block(self, relation: FileRelation, source_file_id: str) -> dict:
+        """Compact relation row (id + type + strength + description + target).
+
+        Resolves the other end of the edge in ONE pass. `target` is:
+        - {id, path, summary} when the other-end File row is found, or
+        - None for self-referencing edges (other-end == source) or dangling edges
+          (File row missing / lookup failed). The edge is still listed.
+        """
+        target_id = (
+            relation.target_file_id
+            if relation.source_file_id == source_file_id
+            else relation.source_file_id
+        )
+
+        target: dict | None = None
+        if target_id != source_file_id:
+            file_result = self._file_service.get_related_file_by_id(target_id)
+            if file_result.is_ok and file_result.value is not None:
+                t = file_result.value
+                target = {
+                    "id": t.id,
+                    "path": t.path,
+                    "summary": t.summary,
+                }
+
         return {
             "id": relation.id,
             "relation_type": relation.relation_type.value,
             "strength": relation.strength,
             "description": relation.description,
+            "target": target,
         }
-
-    def _resolve_related_files(self, relations: list[FileRelation], source_file_id: str) -> list[dict]:
-        """Resolve each relation's other end to {id, path, summary, relation}."""
-        resolved: list[dict] = []
-        seen: set[str] = set()
-        for relation in relations:
-            target_id = relation.target_file_id if relation.source_file_id == source_file_id else relation.source_file_id
-            if target_id in seen or target_id == source_file_id:
-                continue
-            seen.add(target_id)
-
-            file_result = self._file_service.get_related_file_by_id(target_id)
-            if not file_result.is_ok or file_result.value is None:
-                # Dangling edge (D4 stub policy may leave rows absent here) — skip.
-                continue
-
-            target = file_result.value
-            resolved.append(
-                {
-                    "id": target.id,
-                    "path": target.path,
-                    "summary": target.summary,
-                    "relation": relation.relation_type.value,
-                    "description": relation.description,
-                }
-            )
-        return resolved
 
     def _build_summary_chain(self, file: File, chunks: list[FileChunk]) -> list[str]:
         """File-level summary first, then distinct parent-unit summaries (in chunk order).

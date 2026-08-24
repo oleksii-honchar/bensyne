@@ -16,8 +16,8 @@ Verify end-to-end the **agent-sessions** chunking strategy's distinctive behavio
 
 1. Are **session metadata keys** (`session.*`) extracted from `session.md` frontmatter and attached to companion file chunks?
 2. Does the recalled file surface **`source_type == "agent-sessions"`**?
-3. Are **companion relation edges** (`parent_child`, `sibling`) created and surfaced as `relations` / `related_files` on recall?
-4. Are **traversal handles** (`file_id` + `relation_ids`) present for a companion?
+3. Are **companion relation edges** (`parent_child`, `sibling`) created and surfaced as `relations[]` on recall?
+4. Are **traversal handles** (`file_enrichment.file.id` + `relations[].id`) present for a companion?
 5. Are **content `cross_reference` edges** (D42) emitted for in-content references to other session files?
 6. Are **cross-session references** (S9) allowed and resolved?
 
@@ -201,72 +201,72 @@ Wait **≥3s** for debounce + chunking + ingestion (so rb-as2 files have real `f
 - Call `recallMemory("RB_AS_FINDINGS_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the result row for the findings file (the row whose `file_enrichment.file.id == findings_id`).
 - **PASS — source_type:** `file_enrichment.file.source_type == "agent-sessions"`.
-- **PASS — session.* metadata** (present in **both** `file_enrichment.source_type_enrichment` and `file_enrichment.file.metadata`):
+- **PASS — session.* metadata** (present in `file_enrichment.file.metadata`):
   - `session.id` = "ses-rb-agent-sessions"
   - `session.createdAt` = "2026-08-19T12:00:00Z"
   - `session.status` = "active"
   - `session.phase` = "research"
   - `session.nextAgent` = "developer"
-- **PASS — parent_child edge:** `file_enrichment.relations` contains an entry with `relation_type == "parent_child"`; and `file_enrichment.related_files` contains an entry whose `id == session_id`.
-- **PASS — sibling edge:** `file_enrichment.relations` contains an entry with `relation_type == "sibling"`; and `file_enrichment.related_files` contains an entry whose `id == materials_id`.
-- **PASS — traversal handles:** `file_enrichment.traversal.file_id == findings_id` and `file_enrichment.traversal.relation_ids` is a **non-empty** array.
+- **PASS — parent_child edge:** `file_enrichment.relations[]` contains an entry with `relation_type == "parent_child"` and `target.id == session_id`.
+- **PASS — sibling edge:** `file_enrichment.relations[]` contains an entry with `relation_type == "sibling"` and `target.id == materials_id`.
+- **PASS — traversal handles:** `file_enrichment.file.id == findings_id` and every `relations[].id` is **non-empty**.
 
 #### Step 8: S1 — Cross-ref from session.md to materials
 
 - Call `recallMemory("RB_AS_SESSION_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the row whose `file_enrichment.file.id == session_id`.
-- **PASS — cross_reference edge:** `file_enrichment.relations` contains an entry with `relation_type == "cross_reference"`; and `file_enrichment.related_files` contains an entry whose `id == materials_id`.
+- **PASS — cross_reference edge:** `file_enrichment.relations[]` contains an entry with `relation_type == "cross_reference"` and `target.id == materials_id`.
 
 #### Step 9: S2 — Cross-refs from findings.md (2 edges)
 
 - Using the findings recall result from Step 7 (or re-call it):
-- **PASS — cross_reference to canonical material:** `file_enrichment.related_files` contains an entry whose `id == materials_id` with `relation_type == "cross_reference"`.
-- **PASS — cross_reference to archived material:** `file_enrichment.related_files` contains an entry whose `path` ends with `260819-0001-materials.md` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to canonical material:** `file_enrichment.relations[]` contains an entry whose `target.id == materials_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to archived material:** `file_enrichment.relations[]` contains an entry whose `target.path` ends with `260819-0001-materials.md` with `relation_type == "cross_reference"`.
 
 #### Step 10: S3 — Cross-refs from spec.md (2 edges)
 
 - Call `recallMemory("RB_AS_SPEC_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the row whose `file_enrichment.file.id == spec_id`.
-- **PASS — cross_reference to materials:** `file_enrichment.related_files` contains an entry whose `id == materials_id` with `relation_type == "cross_reference"`.
-- **PASS — cross_reference to findings:** `file_enrichment.related_files` contains an entry whose `id == findings_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to materials:** `file_enrichment.relations[]` contains an entry whose `target.id == materials_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to findings:** `file_enrichment.relations[]` contains an entry whose `target.id == findings_id` with `relation_type == "cross_reference"`.
 
 #### Step 11: S4 — Cross-refs from implementation-plan.md (2 edges)
 
 - Call `recallMemory("RB_AS_PLAN_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the row whose `file_enrichment.file.id == plan_id`.
-- **PASS — cross_reference to materials:** `file_enrichment.related_files` contains an entry whose `id == materials_id` with `relation_type == "cross_reference"`.
-- **PASS — cross_reference to findings:** `file_enrichment.related_files` contains an entry whose `id == findings_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to materials:** `file_enrichment.relations[]` contains an entry whose `target.id == materials_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to findings:** `file_enrichment.relations[]` contains an entry whose `target.id == findings_id` with `relation_type == "cross_reference"`.
 
 #### Step 12: S5 — Cross-ref from archived spec
 
 - Call `searchFiles("RB_AS_SPEC_ARCHIVE_TOKEN", memory_bank="tmp-agent-sessions", limit=5)` → `archived_spec_id`.
 - Call `recallMemory("RB_AS_SPEC_ARCHIVE_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the row whose `file_enrichment.file.id == archived_spec_id`.
-- **PASS — cross_reference to materials:** `file_enrichment.related_files` contains an entry whose `id == materials_id` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to materials:** `file_enrichment.relations[]` contains an entry whose `target.id == materials_id` with `relation_type == "cross_reference"`.
 
 #### Step 13: S6 — Cross-ref from archived findings to archived material
 
 - Call `searchFiles("RB_AS_FINDINGS_ARCHIVE_TOKEN", memory_bank="tmp-agent-sessions", limit=5)` → `archived_findings_id`.
 - Call `recallMemory("RB_AS_FINDINGS_ARCHIVE_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the row whose `file_enrichment.file.id == archived_findings_id`.
-- **PASS — cross_reference to archived material:** `file_enrichment.related_files` contains an entry whose `path` ends with `260819-0001-materials.md` with `relation_type == "cross_reference"`.
+- **PASS — cross_reference to archived material:** `file_enrichment.relations[]` contains an entry whose `target.path` ends with `260819-0001-materials.md` with `relation_type == "cross_reference"`.
 
 #### Step 14: S7 — No edge for nonexistent ref
 
 - Using the spec recall result from Step 10 (or re-call it):
-- **PASS — no edge to ghost:** `file_enrichment.related_files` contains **NO** entry whose `path` ends with `ghost.md`.
+- **PASS — no edge to ghost:** `file_enrichment.relations[]` contains **NO** entry whose `target.path` ends with `ghost.md`.
 - **PASS — no PENDING stub:** Call `searchFiles("ghost", memory_bank="tmp-agent-sessions", limit=5)` → 0 results or no file with path ending in `ghost.md`.
 
 #### Step 15: S8 — No self edge
 
 - Using the findings recall result from Step 7 (or re-call it):
-- **PASS — no self edge:** `file_enrichment.related_files` contains **NO** entry whose `id == findings_id` with `relation_type == "cross_reference"`.
+- **PASS — no self edge:** `file_enrichment.relations[]` contains **NO** entry whose `target.id == findings_id` with `relation_type == "cross_reference"`.
 
 #### Step 16: S9 — Cross-session reference (POSITIVE check)
 
 - Using the plan recall result from Step 11 (or re-call it):
-- **PASS — cross_reference to B contract:** `file_enrichment.related_files` contains an entry whose `id == b_contract_id` with `relation_type == "cross_reference"`.
-- **PASS — B file in related_files:** The B file appears in A's `file_enrichment.related_files` (proving cross-session refs are allowed and resolved).
+- **PASS — cross_reference to B contract:** `file_enrichment.relations[]` contains an entry whose `target.id == b_contract_id` with `relation_type == "cross_reference"`.
+- **PASS — B file in relations:** The B file appears in A's `file_enrichment.relations[]` (as the `target` of a `cross_reference` entry) (proving cross-session refs are allowed and resolved).
 
 #### Step 17: Verify session.md emits no parent_child edge
 
@@ -296,7 +296,7 @@ Wait **≥3s** for debounce + chunking + ingestion (so rb-as2 files have real `f
 | **S0** (regression) | session.* metadata stamped | All 5 keys present with correct values |
 | **S0** (regression) | parent_child edge | Present (findings → session.md) |
 | **S0** (regression) | sibling edge | Present (findings → materials) |
-| **S0** (regression) | traversal handles | `file_id` + non-empty `relation_ids` |
+| **S0** (regression) | traversal handles | `file_enrichment.file.id` + non-empty `relations[].id` |
 | **S1** | session.md → materials cross-ref | `cross_reference` edge resolves to materials |
 | **S2** | findings.md → 2 cross-refs | Edges to canonical + archived material |
 | **S3** | spec.md → 2 cross-refs | Edges to materials + findings |
@@ -305,6 +305,6 @@ Wait **≥3s** for debounce + chunking + ingestion (so rb-as2 files have real `f
 | **S6** | archived findings → archived material | Edge resolves to archived material |
 | **S7** | nonexistent ref | NO edge, NO PENDING stub |
 | **S8** | self ref | NO self edge |
-| **S9** | cross-session ref (A→B) | Edge resolves; B file in A's related_files |
+| **S9** | cross-session ref (A→B) | Edge resolves; B file in A's relations[] target |
 | — | session.md root edges | No outgoing `parent_child`; outgoing `sibling` allowed |
 | — | Cleanup | Memories forgotten after file deletion |

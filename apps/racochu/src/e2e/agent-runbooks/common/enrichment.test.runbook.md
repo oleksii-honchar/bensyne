@@ -13,7 +13,7 @@ Verify the LLM enrichment pipeline end-to-end (general MCP functionality — **s
 > - `mastraDocKeywords` — LLM-extracted document keywords (non-empty string)
 > - `mastraDocSummary` — LLM-extracted **whole-file** summary (non-empty string)
 >
-> These keys propagate to **all** chunks of the document, are stored with the memory, and surface in the recall output. The summary also flows to the file layer: `file_enrichment.summary_chain[0]` carries the **LLM whole-file summary** (NOT the mechanical `File: {path}. Keywords: …` fallback), and `related_files[].summary` carries each target file's whole-file summary.
+> These keys propagate to **all** chunks of the document, are stored with the memory, and surface in the recall output. The summary also flows to the file layer: `file_enrichment.summary_chain[0]` carries the **LLM whole-file summary** (NOT the mechanical `File: {path}. Keywords: …` fallback), and `relations[].target.summary` carries each target file's whole-file summary.
 >
 > **Degraded-path control (mechanical fallback):** the LLM whole-file summary appears **only** when enrichment is enabled **and** the LLM is reachable. When either is off, `mastraDocSummary` is absent and `summary_chain[0]` degrades to the mechanical string `File: {path}. Keywords: …` (the fallback is the degraded-path control — a mechanical head starting with `File: ` is the expected signal that enrichment is NOT in effect, NOT a bug). Enrichment never blocks ingestion.
 
@@ -23,7 +23,7 @@ Verify end-to-end enrichment feature in racochu:
 1. Does the enrichment code path actually execute?
 2. Does the LLM endpoint respond?
 3. Are enriched chunks actually being stored with metadata (`mastraDocTitle`, `mastraDocKeywords`, `mastraDocSummary`)?
-4. Does the **whole-file** LLM summary flow to the file layer (`summary_chain[0]` non-mechanical; `related_files[].summary` non-null on a real edge target)?
+4. Does the **whole-file** LLM summary flow to the file layer (`summary_chain[0]` non-mechanical; `relations[].target.summary` non-null on a real edge target)?
 
 ### Prerequisites
 
@@ -89,7 +89,7 @@ Wait **≥3s** for debounce + chunking + enrichment (the LLM call is slower than
 
 #### Step 5: Verify the whole-file summary propagates to a real edge target (agent-sessions)
 
-The vault fixture is single-file (no relations), so `related_files[]` is empty there. To prove `related_files[].summary` carries a real target's **whole-file** summary, use the deterministic agent-sessions companion edge — enrichment is sourceType-agnostic, so `tmp-agent-sessions` is used for this one edge-only check (the `RB_ENRICH_EDGE_001` token scopes it).
+The vault fixture is single-file (no relations), so `relations[]` is empty there. To prove `relations[].target.summary` carries a real target's **whole-file** summary, use the deterministic agent-sessions companion edge — enrichment is sourceType-agnostic, so `tmp-agent-sessions` is used for this one edge-only check (the `RB_ENRICH_EDGE_001` token scopes it).
 
 Create the session + companion (relative to racochu root):
 
@@ -124,9 +124,9 @@ Wait **≥3s** for debounce + chunking + enrichment (the LLM call is slower than
 
 - Call `searchFiles("RB_ENRICH_EDGE_001", memory_bank="tmp-agent-sessions", limit=5)` → `edge_session_id` = the file-backed group for `session.md` (`file.id`); `edge_findings_id` = the file-backed group for `findings/findings.md` (`file.id`).
 - Call `recallMemory("RB_ENRICH_EDGE_001", memory_bank="tmp-agent-sessions", limit=5)`; identify the **findings** row (row whose `file_enrichment.file.id == edge_findings_id`).
-- **PASS — related_files summary non-null:** in the findings row's `file_enrichment.related_files[]`, the entry whose `id == edge_session_id` has a **non-null, non-empty** `summary` (the target `session.md`'s LLM whole-file summary).
+- **PASS — relations target summary non-null:** in the findings row's `file_enrichment.relations[]`, the entry whose `target.id == edge_session_id` has a **non-null, non-empty** `target.summary` (the target `session.md`'s LLM whole-file summary).
 - **PASS — target head is non-mechanical:** on the **session** row (row whose `file_enrichment.file.id == edge_session_id`), `file_enrichment.summary_chain[0]` does **NOT** start with `File: ` — confirming a real LLM summary is what propagates, not the mechanical fallback.
-- **FAIL signature:** the `session.md` related entry's `summary` is null/empty, OR `edge_findings_id`'s `related_files[]` has no entry for `edge_session_id` ⇒ the target's summary did not flow (enrichment not applied to the target, or the edge is dangling).
+- **FAIL signature:** the `session.md` related entry's `target.summary` is null/empty, OR `edge_findings_id`'s `relations[]` has no entry whose `target.id == edge_session_id` ⇒ the target's summary did not flow (enrichment not applied to the target, or the edge is dangling).
 
 #### Step 6: Check Logs (enrichment executed)
 
@@ -156,6 +156,6 @@ Wait **≥3s** for debounce + chunking + enrichment (the LLM call is slower than
 | Enriched metadata | Non-empty `mastraDocTitle` + `mastraDocKeywords` + `mastraDocSummary` |
 | Title meaningful | `mastraDocTitle` reflects the document's semantic topic (not a raw path) |
 | Whole-file summary non-mechanical | `summary_chain[0]` does NOT start with `File: ` (LLM summary, not mechanical fallback) |
-| Summary on edge target | `related_files[].summary` non-null for the `session.md` edge target |
+| Summary on edge target | `relations[].target.summary` non-null for the `session.md` edge target |
 | Mechanical-fallback control | Head starting with `File: ` is the expected degraded signal when enrichment/LLM is off |
 | Cleanup | Memories forgotten after file deletion (0 results for both tokens) |

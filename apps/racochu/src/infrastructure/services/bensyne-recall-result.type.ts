@@ -3,8 +3,8 @@
  *
  * The base shape mirrors today's mnemosyne pass-through (`content` is the
  * memory text). Bensyne may additively extend each result with a
- * `file_enrichment` block (file metadata, relations, summary chain, traversal
- * handles — see bensyne FileEnrichmentService / spec §2.1). Racochu does NOT
+ * `file_enrichment` block (file metadata, unified relations[], summary
+ * chain — see bensyne FileEnrichmentService / spec §2.1). Racochu does NOT
  * own or parse that shape: it is an opaque passthrough (`unknown | null`,
  * never `any`). Absent key ⇒ undefined; pure memories ⇒ null from bensyne.
  */

@@ -13,7 +13,7 @@ Fixtures go to `tmp/vault/` (vault sourceType).
 > - **`see_also` frontmatter → `recommendation` edges** (strength 1). Values are vault-relative paths; a missing `.md` extension is retried defensively.
 > - **Body wikilinks → `backlink` edges** (strength 1). Resolution ladder (first hit wins): path form `[[folder/node.type]]` → `vaultRoot/node.type.md`; bare form → vault-root `target.md` → same-folder `target.md` → vault-wide stem match where `basename - .md` **equals** `target` (plain node) or **starts with `target + .`** (typed node, the dominant form: `[[0002-x]]` → `0002-x.concept.md`).
 > - **Existence gate (D49):** every emitted edge target is verified on disk — nonexistent targets emit **nothing** (no PENDING stubs, unlike obsidian). Ambiguous bare stems (0 or >1 candidates) are dropped. No self-edges.
-> - **Node metadata:** vault frontmatter maps to `note.type`, `note.status`, `note.created`, `note.modified`, `note.tags`, `note.properties.{id,system,title,see_also,supersedes,superseded_by,deprecated}`; body wikilink targets (normalized) → `note.wikilinks`.
+> - **Node metadata:** vault frontmatter maps to `note.type`, `note.status`, `note.created`, `note.modified`, `note.tags`, `note.properties.{id,system,title,supersedes,superseded_by,deprecated}`; body wikilink targets (normalized) → `note.wikilinks`.
 > - **Body cleaning:** `[[t|a]]` → `a`, `[[t]]` → `t` in the embedded text; edges are extracted from the original body.
 
 ## Vault Scenario
@@ -324,7 +324,7 @@ The two files `concepts/RB_VAULT_AMB.concept.md` + `decisions/RB_VAULT_AMB.decis
 | **V1** | Index files skipped | `_Vault-Home.md`, `_index.md`, `type: index` file → 0 chunks, 0 edges |
 | **V2** | source_type | `vault` on content nodes |
 | **V2** | Typed metadata | `note.type`, `note.status`, `note.created`/`note.modified` (from createdAt/updatedAt), `note.tags` |
-| **V2** | Vault properties | `note.properties.id`, `note.properties.system`, `note.properties.see_also` |
+| **V2** | Vault properties | `note.properties.id`, `note.properties.system` |
 | **V2** | Wikilinks metadata | `note.wikilinks` = 5 normalized targets |
 | **V2** | Chunk tags/coverage | frontmatter chunk tags (`frontmatter`,`metadata`,`vault-node`); ≥2 chunks for hub |
 | **V3** | see_also edges | hub → alpha (path) + hub → beta (no-.md retry); self + ghost dropped |
