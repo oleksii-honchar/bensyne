@@ -14,6 +14,7 @@ export interface ParsedCliArgs {
   forceReprocess: boolean;
   processOnly: boolean;
   resume: boolean;
+  ttlSweep: boolean;
   source: string | null;
 }
 
@@ -36,6 +37,7 @@ Options:
   -f, --force-reprocess     Force re-process all sources
   -r, --resume              Resume missing chunks: re-process only files with missing stored chunks
   -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, or --process-only)
+  --ttl-sweep               Run TTL sweep once and exit
 `;
 
   private static readonly VERSION = packageJson.version;
@@ -58,6 +60,7 @@ Options:
       forceReprocess: false,
       processOnly: false,
       resume: false,
+      ttlSweep: false,
       source: null,
     };
 
@@ -102,6 +105,9 @@ Options:
         case '-s':
         case '--source':
           result.source = args[++i];
+          break;
+        case '--ttl-sweep':
+          result.ttlSweep = true;
           break;
       }
     }

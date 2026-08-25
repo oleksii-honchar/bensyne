@@ -86,6 +86,44 @@ describe('config-schemas', () => {
       }
     });
 
+    it('accepts ttlDays field and preserves it as-is', () => {
+      const input = {
+        id: 'test-source',
+        path: '/path',
+        ttlDays: 365,
+      };
+      const result = watchSourceConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.ttlDays).toBe(365);
+      }
+    });
+
+    it('leaves ttlDays undefined when not provided (opt-in, no default)', () => {
+      const input = { id: 'test-source', path: '/path' };
+      const result = watchSourceConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.ttlDays).toBeUndefined();
+      }
+    });
+
+    it('rejects non-positive ttlDays (0 and negative)', () => {
+      const zeroResult = watchSourceConfigSchema.safeParse({
+        id: 'test-source',
+        path: '/path',
+        ttlDays: 0,
+      });
+      expect(zeroResult.success).toBe(false);
+
+      const negativeResult = watchSourceConfigSchema.safeParse({
+        id: 'test-source',
+        path: '/path',
+        ttlDays: -5,
+      });
+      expect(negativeResult.success).toBe(false);
+    });
+
     it('accepts description field and preserves it as-is', () => {
       const input = {
         id: 'test-source',

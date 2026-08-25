@@ -12,6 +12,7 @@ import 'reflect-metadata';
 import { AppModule } from './app.module';
 import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
+import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { NestjsPinoLogger } from './infrastructure/logging/nestjs-pino-logger';
@@ -59,6 +60,7 @@ export async function bootstrap(): Promise<void> {
   const configurationService = app.get(ConfigurationService);
   const forceReprocessService = app.get(ForceReprocessService);
   const excludeReconciliationService = app.get(ExcludeReconciliationService);
+  const ttlService = app.get(TtlReconciliationService);
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
@@ -94,6 +96,30 @@ export async function bootstrap(): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`,
     );
+  }
+
+  // Startup TTL sweep: forget files whose retention (ttlDays) has elapsed.
+  // Runs in ALL modes (placed before --force-reprocess/--resume dispatch so
+  // expired files are forgotten, not reprocessed) and is never fatal — a
+  // failure is logged, startup continues.
+  try {
+    await ttlService.run(args.dryRun);
+  } catch (error) {
+    logger.warn(
+      `TTL sweep failed at startup, continuing: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  // TTL sweep mode: run once (optionally scoped to a source) and exit.
+  if (args.ttlSweep) {
+    const summary = await ttlService.run(args.dryRun, args.source ?? undefined);
+    logger.info(
+      `TTL sweep mode complete: sources=${summary.sourcesChecked}, expired=${summary.expired}, ` +
+        `forgotten=${summary.forgotten}, wouldForget=${summary.wouldForget}, ` +
+        `failed=${summary.failed}, refused=${summary.refusedMassForget}, dryRun=${summary.dryRun}`,
+    );
+    await app.close();
+    process.exit(0);
   }
 
   // Handle resume (re-ingest only files with missing chunks)
@@ -154,6 +180,7 @@ export async function bootstrap(): Promise<void> {
     const startResult = await fileWatcherService.start();
     if (startResult.isOk()) {
       logger.info('File watcher started. Watching for changes...');
+      ttlService.startDailySweep();
     } else {
       logger.error(`Failed to start file watcher: ${startResult.getFormattedErrors()}`);
     }

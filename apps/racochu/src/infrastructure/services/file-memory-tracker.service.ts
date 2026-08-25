@@ -20,6 +20,35 @@ export class FileMemoryTrackerService {
   }
 
   /**
+   * Return all tracked files for a given sourceId that are TTL-expired
+   * (createdAt strictly before cutoff).
+   * Delegates to the repository; throws on a ko result (consistent with service style).
+   */
+  async findExpiredBySourceId(sourceId: string, cutoff: Date): Promise<FileMemoryTracker[]> {
+    const result = await this.repository.findExpiredBySourceId(sourceId, cutoff);
+    if (result.isKo()) {
+      throw new Error(
+        'Failed to find expired FileMemoryTrackers by source: ' + result.getErrors()[0].message,
+      );
+    }
+    return result.getValue();
+  }
+
+  /**
+   * Return the createdAt timestamp for a tracker by filePath, or null if it does
+   * not exist. Used to re-verify TTL expiry immediately before forgetting
+   * (the FileMemoryTracker aggregate is timestamp-free).
+   * Delegates to the repository; throws on a ko result (consistent with service style).
+   */
+  async getTrackerCreatedAt(filePath: string): Promise<Date | null> {
+    const result = await this.repository.findCreatedAtByFilePath(filePath);
+    if (result.isKo()) {
+      throw new Error('Failed to find FileTracker createdAt: ' + result.getErrors()[0].message);
+    }
+    return result.getValue();
+  }
+
+  /**
    * Track a memory for a file.
    * Uses aggregate business logic (remember) then persists via repository.
    * Returns the FileMemoryTracker aggregate after tracking.

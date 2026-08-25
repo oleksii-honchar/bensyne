@@ -6,6 +6,7 @@ import { AppConfig } from './app.config';
 import { validateAppEnv } from './app.env.validation';
 import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
+import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
 import { TagExtractionService } from './application/services/tag-extraction.service';
@@ -75,6 +76,7 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
     // Application services
     ForceReprocessService,
     ExcludeReconciliationService,
+    TtlReconciliationService,
 
     // Infrastructure
     FileProcessingQueue,

@@ -254,6 +254,97 @@ describe('FileMemoryTrackerService', () => {
     });
   });
 
+  describe('findExpiredBySourceId', () => {
+    it('delegates to repository with sourceId and cutoff and unwraps the ok result', async () => {
+      const sourceId = 'src-1';
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      const tracker = aFileMemoryTracker({ sourceId });
+      repository.findExpiredBySourceId.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => [tracker],
+        getErrors: () => [],
+      });
+
+      const result = await service.findExpiredBySourceId(sourceId, cutoff);
+
+      expect(repository.findExpiredBySourceId).toHaveBeenCalledWith(sourceId, cutoff);
+      expect(result).toEqual([tracker]);
+    });
+
+    it('returns empty array when repository finds no expired trackers', async () => {
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      repository.findExpiredBySourceId.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => [],
+        getErrors: () => [],
+      });
+
+      const result = await service.findExpiredBySourceId('no-expired-source', cutoff);
+
+      expect(repository.findExpiredBySourceId).toHaveBeenCalledWith('no-expired-source', cutoff);
+      expect(result).toEqual([]);
+    });
+
+    it('throws when the repository returns a ko result', async () => {
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      repository.findExpiredBySourceId.mockResolvedValue({
+        isOk: () => false,
+        isKo: () => true,
+        getValue: () => {
+          throw new Error('Cannot get value from a Ko result');
+        },
+        getErrors: () => [new ErrorWithDetails('repository failure', 'RepoFailure')],
+      });
+
+      await expect(service.findExpiredBySourceId('src-1', cutoff)).rejects.toThrow('repository failure');
+    });
+  });
+
+  describe('getTrackerCreatedAt', () => {
+    it('delegates to the repository and returns the createdAt', async () => {
+      const createdAt = new Date('2026-01-15T00:00:00.000Z');
+      repository.findCreatedAtByFilePath.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => createdAt,
+        getErrors: () => [],
+      });
+
+      const result = await service.getTrackerCreatedAt('/test/file.txt');
+
+      expect(repository.findCreatedAtByFilePath).toHaveBeenCalledWith('/test/file.txt');
+      expect(result).toEqual(createdAt);
+    });
+
+    it('returns null when the tracker does not exist', async () => {
+      repository.findCreatedAtByFilePath.mockResolvedValue({
+        isOk: () => true,
+        isKo: () => false,
+        getValue: () => null,
+        getErrors: () => [],
+      });
+
+      const result = await service.getTrackerCreatedAt('/nonexistent/file.txt');
+
+      expect(result).toBeNull();
+    });
+
+    it('throws when the repository returns a ko result', async () => {
+      repository.findCreatedAtByFilePath.mockResolvedValue({
+        isOk: () => false,
+        isKo: () => true,
+        getValue: () => {
+          throw new Error('Cannot get value from a Ko result');
+        },
+        getErrors: () => [new ErrorWithDetails('repository failure', 'RepoFailure')],
+      });
+
+      await expect(service.getTrackerCreatedAt('/test/file.txt')).rejects.toThrow('repository failure');
+    });
+  });
+
   describe('deleteByFilePath', () => {
     it('deletes tracker record for file path via repository', async () => {
       repository.deleteByFilePath.mockResolvedValue(undefined);

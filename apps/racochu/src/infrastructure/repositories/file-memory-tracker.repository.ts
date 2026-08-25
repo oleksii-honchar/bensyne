@@ -75,6 +75,63 @@ export class FileMemoryTrackerRepository {
   }
 
   /**
+   * Find all tracked files for a given sourceId whose createdAt is strictly before
+   * the cutoff date. The age filter lives in SQL (createdAt lt cutoff); the
+   * FileMemoryTracker aggregate stays timestamp-free.
+   *
+   * Empty result is Result.ok([]). Malformed rows (that fail aggregate construction)
+   * are skipped so a single bad record never blocks the rest;
+   * Prisma-level errors still propagate.
+   */
+  async findExpiredBySourceId(sourceId: string, cutoff: Date): Promise<Result<FileMemoryTracker[]>> {
+    const trackers = await this.prisma.fileTracker.findMany({
+      where: { sourceId, createdAt: { lt: cutoff } },
+      include: { memories: true },
+    });
+
+    if (trackers.length === 0) {
+      return Result.ok([]);
+    }
+
+    const aggregates: FileMemoryTracker[] = [];
+    for (const tracker of trackers) {
+      const memoryIds = tracker.memories.map((m: { memoryId: string }) => m.memoryId);
+
+      const result = FileMemoryTracker.of({
+        id: tracker.id,
+        filePath: tracker.filePath,
+        memoryIds,
+        sourceId: tracker.sourceId,
+        memoryBank: tracker.memoryBank,
+      });
+
+      if (result.isKo()) {
+        continue;
+      }
+
+      aggregates.push(result.getValue());
+    }
+
+    return Result.ok(aggregates);
+  }
+
+  /**
+   * Find the createdAt timestamp for a tracker by filePath, used to re-verify
+   * TTL expiry immediately before forgetting. The FileMemoryTracker aggregate
+   * stays timestamp-free; only the raw createdAt is returned here.
+   *
+   * Returns Result.ok(null) when no tracker exists for the filePath.
+   */
+  async findCreatedAtByFilePath(filePath: string): Promise<Result<Date | null>> {
+    const tracker = await this.prisma.fileTracker.findUnique({
+      where: { filePath },
+      select: { createdAt: true },
+    });
+
+    return Result.ok(tracker ? tracker.createdAt : null);
+  }
+
+  /**
    * Find existing tracker by filePath, or save the provided aggregate with a pre-generated ID.
    * Aggregate-first: caller creates the aggregate with domain logic, repository just persists it.
    */

@@ -37,6 +37,7 @@ describe('CliArgsService', () => {
         forceReprocess: false,
         processOnly: false,
         resume: false,
+        ttlSweep: false,
         source: null,
       });
     });
@@ -132,6 +133,18 @@ describe('CliArgsService', () => {
       expect(result.resume).toBe(true);
     });
 
+    it('should enable ttl-sweep with --ttl-sweep', () => {
+      const result = service.parse(['--ttl-sweep']);
+
+      expect(result.ttlSweep).toBe(true);
+    });
+
+    it('should keep ttlSweep false without --ttl-sweep', () => {
+      const result = service.parse(['--watch']);
+
+      expect(result.ttlSweep).toBe(false);
+    });
+
     it('should set source with --source', () => {
       const result = service.parse(['--source', 'obsidian-vault']);
 
@@ -180,6 +193,8 @@ describe('CliArgsService', () => {
       expect(output).toContain('--resume');
       expect(output).toContain('--source');
       expect(output).toContain('--process-only');
+      expect(output).toContain('--ttl-sweep');
+      expect(output).toContain('Run TTL sweep once and exit');
       writeSpy.mockRestore();
     });
   });

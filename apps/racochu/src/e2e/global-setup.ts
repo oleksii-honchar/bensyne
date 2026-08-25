@@ -80,6 +80,7 @@ module.exports = async (): Promise<void> => {
         exclude: [],
         debounceMs: 500,
         memoryBank: 'e2e-test-ns',
+        ttlDays: 365,
         description: 'E2E test memory bank for memory bank registration verification',
       },
       {

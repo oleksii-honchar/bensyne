@@ -6,6 +6,7 @@ import {
   aFileMemoryTracker,
   aPrismaFileMemoryTracker,
   aPrismaFileMemoryTrackerMemory,
+  PrismaFileMemoryTrackerRecord,
 } from './file-memory-tracker.repository.test-utils';
 import { aMockPrismaFileMemoryTracker, aMockPrismaFileTracker } from './file-tracker.repository.test-utils';
 
@@ -110,9 +111,7 @@ describe('FileMemoryTrackerRepository', () => {
           filePath: filePath2,
           sourceId,
           memoryBank: 'bank-b',
-          memories: [
-            aPrismaFileMemoryTrackerMemory({ id: 9103n, memoryId: 'mem-003', fileTrackerId: id2 }),
-          ],
+          memories: [aPrismaFileMemoryTrackerMemory({ id: 9103n, memoryId: 'mem-003', fileTrackerId: id2 })],
         }),
       ]);
 
@@ -176,6 +175,203 @@ describe('FileMemoryTrackerRepository', () => {
       prismaFileTracker.findMany.mockRejectedValue(new Error('DB connection failed'));
 
       await expect(repository.findBySourceId('src-1')).rejects.toThrow('DB connection failed');
+    });
+  });
+
+  describe('findExpiredBySourceId', () => {
+    // Simulates a Prisma client that honors sourceId and createdAt lt filters.
+    const stubFindManyLikePrisma = (rows: PrismaFileMemoryTrackerRecord[]) => {
+      prismaFileTracker.findMany.mockImplementation(
+        async (args: {
+          where?: { sourceId?: string; createdAt?: { lt?: Date } };
+          include?: { memories: boolean };
+        }) => {
+          const where = args?.where ?? {};
+          return rows.filter(row => {
+            if (where.sourceId !== undefined && row.sourceId !== where.sourceId) {
+              return false;
+            }
+            if (where.createdAt?.lt !== undefined && !(row.createdAt < where.createdAt.lt)) {
+              return false;
+            }
+            return true;
+          });
+        },
+      );
+    };
+
+    it('returns only trackers with createdAt before cutoff for the given sourceId', async () => {
+      const sourceId = 'src-1';
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      const expiredPath = '/test/expired.txt';
+      const freshPath = '/test/fresh.txt';
+      const expiredId = aFileMemoryTracker({ filePath: expiredPath }).toJson().id;
+      const freshId = aFileMemoryTracker({ filePath: freshPath }).toJson().id;
+
+      stubFindManyLikePrisma([
+        aPrismaFileMemoryTracker({
+          id: expiredId,
+          filePath: expiredPath,
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date('2026-01-15T00:00:00.000Z'),
+          memories: [
+            aPrismaFileMemoryTrackerMemory({ id: 9201n, memoryId: 'mem-001', fileTrackerId: expiredId }),
+          ],
+        }),
+        aPrismaFileMemoryTracker({
+          id: freshId,
+          filePath: freshPath,
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+          memories: [],
+        }),
+      ]);
+
+      const result = await repository.findExpiredBySourceId(sourceId, cutoff);
+
+      expect(prismaFileTracker.findMany).toHaveBeenCalledWith({
+        where: { sourceId, createdAt: { lt: cutoff } },
+        include: { memories: true },
+      });
+      expect(result.isOk()).toBe(true);
+      const trackers = result.getValue();
+      expect(trackers).toHaveLength(1);
+      expect(trackers[0].filePath).toBe(expiredPath);
+      expect(trackers[0].memoryIds).toEqual(['mem-001']);
+    });
+
+    it('excludes trackers whose createdAt equals the cutoff (lt, not lte)', async () => {
+      const sourceId = 'src-1';
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      const boundaryPath = '/test/boundary.txt';
+      const boundaryId = aFileMemoryTracker({ filePath: boundaryPath }).toJson().id;
+
+      stubFindManyLikePrisma([
+        aPrismaFileMemoryTracker({
+          id: boundaryId,
+          filePath: boundaryPath,
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date(cutoff),
+          memories: [],
+        }),
+      ]);
+
+      const result = await repository.findExpiredBySourceId(sourceId, cutoff);
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual([]);
+    });
+
+    it("returns empty array when nothing expires and never returns other sources' trackers", async () => {
+      const sourceId = 'src-1';
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+
+      stubFindManyLikePrisma([
+        // Expired, but belongs to another source.
+        aPrismaFileMemoryTracker({
+          filePath: '/test/other-source.txt',
+          sourceId: 'src-2',
+          memoryBank: 'bank-b',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          memories: [],
+        }),
+        // Same source, but not yet expired.
+        aPrismaFileMemoryTracker({
+          filePath: '/test/same-source-fresh.txt',
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date('2026-06-15T00:00:00.000Z'),
+          memories: [],
+        }),
+      ]);
+
+      const result = await repository.findExpiredBySourceId(sourceId, cutoff);
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual([]);
+    });
+
+    it('skips malformed rows and returns only valid trackers', async () => {
+      const sourceId = 'src-1';
+      const cutoff = new Date('2026-06-01T00:00:00.000Z');
+      const validPath = '/test/valid.txt';
+      const validId = aFileMemoryTracker({ filePath: validPath }).toJson().id;
+
+      stubFindManyLikePrisma([
+        aPrismaFileMemoryTracker({
+          id: validId,
+          filePath: validPath,
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date('2026-01-15T00:00:00.000Z'),
+          memories: [
+            aPrismaFileMemoryTrackerMemory({ id: 9202n, memoryId: 'mem-001', fileTrackerId: validId }),
+          ],
+        }),
+        // Malformed: empty filePath fails the aggregate schema.
+        aPrismaFileMemoryTracker({
+          id: aFileMemoryTracker().toJson().id,
+          filePath: '',
+          sourceId,
+          memoryBank: 'bank-a',
+          createdAt: new Date('2026-01-15T00:00:00.000Z'),
+          memories: [],
+        }),
+      ]);
+
+      const result = await repository.findExpiredBySourceId(sourceId, cutoff);
+
+      expect(result.isOk()).toBe(true);
+      const trackers = result.getValue();
+      expect(trackers).toHaveLength(1);
+      expect(trackers[0].filePath).toBe(validPath);
+    });
+
+    it('propagates Prisma errors', async () => {
+      prismaFileTracker.findMany.mockRejectedValue(new Error('DB connection failed'));
+
+      await expect(
+        repository.findExpiredBySourceId('src-1', new Date('2026-06-01T00:00:00.000Z')),
+      ).rejects.toThrow('DB connection failed');
+    });
+  });
+
+  describe('findCreatedAtByFilePath', () => {
+    it('returns the createdAt of the tracker for the given filePath', async () => {
+      const createdAt = new Date('2026-01-15T00:00:00.000Z');
+      prismaFileTracker.findUnique.mockResolvedValue({
+        filePath: '/test/file.txt',
+        createdAt,
+      });
+
+      const result = await repository.findCreatedAtByFilePath('/test/file.txt');
+
+      expect(prismaFileTracker.findUnique).toHaveBeenCalledWith({
+        where: { filePath: '/test/file.txt' },
+        select: { createdAt: true },
+      });
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual(createdAt);
+    });
+
+    it('returns Result.ok(null) when no tracker exists for the filePath', async () => {
+      prismaFileTracker.findUnique.mockResolvedValue(null);
+
+      const result = await repository.findCreatedAtByFilePath('/nonexistent/file.txt');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toBeNull();
+    });
+
+    it('propagates Prisma errors', async () => {
+      prismaFileTracker.findUnique.mockRejectedValue(new Error('DB connection failed'));
+
+      await expect(repository.findCreatedAtByFilePath('/test/file.txt')).rejects.toThrow(
+        'DB connection failed',
+      );
     });
   });
 

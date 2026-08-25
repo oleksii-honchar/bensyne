@@ -7,6 +7,9 @@ export const watchSourceConfigSchema = z
     path: z.string(),
     memoryBank: z.string().optional(),
     description: z.string().optional(),
+    // Optional per-source retention (days) for the TTL sweep.
+    // Absent = no TTL (opt-in, never defaulted).
+    ttlDays: z.number().int().positive().optional(),
     exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
     debounceMs: z.number().positive().default(3000),
     // D29: the field IS the source type (default vault, the content-aware

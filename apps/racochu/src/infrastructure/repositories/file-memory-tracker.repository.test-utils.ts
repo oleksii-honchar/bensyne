@@ -82,6 +82,8 @@ export function aFileMemoryTrackerRepositoryService() {
   return {
     findByFilePath: jest.fn().mockResolvedValue(null),
     findBySourceId: jest.fn().mockResolvedValue([]),
+    findExpiredBySourceId: jest.fn().mockResolvedValue([]),
+    findCreatedAtByFilePath: jest.fn().mockResolvedValue(null),
     findOrCreate: jest
       .fn()
       .mockImplementation((tracker: FileMemoryTracker) =>
