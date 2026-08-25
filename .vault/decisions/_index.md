@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-23"
+updatedAt: "2026-08-25"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0069; per-folder filenames 0061–0068 map to DEC-0062..0069). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0079; per-folder filenames 0061–0078 map to DEC-0062..0079). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -86,3 +86,13 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0066-ddd-bank-layering]] — DDD Bank Layering Around the Existing MemoryBank Aggregate
 - [[0067-per-chunk-enrichment-observability]] — Per-Chunk Enrichment Observability — Progress, Failure Position, Aggregate Summary
 - [[0068-reachable-corrective-retry]] — Reachable Corrective Retry via Post-Validation of Resolved Result
+- [[0069-live-memory-count-non-pooled-banks]] — Live memory_count for Non-Pooled Banks via Memory Entity Repository
+- [[0070-read-only-count-ko-fallback]] — Read-Only Count Semantics — Result.ko on Missing/Corrupt DB, Fallback to Stored Value
+- [[0071-transient-entity-resolution-router]] — Transient Entity Resolution on Router — get_stats_for, Never Pooled
+- [[0072-keep-registry-memory-count-column]] — Keep Registry memory_count Column — No Event Wiring, No Migration
+- [[0073-ttl-sweep-racochu-side]] — TTL Sweep Executes on Racochu Side, Deletion via Bensyne MCP forgetFile
+- [[0074-ttl-clock-filetracker-created-at]] — TTL Clock Is FileTracker.createdAt (First Ingest), Not updatedAt
+- [[0075-ttl-config-ttl-days]] — Config Shape Is watchSources[].ttlDays (Optional Positive Int)
+- [[0076-ttl-sweep-cadence]] — TTL Sweep Cadence: Startup (All Modes) + Daily Interval (Watch Mode) + --ttl-sweep CLI
+- [[0077-ttl-mass-forget-guard]] — Reuse Mass-Forget Guard (MASS_FORGET_THRESHOLD=20 + RACOCHU_RECONCILE_FORCE_FORGET=1)
+- [[0078-ttl-tombstone-acceptance]] — Accept Bensyne DELETED Tombstones (No Purge in TTL Scope)

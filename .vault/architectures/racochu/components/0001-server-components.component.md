@@ -4,9 +4,9 @@ title: "RAG Content Chunker — Server Components"
 c4_level: component
 system: racochu
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-08-07T18:50:00Z"
+updatedAt: "2026-08-25T13:45:19Z"
 tags: [architecture, component]
-see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md]
+see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md]
 linked_elements: []
 deprecated:
   date: null
@@ -40,10 +40,13 @@ C4Component
     Component(mnemosyneClient, "MnemosyneClient", "TypeScript + native http", "Streamable HTTP MCP client (remember/recall)")
     Component(config, "ConfigurationService", "TypeScript + Zod", "Loads and validates config schemas")
     Component(shutdown, "GracefulShutdownService", "TypeScript", "SIGTERM/SIGINT handler: drain queue, close clients")
+    Component(ttlSweep, "TtlReconciliationService", "TypeScript", "TTL sweep: forgets expired trackers via bensyne forgetFile (startup + daily + --ttl-sweep)")
+    Component(fileTracker, "FileMemoryTrackerService", "TypeScript", "FileTracker queries + cleanup (findExpiredBySourceId, deleteByFilePath)")
   }
 
   Component_Ext(filesystem, "File System", "OS", "Watched directories")
   Component_Ext(mnemosyne, "better-mnemosyne MCP", "Python", "Remote MCP server")
+  Component_Ext(bensyneMCP, "Bensyne MCP", "Python FastMCP", "localhost:3000 — forgetFile tool (shared-memory guard)")
 
   Rel(filesystem, fileWatcher, "Triggers events")
   Rel(fileWatcher, eventBus, "Emits FILE_ADDED/CHANGED/DELETED")
@@ -63,6 +66,10 @@ C4Component
   Rel(mnemosyneClient, mnemosyne, "Streamable HTTP POST /mcp")
   Rel(server, config, "Reads configuration")
   Rel(server, shutdown, "Registers shutdown hooks")
+  Rel(config, ttlSweep, "Reads watchSources[].ttlDays")
+  Rel(ttlSweep, fileQueue, "Awaits empty queue before sweep")
+  Rel(ttlSweep, fileTracker, "Queries expired + deletes trackers")
+  Rel(ttlSweep, bensyneMCP, "forgetByFile(filePath, memoryBank)")
 ```
 
 ## Elements
@@ -84,6 +91,8 @@ C4Component
 | `mnemosyneClient` | MnemosyneClient | Component | Native http | Streamable HTTP MCP client: initialize handshake, remember/recall, retry with backoff |
 | `config` | ConfigurationService | Component | Zod | Parses YAML config, validates against Zod schemas, provides typed getters |
 | `shutdown` | GracefulShutdownService | Component | Node.js signals | Handles SIGTERM/SIGINT: stops watchers, drains queue (30s), closes MnemosyneClient |
+| `ttlSweep` | TtlReconciliationService | Component | TypeScript | TTL sweep — startup (all modes) + daily interval (watch mode) + `--ttl-sweep`; awaits empty queue; forgets expired trackers via bensyne `forgetByFile`, cleans up trackers; shares mass-forget guard |
+| `fileTracker` | FileMemoryTrackerService | Component | TypeScript | FileTracker queries + cleanup: `findExpiredBySourceId(sourceId, cutoff)`, `deleteByFilePath` |
 
 ## Notes
 
