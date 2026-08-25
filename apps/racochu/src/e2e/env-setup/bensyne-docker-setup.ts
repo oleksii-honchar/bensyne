@@ -43,7 +43,7 @@ async function waitForBensyne(maxAttempts = 60): Promise<void> {
  * Returns a cleanup function to stop and remove containers/volumes.
  */
 export async function startBensyneDocker(): Promise<() => Promise<void>> {
-  await dockerCompose(['up', '-d', '--wait']);
+  await dockerCompose(['up', '-d', '--build', '--wait']);
   await waitForBensyne();
   console.log(`[E2E] Bensyne MCP started at ${BENSYNE_URL}`);
 

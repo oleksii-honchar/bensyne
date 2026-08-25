@@ -26,6 +26,7 @@ watchSources:
     description: Agent session history, decisions, and context (recall-only, Racochu-managed)
     path: ./tmp/agent-sessions
     sourceType: agent-sessions
+    ttlDays: 365
     exclude:
       - '**/Thumbs.db'
       - '**/.env*'

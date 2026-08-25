@@ -87,6 +87,7 @@ watchSources:
       - '**/node_modules/**'
       - '**/.DS_Store'
     debounceMs: 3000
+    ttlDays: 365   # optional: forget files older than this many days
 
 chunking:
   strategy: content-aware
@@ -121,6 +122,7 @@ telemetry:
 |                    | path         | string   | —                                   | Directory to watch (supports `~/` expansion)                    |
 |                    | exclude      | string[] | `['.git/**', '**/node_modules/**']` | Chokidar ignore patterns                                        |
 |                    | debounceMs   | number   | 3000                                | ms to wait after last file modification before processing       |
+|                    | ttlDays      | number   | — (no TTL)                          | Optional per-source retention in days; see [Source TTL](#source-ttl-ttldays) |
 | **chunking**       | strategy     | string   | `content-aware`                     | Chunking strategy (content-aware, recursive, config)            |
 |                    | maxSizes     | object   | —                                   | Max token sizes per file role                                   |
 |                    | overlap      | number   | 50                                  | Token overlap between chunks                                    |
@@ -132,6 +134,39 @@ telemetry:
 |                    | retryDelayMs | number   | 1000                                | Base delay between retries (linear backoff)                     |
 | **enrichment**     | enabled      | boolean  | false                               | Enable LLM-based chunk enrichment (future)                      |
 | **telemetry**      | enabled      | boolean  | false                               | Enable OpenTelemetry metrics/traces                             |
+
+### Source TTL (`ttlDays`)
+
+Each `watchSources[]` entry may set an optional `ttlDays` — the retention period,
+in days, after which tracked files for that source are **forgotten** (their
+memories deleted via bensyne MCP `forgetFile` and their racochu trackers
+cleaned up). Absent/omitted means **no TTL** — that source is never swept.
+
+```yaml
+watchSources:
+  - id: agent-sessions
+    path: ~/.agent-sessions
+    ttlDays: 365   # optional; absent = no TTL
+    sourceType: agent-sessions
+```
+
+The TTL sweep runs:
+
+- **At startup** in all modes (non-fatal — a sweep failure is logged and boot continues), and
+- **Once a day** while running in watch mode (`start`/`start:dev`), and
+- **On demand** via `racochu --ttl-sweep` (optionally scoped with `-s/--source`; combine with `--dry-run` to preview).
+
+`--dry-run` reports what *would* be forgotten without deleting anything.
+
+> **Mass-forget guard:** the sweep refuses to forget more than **20 files per
+> source** in one run (same guard as exclude reconciliation). If a source has
+> more expired files than that — e.g. the first backfill sweep after a year of
+> accumulation — run it once with `RACOCHU_RECONCILE_FORCE_FORGET=1` to
+> acknowledge the mass-forget and let the sweep proceed.
+>
+> **Safety notes:** the sweep only touches sources with `ttlDays` set; expiry is
+> measured from first ingest (`FileTracker.createdAt`); the source files
+> themselves are never deleted from disk — only their memories and trackers.
 
 ## Scripts
 

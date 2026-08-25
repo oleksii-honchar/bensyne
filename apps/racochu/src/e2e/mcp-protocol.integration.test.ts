@@ -5,9 +5,8 @@
  * - Starts the real bensyne-mcp server as a subprocess via its venv Python
  *   (`apps/bensyne-mcp/.venv/bin/python main.py --port <PORT> --data-dir <tmp>`).
  *   No Docker, no mocked transport — this is the spec. (The Docker-based e2e
- *   suites use the locally-built bensyne-mcp image (tagged by
- *   `npx nx run bensyne-mcp:build:docker`) via
- *   src/e2e/env-setup/docker-compose.bensyne.yml.)
+ *   suites use compose, which builds bensyne-mcp from source at each e2e run
+ *   via src/e2e/env-setup/docker-compose.bensyne.yml — image tag bensyne-mcp:local.)
  * - Connects a real MCP client over streamable-HTTP using the same protocol
  *   mechanics as racochu's production `BensyneClient` (src/infrastructure/services/bensyne-client.service.ts):
  *   POST JSON-RPC 2.0 to `/mcp`, `initialize` handshake + `notifications/initialized`,
