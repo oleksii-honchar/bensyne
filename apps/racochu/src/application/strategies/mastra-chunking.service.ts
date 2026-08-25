@@ -1,6 +1,7 @@
 import { LlmClientFactory } from '@/application/services/llm-client-factory';
 import { ContentChunk, FILE_ROLES, FileRole } from '@/domain/content-chunk.entity';
 import { ConfigurationService } from '@/infrastructure/config/configuration.service';
+import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { generateId } from '@/utils/big-endian-id';
 import { ErrorWithDetails } from '@/utils/error-with-details';
@@ -8,6 +9,7 @@ import { Result } from '@/utils/result';
 import { MDocument } from '@mastra/rag';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
+import { ChunkFileOptions } from './base-chunking-strategy';
 
 type MastraChunkStrategy = 'markdown' | 'recursive' | 'json' | 'sentence';
 type MastraDocumentType = 'markdown' | 'json' | 'html' | 'text';
@@ -392,8 +394,21 @@ Do not include any other text, explanations, or markdown formatting.`;
 
   /**
    * Chunk a file using Mastra MDocument with type-aware processing.
+   *
+   * NOTE (spec §4.3 / ADR-2): the `options` override is the optional 5th
+   * parameter — the 4th slot is `sourceConfig` at the `ChunkContentUseCase`
+   * call site, so a skip flag must never be added in 4th position. This
+   * implementation ignores `sourceConfig` (kept for interface conformance).
+   * When `options.skipEnrichment === true` the LLM `extractMetadata` block is
+   * skipped even if `enrichment.enabled` is true in config.
    */
-  async chunkFile(content: string, filePath: string, sourceId: string): Promise<Result<ContentChunk[]>> {
+  async chunkFile(
+    content: string,
+    filePath: string,
+    sourceId: string,
+    _sourceConfig?: WatchSourceConfig,
+    options?: ChunkFileOptions,
+  ): Promise<Result<ContentChunk[]>> {
     try {
       if (!content.trim()) {
         return Result.ok([]);
@@ -422,7 +437,15 @@ Do not include any other text, explanations, or markdown formatting.`;
       // domain mapping reads from.
       const docDocs = document.getDocs();
 
-      if (enrichmentConfig.enabled && enrichmentConfig.llmUrl && enrichmentConfig.apiKey) {
+      // Enrichment gate: the `skipEnrichment` override forces the cheap path
+      // even when `enrichment.enabled` is true in config (spec §4.3, ADR-2) —
+      // recover enumerates chunks with zero LLM cost regardless of runtime config.
+      const enrichmentActive =
+        options?.skipEnrichment === true
+          ? false
+          : enrichmentConfig.enabled && enrichmentConfig.llmUrl && enrichmentConfig.apiKey;
+
+      if (enrichmentActive) {
         this.logger.info('[mastra-chunking:enrichment] Attempting enrichment', {
           enabled: enrichmentConfig.enabled,
           llmUrl: 'present',
@@ -512,7 +535,9 @@ Do not include any other text, explanations, or markdown formatting.`;
       } else {
         // Determine skip reason for clarity
         let reason = 'unknown';
-        if (!enrichmentConfig.enabled) {
+        if (options?.skipEnrichment === true) {
+          reason = 'skipEnrichment=true';
+        } else if (!enrichmentConfig.enabled) {
           reason = 'enabled=false';
         } else if (!enrichmentConfig.llmUrl) {
           reason = 'missing llmUrl';

@@ -23,7 +23,9 @@ from src.application.use_cases.list_banks_use_case import ListBanksUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
 from src.application.use_cases.sleep_use_case import SleepUseCase
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
+from src.application.services.file_service import derive_file_id
 from src.domain.exceptions import ValidationError
+from src.domain.file_chunk_entity import FileChunk
 from src.infrastructure.di import Container, ProductionContainer
 from src.infrastructure.mcp.validation import require_memory_bank
 from src.utils.logging import log_tool_call
@@ -413,3 +415,78 @@ async def handle_fetch_file(
     )
     result = use_case.execute(params)
     return _raise_on_ko(result, "fetchFile")
+
+
+@log_tool_call("getFileChunks")
+async def handle_get_file_chunks(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
+    """Read-only existence check for a file's stored chunk set (spec §4.5).
+
+    Pure read path: derives the deterministic file_id, reads the files row and
+    the file_chunks rows from the per-bank SQLite file layer, then performs one
+    cheap Mnemosyne point read (``mnemosyne_client.get``) per chunk to report
+    whether the backing memory/embedding still exists. Never embeds, never
+    saves, never mutates the file layer — safe for verification/recovery.
+    """
+    memory_bank = require_memory_bank(arguments)
+    file_path = arguments.get("file_path")
+
+    if not file_path:
+        raise ValidationError("file_path is required")
+
+    # Get MnemosyneClient from router (only its cheap get() point read is used).
+    instance = await router.get_instance(memory_bank)
+
+    # Per-bank file metadata dependencies via DI container (D25). Read-only:
+    # only the repository read methods are exercised — no save/upsert paths.
+    container = _resolve_container(container)
+    bank_dir = router.get_bank_dir(memory_bank)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_repository = bundle.file_repository
+    chunk_repository = bundle.chunk_repository
+
+    # Deterministic, local id (contract rule 2): file_{sha256("bank:path")[:32]}.
+    file_id = derive_file_id(memory_bank, file_path)
+
+    file_result = file_repository.get_file_by_id(file_id)
+    if file_result.is_ko:
+        error = file_result.errors[0] if file_result.errors else None
+        msg = f"getFileChunks failed: {error.error_code if error else 'FILE_READ_ERROR'}"
+        if error and error.details:
+            msg = f"{msg} — details: {error.details}"
+        raise ValidationError(msg)
+    file = file_result.value
+
+    if file is None:
+        return {"status": "FILE_NOT_FOUND", "file_id": file_id, "chunks": []}
+
+    chunks_result = chunk_repository.get_chunks_by_file_id(file_id)
+    if chunks_result.is_ko:
+        error = chunks_result.errors[0] if chunks_result.errors else None
+        msg = f"getFileChunks failed: {error.error_code if error else 'CHUNKS_READ_ERROR'}"
+        if error and error.details:
+            msg = f"{msg} — details: {error.details}"
+        raise ValidationError(msg)
+    chunks: list[FileChunk] = chunks_result.value if chunks_result.value is not None else []
+
+    chunk_entries = []
+    for chunk in chunks:
+        memory = instance.get(chunk.memory_id)
+        chunk_entries.append(
+            {
+                "chunk_index": chunk.chunk_index,
+                "content_hash": chunk.content_hash,
+                "memory_id": chunk.memory_id,
+                "memory_status": "present" if memory is not None else "missing",
+            }
+        )
+
+    return {
+        "status": "present",
+        "file_id": file_id,
+        "file_hash": file.hash,
+        "total_chunks": file.total_chunks,
+        "source_type": file.source_type.value,
+        "chunks": chunk_entries,
+    }

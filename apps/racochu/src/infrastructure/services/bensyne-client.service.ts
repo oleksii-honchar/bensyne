@@ -10,6 +10,31 @@ import { BasePinoLogger } from '../logging/base-pino-logger';
 import { BensyneRecallResult } from './bensyne-recall-result.type';
 
 /**
+ * One stored chunk reported by the getFileChunks read-only tool.
+ * `memoryStatus` reflects whether the backing Mnemosyne memory/embedding still
+ * exists (cheap point read on the bensyne side).
+ */
+export interface StoredChunkInfo {
+  chunkIndex: number;
+  contentHash: string;
+  memoryId?: string;
+  memoryStatus: 'present' | 'missing';
+}
+
+/**
+ * Result of the getFileChunks read-only existence check.
+ * `status: 'FILE_NOT_FOUND'` is a business state (unknown file), not a
+ * transport error — it is returned inside Result.ok with empty chunks.
+ */
+export interface FileChunksInfo {
+  status: 'present' | 'FILE_NOT_FOUND';
+  fileId?: string;
+  fileHash?: string;
+  totalChunks?: number;
+  chunks: StoredChunkInfo[];
+}
+
+/**
  * JSON-RPC 2.0 request sent to the MCP server.
  */
 interface McpToolRequest {
@@ -207,10 +232,19 @@ export class BensyneClient implements OnApplicationBootstrap {
    * Retries up to maxRetries times on transient failures.
    *
    * @param chunk - The Chunk domain entity to store
+   * @param options - Optional remember options (default off). `forceReembed: true`
+   *   spreads `force_reembed` onto the tool-level arguments payload next to
+   *   `content`/`memory_bank`/`metadata` — never inside the v1 metadata contract
+   *   (BensyneRememberDto unchanged). When absent/false the payload is byte-identical
+   *   to today's (no `force_reembed` key).
    * @returns Result.ok with {memory_id, status} on successful storage; Result.ko after all retries exhausted
    */
-  async remember(chunk: ContentChunk): Promise<Result<{ memory_id: string; status: string }>> {
+  async remember(
+    chunk: ContentChunk,
+    options?: { forceReembed?: boolean },
+  ): Promise<Result<{ memory_id: string; status: string }>> {
     const payload = BensyneRememberDto.fromChunk(chunk);
+    const argumentsPayload = options?.forceReembed ? { ...payload, force_reembed: true } : payload;
 
     const request: McpToolRequest = {
       jsonrpc: '2.0',
@@ -218,7 +252,7 @@ export class BensyneClient implements OnApplicationBootstrap {
       method: 'tools/call',
       params: {
         name: 'rememberMemory',
-        arguments: payload,
+        arguments: argumentsPayload,
       },
     };
 
@@ -416,6 +450,96 @@ export class BensyneClient implements OnApplicationBootstrap {
     );
 
     return Result.ko([lastError || new ErrorWithDetails('Failed to forget file', 'ForgetFileFailed')]);
+  }
+
+  /**
+   * Read-only existence check for a file's stored chunk set via the
+   * getFileChunks MCP tool.
+   *
+   * Calls bensyne with snake_case args `{ file_path, memory_bank }` (DEC-0048)
+   * and parses the stored chunk list into typed results. `status:
+   * "FILE_NOT_FOUND"` is a business state (unknown file) — returned as
+   * `Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] })`, not an error. No
+   * retry loop: the call is read-only and idempotent, so a single send suffices.
+   *
+   * @param filePath - Absolute path of the file to inspect
+   * @param memoryBank - Memory bank where the file lives
+   * @returns Result.ok with FileChunksInfo (status present or FILE_NOT_FOUND);
+   *          Result.ko on transport failure
+   */
+  async getFileChunks(filePath: string, memoryBank: string): Promise<Result<FileChunksInfo>> {
+    const request: McpToolRequest = {
+      jsonrpc: '2.0',
+      id: this.nextRequestId++,
+      method: 'tools/call',
+      params: {
+        name: 'getFileChunks',
+        arguments: { file_path: filePath, memory_bank: memoryBank },
+      },
+    };
+
+    this.ensureConfigLoaded();
+    this.logger.debug(`Reading file chunks: filePath="${filePath}", memoryBank="${memoryBank}"`);
+
+    try {
+      const response = await this.sendRequest(request);
+
+      if (response.error) {
+        return Result.ko([new ErrorWithDetails(`MCP error: ${response.error.message}`, 'McpToolError')]);
+      }
+
+      // Parse MCP response — result.content[0].text contains JSON from Bensyne
+      const parsed = this.parseMcpResponse(response);
+      const status = String(parsed.status ?? '');
+
+      if (status === 'FILE_NOT_FOUND') {
+        this.logger.debug(`File not found on bensyne side: filePath="${filePath}"`);
+        return Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] });
+      }
+
+      if (status !== 'present') {
+        const errMsg =
+          typeof parsed.error === 'string'
+            ? parsed.error
+            : JSON.stringify(parsed) || 'Unexpected getFileChunks response';
+        this.logger.warn(
+          `Unexpected getFileChunks response: filePath="${filePath}", response="${errMsg}"`,
+        );
+        return Result.ko([new ErrorWithDetails(errMsg, 'UnexpectedMcpResponse')]);
+      }
+
+      const chunks: StoredChunkInfo[] = Array.isArray(parsed.chunks)
+        ? parsed.chunks.flatMap((raw): StoredChunkInfo[] => {
+            if (typeof raw !== 'object' || raw === null) return [];
+            const item = raw as Record<string, unknown>;
+            const chunkIndex = item.chunk_index;
+            const contentHash = item.content_hash;
+            if (typeof chunkIndex !== 'number' || typeof contentHash !== 'string') return [];
+            const chunk: StoredChunkInfo = {
+              chunkIndex,
+              contentHash,
+              memoryStatus: item.memory_status === 'missing' ? 'missing' : 'present',
+            };
+            if (item.memory_id != null) {
+              chunk.memoryId = String(item.memory_id);
+            }
+            return [chunk];
+          })
+        : [];
+
+      const fileId = parsed.file_id != null ? String(parsed.file_id) : undefined;
+      const fileHash = parsed.file_hash != null ? String(parsed.file_hash) : undefined;
+      const totalChunks = typeof parsed.total_chunks === 'number' ? parsed.total_chunks : undefined;
+
+      this.logger.debug(
+        `File chunks read: filePath="${filePath}", status="${status}", chunks=${chunks.length}`,
+      );
+      return Result.ok({ status: 'present', fileId, fileHash, totalChunks, chunks });
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to read file chunks: filePath="${filePath}", error="${errMsg}"`);
+      return Result.ko([new ErrorWithDetails(errMsg, 'GetFileChunksError')]);
+    }
   }
 
   /**

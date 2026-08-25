@@ -2,7 +2,9 @@ import '@/utils/mastra-rag.test-utils';
 
 import { LlmClientFactory } from '../../application/services/llm-client-factory';
 import { FILE_ROLES } from '../../domain/content-chunk.entity';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 
 import { MDocument } from '@mastra/rag';
@@ -1466,7 +1468,7 @@ Do not include any other text, explanations, or markdown formatting.`,
     });
 
     it('throws with missingFields ["enrichment"] when the document has no docs at all', () => {
-      expectMissingFields(({ getDocs: () => [] }) as unknown as MDocument, ['enrichment']);
+      expectMissingFields({ getDocs: () => [] } as unknown as MDocument, ['enrichment']);
     });
 
     it('throws with missingFields ["enrichment"] when enrichment is not an object (string)', () => {
@@ -2570,6 +2572,67 @@ Do not include any other text, explanations, or markdown formatting.`,
         '[mastra-chunking:enrichment] Some chunks failed enrichment',
         expect.anything(),
       );
+    });
+  });
+
+  describe('skipEnrichment override (Task 4 — enrichment-free chunking)', () => {
+    const skipSourceConfig: WatchSourceConfig = {
+      id: 'test-source',
+      path: '/test/path',
+      memoryBank: 'test-memoryBank',
+      exclude: [],
+      debounceMs: 3000,
+      sourceType: SOURCE_TYPES.VAULT,
+    };
+
+    const setupEnabledEnrichmentDoc = () => {
+      configService = createMockConfigService({
+        enrichmentEnabled: true,
+        enrichmentApiKey: 'test-key',
+        enrichmentLlmUrl: 'https://lite-llm.lan/v1',
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest
+            .fn()
+            .mockReturnValue([
+              { text: 'content', metadata: { enrichment: { title: 'T', keywords: 'k', summary: 'S' } } },
+            ]),
+        }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: 'content', metadata: {} }]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+      return mockDoc;
+    };
+
+    it('skips extractMetadata (and LLM creation) even when enrichment.enabled is true in config', async () => {
+      const mockDoc = setupEnabledEnrichmentDoc();
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source', skipSourceConfig, {
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      // Behavior: no LLM block ran — no extractMetadata call, no LLM client created,
+      // and no enrichment metadata stamped on the chunk.
+      expect(mockDoc.extractMetadata).not.toHaveBeenCalled();
+      expect(LlmClientFactory.createCustomLlm).not.toHaveBeenCalled();
+      expect(result.getValue()[0].metadata?.mastraDocTitle).toBeUndefined();
+    });
+
+    it('still runs extractMetadata when skipEnrichment is false while enrichment is enabled', async () => {
+      const mockDoc = setupEnabledEnrichmentDoc();
+
+      const result = await service.chunkFile('# Title', 'README.md', 'test-source', skipSourceConfig, {
+        skipEnrichment: false,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockDoc.extractMetadata).toHaveBeenCalled();
+      expect(result.getValue()[0].metadata?.mastraDocTitle).toBe('T');
     });
   });
 });

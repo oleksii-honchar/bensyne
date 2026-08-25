@@ -164,6 +164,7 @@ class TestToolSchemas:
             "getMemoryStats",
             "listMemoryBanks",
             "registerMemoryBank",
+            "getFileChunks",
         }
 
 

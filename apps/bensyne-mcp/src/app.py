@@ -139,6 +139,11 @@ def register_tools(
         extract: Annotated[bool | None, "Optional. Whether to run extraction on the content."] = None,
         metadata: Annotated[dict | None, "Optional. Key/value metadata attached to the memory."] = None,
         veracity: Annotated[float | None, "Optional. Confidence 0.0-1.0 in the memory's correctness."] = None,
+        force_reembed: Annotated[
+            bool | None,
+            "Optional. Repair flag: when True and a dedup hit's memory no longer exists, "
+            "drop the stale hash-index/file-chunk rows and re-embed under a new memory id.",
+        ] = None,
     ):
         """Store a new memory in the DEFAULT (non-file) bank.
 
@@ -168,6 +173,7 @@ def register_tools(
             ("extract", extract),
             ("metadata", metadata),
             ("veracity", veracity),
+            ("force_reembed", force_reembed),
         ]:
             if v is not None:
                 args[k] = v
@@ -451,6 +457,28 @@ def register_tools(
         return await handlers.handle_forget_file(
             router, {"file_path": file_path, "memory_bank": memory_bank}, container
         )
+
+    @mcp.tool(name="getFileChunks")
+    async def get_file_chunks(
+        file_path: Annotated[str, "Absolute path of the file to inspect."],
+        memory_bank: Annotated[str, _MEMORY_BANK_READ_DESC],
+    ):
+        """Read-only existence check: file row + stored chunk list.
+
+        When to use: verifying which chunks of an ingested source file are stored
+        on the bensyne side (and whether each chunk's Mnemosyne memory is still
+        live) WITHOUT creating embeddings or mutating any state. Used by racochu
+        recover mode and any read-only verification/reconciliation workflow.
+
+        Returns the stored chunk set for the file with a per-chunk memory_status
+        ('present' when the backing memory exists, 'missing' when it does not).
+        An unknown file returns status FILE_NOT_FOUND with an empty chunks list.
+
+        Read-only guarantee: this tool NEVER embeds, NEVER saves, and NEVER writes
+        to the file layer — it is pure SQLite reads plus cheap Mnemosyne point reads.
+        """
+        args = {"file_path": file_path, "memory_bank": memory_bank}
+        return await handlers.handle_get_file_chunks(router, args, container)
 
 
 def mount_health_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:

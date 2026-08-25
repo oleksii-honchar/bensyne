@@ -53,6 +53,37 @@ export class FileTrackerRepository {
   }
 
   /**
+   * Find all FileTracker rows, optionally filtered by sourceId. Returns full
+   * FileTracker aggregates (incl. fileHash/hardwareId) for recover's hash gate.
+   *
+   * Empty result is []. Malformed rows (that fail aggregate construction) are
+   * skipped so a single bad record never blocks the rest; Prisma-level errors
+   * still propagate.
+   */
+  async findTrackedBySourceId(sourceId?: string): Promise<FileTracker[]> {
+    const rows = await this.prisma.fileTracker.findMany({
+      where: sourceId ? { sourceId } : {},
+    });
+
+    const trackers: FileTracker[] = [];
+    for (const row of rows) {
+      const result = FileTracker.of({
+        filePath: row.filePath,
+        fileHash: row.fileHash ?? undefined,
+        hardwareId: row.hardwareId ?? undefined,
+      });
+
+      if (result.isKo()) {
+        continue;
+      }
+
+      trackers.push(result.getValue());
+    }
+
+    return trackers;
+  }
+
+  /**
    * Delete FileTracker by filePath. Cascade deletes FileMemoryTracker memories.
    * Swallows Prisma RecordNotFoundError (P2025) — idempotent delete.
    */

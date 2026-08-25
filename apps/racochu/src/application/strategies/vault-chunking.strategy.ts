@@ -9,7 +9,7 @@ import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { generateId } from '../../utils/big-endian-id';
 import { Result } from '../../utils/result';
 import { extractWikilinks, splitFrontmatter } from '../../utils/strategy-utils';
-import { BaseChunkingStrategy } from './base-chunking-strategy';
+import { BaseChunkingStrategy, ChunkFileOptions } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { formatNoteMetadata } from './obsidian-chunking.strategy';
 
@@ -315,6 +315,7 @@ export class VaultChunkingStrategy implements BaseChunkingStrategy {
     filePath: string,
     sourceId: string,
     sourceConfig: WatchSourceConfig,
+    options?: ChunkFileOptions,
   ): Promise<Result<ContentChunk[]>> {
     // 1. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
@@ -348,8 +349,14 @@ export class VaultChunkingStrategy implements BaseChunkingStrategy {
       chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, noteMetadata));
     }
 
-    // 8. Body chunks via Mastra (ko → degrade to none)
-    const bodyChunksResult = await this.mastraChunkingService.chunkFile(cleanedBody, filePath, sourceId);
+    // 8. Body chunks via Mastra (ko → degrade to none). The optional
+    //    `options` override (at least `{ skipEnrichment }`, spec §4.3/ADR-2) is
+    //    forwarded so the Mastra LLM gate honors it for vault sources too —
+    //    otherwise the verification path would run `extractMetadata` when
+    //    `enrichment.enabled` is true (Task 6 spec-deviation fix).
+    const bodyChunksResult = options
+      ? await this.mastraChunkingService.chunkFile(cleanedBody, filePath, sourceId, sourceConfig, options)
+      : await this.mastraChunkingService.chunkFile(cleanedBody, filePath, sourceId);
     const bodyChunks = bodyChunksResult.isOk() ? bodyChunksResult.getValue() : [];
 
     // 9. Enrich all chunks with note metadata and merge tags (clamped to TAG_LIMIT)

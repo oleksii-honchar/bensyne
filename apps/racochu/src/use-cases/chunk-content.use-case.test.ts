@@ -16,7 +16,7 @@ import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
-import { ChunkContentUseCase } from './chunk-content.use-case';
+import { ChunkContentParams, ChunkContentUseCase } from './chunk-content.use-case';
 
 // Node's crypto module is frozen (jest.spyOn cannot redefine createHash), so the
 // module is mocked with a controllable createHash that delegates to the real
@@ -982,6 +982,140 @@ describe('ChunkContentUseCase', () => {
       expect(resultingChunk.importance).toBe(0.75);
       expect(resultingChunk.tags).toContain('tag1');
       expect(payload.importance).toBe(0.75);
+    });
+  });
+
+  describe('skipEnrichment variant (Task 4 — enrichment-free chunking)', () => {
+    const textA = 'chunk alpha content';
+    const textB = 'chunk beta content';
+    const rawChunks = [aContentChunk({ text: textA }), aContentChunk({ text: textB })];
+
+    beforeEach(() => {
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok(rawChunks));
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(rawChunks));
+      mockedCreateHash.mockImplementation(realCrypto.createHash);
+    });
+
+    it('accepts skipEnrichment: true as a valid zod param', async () => {
+      const result = await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+    });
+
+    it('rejects a non-boolean skipEnrichment via zod', async () => {
+      const result = await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: 'yes',
+      } as unknown as ChunkContentParams);
+
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('does NOT call enhancementPipelineService.enhance when skipEnrichment is true', async () => {
+      const result = await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockEnhancementPipelineService.enhance).not.toHaveBeenCalled();
+    });
+
+    it('passes { skipEnrichment: true } as the 5th arg to chunker.chunkFile, keeping sourceConfig in the 4th position', async () => {
+      await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: true,
+      });
+
+      expect(mockStrategy.chunkFile).toHaveBeenCalledWith(
+        textA,
+        '/path/to/file.md',
+        'test-source',
+        defaultSourceConfig,
+        { skipEnrichment: true },
+      );
+    });
+
+    it('passes exactly 4 positional args (config in 4th slot, no options) when skipEnrichment is absent', async () => {
+      await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+      });
+
+      expect(mockStrategy.chunkFile).toHaveBeenCalledWith(
+        textA,
+        '/path/to/file.md',
+        'test-source',
+        defaultSourceConfig,
+      );
+    });
+
+    it('stamps identical chunkHash on every chunk with and without enrichment (same input text)', async () => {
+      // The enriched path returns chunks whose importance/tags differ — but their
+      // text is unchanged, so chunkHash (sha256 of exact text) must match the skip path.
+      const enrichedChunks = rawChunks.map(chunk =>
+        aContentChunk({ text: chunk.text, importance: 0.9, tags: ['tagged'] }),
+      );
+      mockEnhancementPipelineService.enhance.mockResolvedValue(Result.ok(enrichedChunks));
+
+      const baseParams = {
+        content: textA + '\n\n' + textB,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+      };
+      const enrichedResult = await useCase.execute(baseParams);
+      const skipResult = await useCase.execute({ ...baseParams, skipEnrichment: true });
+
+      expect(enrichedResult.isOk()).toBe(true);
+      expect(skipResult.isOk()).toBe(true);
+      const enrichedHashes = enrichedResult.getValue().map(chunk => chunk.metadata?.chunkHash);
+      const skipHashes = skipResult.getValue().map(chunk => chunk.metadata?.chunkHash);
+      expect(skipHashes).toEqual(enrichedHashes);
+      expect(skipHashes).toEqual([sha256(textA), sha256(textB)]);
+    });
+
+    it('stamps sourceType/fileHash/hardwareId metadata on the skipEnrichment path', async () => {
+      const result = await useCase.execute({
+        content: textA,
+        filePath: '/path/to/file.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        fileHash: 'file-hash-abc',
+        hardwareId: 'hw-id',
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunk = result.getValue()[0];
+      expect(chunk.metadata?.sourceType).toBe(SOURCE_TYPES.VAULT);
+      expect(chunk.metadata?.fileHash).toBe('file-hash-abc');
+      expect(chunk.metadata?.hardwareId).toBe('hw-id');
+      expect(chunk.metadata?.chunkHash).toBe(sha256(textA));
     });
   });
 });

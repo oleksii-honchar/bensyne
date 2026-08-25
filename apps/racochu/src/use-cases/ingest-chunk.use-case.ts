@@ -14,6 +14,7 @@ const ingestChunkParamsSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
   fileHash: z.string().optional(),
   hardwareId: z.string().optional(),
+  forceReembed: z.boolean().optional(),
 });
 
 export type IngestChunkParams = z.infer<typeof ingestChunkParamsSchema>;
@@ -62,7 +63,9 @@ export class IngestChunkUseCase extends BaseUseCase<IngestChunkParams, IngestChu
 
     for (const chunk of params.chunks) {
       try {
-        const result = await this.bensyneClient.remember(chunk);
+        const result = params.forceReembed
+          ? await this.bensyneClient.remember(chunk, { forceReembed: true })
+          : await this.bensyneClient.remember(chunk);
         if (result.isOk()) {
           const { memory_id, status } = result.getValue();
           if (status === 'stored') {

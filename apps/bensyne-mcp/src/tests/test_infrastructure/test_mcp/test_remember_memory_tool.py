@@ -138,6 +138,20 @@ class TestRememberMemorySchema:
         params = REMEMBER_SCHEMA["parameters"]["properties"]
         assert "scope" in params
 
+    def test_schema_has_force_reembed_parameter(self) -> None:
+        """Schema should expose force_reembed as an optional boolean parameter (ADR-8)."""
+        from src.infrastructure.mcp.schemas import REMEMBER_SCHEMA
+
+        params = REMEMBER_SCHEMA["parameters"]["properties"]
+        assert "force_reembed" in params
+        assert params["force_reembed"]["type"] == "boolean"
+
+    def test_schema_force_reembed_not_required(self) -> None:
+        """force_reembed must be optional (default None) — never required."""
+        from src.infrastructure.mcp.schemas import REMEMBER_SCHEMA
+
+        assert "force_reembed" not in REMEMBER_SCHEMA["parameters"]["required"]
+
     def test_schema_memory_bank_required(self) -> None:
         """Schema should require memory_bank parameter."""
         from src.infrastructure.mcp.schemas import REMEMBER_SCHEMA
@@ -230,6 +244,12 @@ class TestRememberMemoryToolRegistration:
         # source / scope are str | None -> string (union with null)
         assert _param_types(props["source"]) == {"string"}
         assert _param_types(props["scope"]) == {"string"}
+
+    def test_remember_memory_tool_accepts_force_reembed(self) -> None:
+        """rememberMemory tool schema must expose force_reembed as an optional boolean."""
+        props = _introspect_tool_parameters("rememberMemory")["properties"]
+        assert "force_reembed" in props
+        assert _param_types(props["force_reembed"]) == {"boolean"}
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +378,67 @@ class TestRememberMemoryHandler:
 
             call_args = mock_use_case.execute.call_args[0][0]
             assert call_args["scope"] == "project"
+
+        asyncio.run(run())
+
+    def test_handler_passes_force_reembed_to_use_case(self, router: MemoryBankRouter) -> None:
+        """handle_remember should pass force_reembed through to the use case (ADR-8)."""
+        from src.infrastructure.mcp.handlers import handle_remember
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
+
+        async def run() -> None:
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                    "force_reembed": True,
+                },
+                container=container,
+            )
+
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert call_args["force_reembed"] is True
+
+        asyncio.run(run())
+
+    def test_handler_omits_force_reembed_when_absent(self, router: MemoryBankRouter) -> None:
+        """handle_remember without force_reembed must not add the key (byte-identical)."""
+        from src.infrastructure.mcp.handlers import handle_remember
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok(
+            {
+                "status": "stored",
+                "memory_id": "mem_abc123",
+                "memory_bank": "test-ns",
+            }
+        )
+
+        async def run() -> None:
+            container = MagicMock()
+            container.remember_memory_use_case.return_value = mock_use_case
+            await handle_remember(
+                router,
+                {
+                    "content": "test",
+                    "memory_bank": "test-ns",
+                },
+                container=container,
+            )
+
+            call_args = mock_use_case.execute.call_args[0][0]
+            assert "force_reembed" not in call_args
 
         asyncio.run(run())
 

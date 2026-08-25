@@ -24,6 +24,7 @@ const chunkContentParamsSchema = z.object({
   sourceConfig: watchSourceConfigSchema.optional(),
   fileHash: z.string().optional(),
   hardwareId: z.string().optional(),
+  skipEnrichment: z.boolean().optional(),
 });
 
 export type ChunkContentParams = z.infer<typeof chunkContentParamsSchema>;
@@ -93,12 +94,25 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       sourceType: SOURCE_TYPES.VAULT,
     };
 
-    const chunksResult = await chunker.chunkFile(
-      params.content,
-      params.filePath,
-      params.sourceId,
-      effectiveSourceConfig,
-    );
+    // skipEnrichment (spec §4.3, ADR-2): force the enrichment-free path so
+    // recover can enumerate the expected chunk set with zero LLM cost regardless
+    // of config. The override is passed as the optional 5th param of
+    // chunkFile — the 4th slot stays `effectiveSourceConfig` (collision warning).
+    const skipEnrichment = params.skipEnrichment === true;
+    const chunksResult = skipEnrichment
+      ? await chunker.chunkFile(
+          params.content,
+          params.filePath,
+          params.sourceId,
+          effectiveSourceConfig,
+          { skipEnrichment: true },
+        )
+      : await chunker.chunkFile(
+          params.content,
+          params.filePath,
+          params.sourceId,
+          effectiveSourceConfig,
+        );
 
     if (chunksResult.isKo()) {
       this.logger.error(
@@ -110,18 +124,24 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     const chunks = chunksResult.getValue();
     this.logger.info(`Content chunked: path="${params.filePath}", chunks=${chunks.length}`);
 
-    // Pipe chunks through enhancement pipeline
+    // Pipe chunks through enhancement pipeline — skipped entirely on the
+    // enrichment-free path (skipEnrichment) so verification costs zero LLM.
     const enhancementConfig = this.configurationService.getEnhancementConfig();
-    const enhancementResult = await this.enhancementPipelineService.enhance(
-      chunks,
-      params.sourceId,
-      params.memoryBank,
-      enhancementConfig,
-    );
+    const enhancementResult = skipEnrichment
+      ? undefined
+      : await this.enhancementPipelineService.enhance(
+          chunks,
+          params.sourceId,
+          params.memoryBank,
+          enhancementConfig,
+        );
 
     // Determine final chunks (enhanced if available, raw otherwise)
     let finalChunks: ContentChunk[];
-    if (enhancementResult.isOk()) {
+    if (enhancementResult === undefined) {
+      // skipEnrichment path — raw chunks carry no enhancement
+      finalChunks = chunks;
+    } else if (enhancementResult.isOk()) {
       this.logger.info(
         `Chunks enhanced: path="${params.filePath}", enhanced=${enhancementResult.getValue().length}`,
       );

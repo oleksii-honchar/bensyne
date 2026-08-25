@@ -1,5 +1,7 @@
 """Tool schemas with memory_bank parameter for MCP protocol."""
 
+from src.app import _MEMORY_BANK_READ_DESC
+
 MEMORY_BANK_PARAM = {
     "memory_bank": {
         "type": "string",
@@ -23,6 +25,10 @@ REMEMBER_SCHEMA = {
             "scope": {
                 "type": "string",
                 "description": "Scope tag to categorize the memory (e.g., project, personal, system).",
+            },
+            "force_reembed": {
+                "type": "boolean",
+                "description": "When True and a dedup hit's memory no longer exists, drop the stale hash-index/file-chunk rows and re-embed under a new memory id (repair flag).",
             },
             **MEMORY_BANK_PARAM,
         },
@@ -125,6 +131,23 @@ REGISTER_BANK_SCHEMA = {
     },
 }
 
+GET_FILE_CHUNKS_SCHEMA = {
+    "name": "getFileChunks",
+    "description": "Read-only existence check: file row + stored chunk list. "
+    "Never embeds, never writes. Safe for verification/recovery.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Absolute path of the file to inspect.",
+            },
+            "memory_bank": {"type": "string", "description": _MEMORY_BANK_READ_DESC},
+        },
+        "required": ["file_path", "memory_bank"],
+    },
+}
+
 ALL_TOOL_SCHEMAS = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -134,4 +157,5 @@ ALL_TOOL_SCHEMAS = [
     STATS_SCHEMA,
     LIST_BANKS_SCHEMA,
     REGISTER_BANK_SCHEMA,
+    GET_FILE_CHUNKS_SCHEMA,
 ]

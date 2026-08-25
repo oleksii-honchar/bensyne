@@ -11,6 +11,8 @@ export interface PrismaFileTrackerRecord {
   filePath: string;
   sourceId: string;
   memoryBank: string;
+  fileHash?: string | null;
+  hardwareId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   memories: { id: bigint; memoryId: string; fileTrackerId: bigint }[];
@@ -32,6 +34,8 @@ export function aPrismaFileTracker(overrides?: Partial<PrismaFileTrackerRecord>)
     filePath: faker.system.filePath(),
     sourceId: faker.string.alphanumeric(12),
     memoryBank: faker.word.adjective(),
+    fileHash: null,
+    hardwareId: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     memories: [],

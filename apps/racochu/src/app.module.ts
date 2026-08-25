@@ -6,6 +6,7 @@ import { AppConfig } from './app.config';
 import { validateAppEnv } from './app.env.validation';
 import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
+import { RecoverService } from './application/recover.service';
 import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
@@ -20,6 +21,7 @@ import { ConfigurationModule } from './infrastructure/config/configuration.modul
 import { LoggerModule } from './infrastructure/logging/logger.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FileMemoryTrackerRepository } from './infrastructure/repositories/file-memory-tracker.repository';
+import { FileTrackerRepository } from './infrastructure/repositories/file-tracker.repository';
 import { BensyneClient } from './infrastructure/services/bensyne-client.service';
 import { FileHasherService } from './infrastructure/services/file-hasher.service';
 import { FileMemoryTrackerService } from './infrastructure/services/file-memory-tracker.service';
@@ -75,12 +77,14 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
 
     // Application services
     ForceReprocessService,
+    RecoverService,
     ExcludeReconciliationService,
     TtlReconciliationService,
 
     // Infrastructure
     FileProcessingQueue,
     BensyneClient,
+    FileTrackerRepository,
 
     // File→Memory tracking
     FileMemoryTrackerRepository,

@@ -103,6 +103,35 @@ describe('IngestChunkUseCase', () => {
 
       expect(result.isKo()).toBe(true);
     });
+
+    it('should forward forceReembed to BensyneClient.remember when true', async () => {
+      const chunk = aContentChunk({ chunkIndex: 0 });
+      mockBensyneClientService.remember.mockResolvedValue(
+        Result.ok({ memory_id: 'mem-1', status: 'stored' }),
+      );
+
+      const result = await useCase.execute({
+        chunks: [chunk],
+        sourceId: 'test-source',
+        forceReembed: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockBensyneClientService.remember).toHaveBeenCalledWith(chunk, { forceReembed: true });
+    });
+
+    it('should not pass options to remember when forceReembed is absent (default off)', async () => {
+      const chunk = aContentChunk({ chunkIndex: 0 });
+      mockBensyneClientService.remember.mockResolvedValue(
+        Result.ok({ memory_id: 'mem-1', status: 'stored' }),
+      );
+
+      const result = await useCase.execute({ chunks: [chunk], sourceId: 'test-source' });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockBensyneClientService.remember).toHaveBeenCalledWith(chunk);
+      expect(mockBensyneClientService.remember).not.toHaveBeenCalledWith(chunk, { forceReembed: true });
+    });
   });
 
   describe('enhanced chunk fields', () => {

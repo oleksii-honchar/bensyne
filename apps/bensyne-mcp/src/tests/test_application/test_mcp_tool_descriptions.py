@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 
 from src.app import register_tools
 
-# The 12 tools that must be exposed.
+# The 13 tools that must be exposed.
 EXPECTED_TOOLS = {
     "rememberMemory",
     "recallMemory",
@@ -35,6 +35,7 @@ EXPECTED_TOOLS = {
     "expandFileRelations",
     "fetchFile",
     "forgetFile",
+    "getFileChunks",
 }
 
 # Tools that accept a ``memory_bank`` parameter.
@@ -49,6 +50,7 @@ MEMORY_BANK_TOOLS = {
     "expandFileRelations",
     "fetchFile",
     "forgetFile",
+    "getFileChunks",
 }
 
 

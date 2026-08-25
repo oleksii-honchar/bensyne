@@ -275,4 +275,97 @@ describe('FileTrackerRepository', () => {
       expect(prismaFileMemoryTracker.create).not.toHaveBeenCalled();
     });
   });
+
+  describe('findTrackedBySourceId', () => {
+    it('returns all FileTracker rows as full aggregates when no sourceId given', async () => {
+      prismaFileTracker.findMany.mockResolvedValue([
+        aPrismaFileTracker({
+          id: 1101n,
+          filePath: '/test/full-a.txt',
+          sourceId: 'source-a',
+          memoryBank: 'vault-knowledge',
+          fileHash: 'hash-a',
+          hardwareId: 'hw-1',
+        }),
+        aPrismaFileTracker({
+          id: 1102n,
+          filePath: '/test/full-b.txt',
+          sourceId: 'source-b',
+          memoryBank: 'default',
+          fileHash: 'hash-b',
+          hardwareId: 'hw-2',
+        }),
+      ]);
+
+      const result = await repository.findTrackedBySourceId();
+
+      expect(prismaFileTracker.findMany).toHaveBeenCalledWith({ where: {} });
+      expect(result).toHaveLength(2);
+      expect(result[0].filePath).toBe('/test/full-a.txt');
+      expect(result[0].fileHash).toBe('hash-a');
+      expect(result[0].hardwareId).toBe('hw-1');
+      expect(result[1].filePath).toBe('/test/full-b.txt');
+      expect(result[1].fileHash).toBe('hash-b');
+      expect(result[1].hardwareId).toBe('hw-2');
+    });
+
+    it('filters rows by sourceId when a sourceId is given', async () => {
+      const matching = aPrismaFileTracker({
+        id: 1201n,
+        filePath: '/test/matching.txt',
+        sourceId: 'source-target',
+        memoryBank: 'default',
+        fileHash: 'hash-target',
+        hardwareId: 'hw-target',
+      });
+      prismaFileTracker.findMany.mockResolvedValue([matching]);
+
+      const result = await repository.findTrackedBySourceId('source-target');
+
+      expect(prismaFileTracker.findMany).toHaveBeenCalledWith({
+        where: { sourceId: 'source-target' },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].filePath).toBe('/test/matching.txt');
+      expect(result[0].fileHash).toBe('hash-target');
+      expect(result[0].hardwareId).toBe('hw-target');
+    });
+
+    it('skips malformed rows instead of throwing', async () => {
+      prismaFileTracker.findMany.mockResolvedValue([
+        aPrismaFileTracker({
+          id: 1301n,
+          filePath: '',
+          sourceId: 'source-bad',
+          memoryBank: 'default',
+        }),
+        aPrismaFileTracker({
+          id: 1302n,
+          filePath: '/test/valid.txt',
+          sourceId: 'source-good',
+          memoryBank: 'default',
+          fileHash: 'hash-valid',
+          hardwareId: 'hw-valid',
+        }),
+      ]);
+
+      const result = await repository.findTrackedBySourceId();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].filePath).toBe('/test/valid.txt');
+      expect(result[0].fileHash).toBe('hash-valid');
+      expect(result[0].hardwareId).toBe('hw-valid');
+    });
+
+    it('returns an empty array when no rows match', async () => {
+      prismaFileTracker.findMany.mockResolvedValue([]);
+
+      const result = await repository.findTrackedBySourceId('source-empty');
+
+      expect(prismaFileTracker.findMany).toHaveBeenCalledWith({
+        where: { sourceId: 'source-empty' },
+      });
+      expect(result).toEqual([]);
+    });
+  });
 });

@@ -581,6 +581,33 @@ describe('ObsidianChunkingStrategy', () => {
 
       expect(mockMastraChunkingService.chunkFile).toHaveBeenCalledTimes(1);
     });
+
+    it('forwards skipEnrichment to the delegated Mastra chunkFile call (spec-deviation fix)', async () => {
+      mockMastraChunkingService = aMastraChunkingService([aBodyChunk()]);
+      sut = new ObsidianChunkingStrategy(
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+
+      const config = aWatchSourceConfig({
+        id: 'test-source',
+        path: '/test/path',
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'obsidian',
+      });
+      await sut.chunkFile(WITH_FRONTMATTER, '/test/path/note.md', 'test-source', config, {
+        skipEnrichment: true,
+      });
+
+      expect(mockMastraChunkingService.chunkFile).toHaveBeenCalledWith(
+        expect.any(String),
+        '/test/path/note.md',
+        'test-source',
+        config,
+        { skipEnrichment: true },
+      );
+    });
   });
 
   describe('empty content', () => {

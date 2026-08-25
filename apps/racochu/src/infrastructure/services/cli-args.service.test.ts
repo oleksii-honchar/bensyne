@@ -38,6 +38,7 @@ describe('CliArgsService', () => {
         processOnly: false,
         resume: false,
         ttlSweep: false,
+        recover: false,
         source: null,
       });
     });
@@ -145,6 +146,27 @@ describe('CliArgsService', () => {
       expect(result.ttlSweep).toBe(false);
     });
 
+    it('should enable recover with --recover and disable watch', () => {
+      const result = service.parse(['--recover']);
+
+      expect(result.recover).toBe(true);
+      expect(result.watch).toBe(false);
+    });
+
+    it('should keep recover false without --recover', () => {
+      const result = service.parse(['--watch']);
+
+      expect(result.recover).toBe(false);
+    });
+
+    it('should parse --recover with source and dry-run together', () => {
+      const result = service.parse(['--recover', '-s', 'obsidian-vault', '--dry-run']);
+
+      expect(result.recover).toBe(true);
+      expect(result.source).toBe('obsidian-vault');
+      expect(result.dryRun).toBe(true);
+    });
+
     it('should set source with --source', () => {
       const result = service.parse(['--source', 'obsidian-vault']);
 
@@ -194,6 +216,8 @@ describe('CliArgsService', () => {
       expect(output).toContain('--source');
       expect(output).toContain('--process-only');
       expect(output).toContain('--ttl-sweep');
+      expect(output).toContain('--recover');
+      expect(output).toContain('Recover missing chunks for DB-tracked files, then exit');
       expect(output).toContain('Run TTL sweep once and exit');
       writeSpy.mockRestore();
     });

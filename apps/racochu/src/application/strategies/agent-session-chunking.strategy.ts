@@ -10,7 +10,7 @@ import { SessionMetadataService } from '../../infrastructure/services/session-me
 import { generateId } from '../../utils/big-endian-id';
 import { Result } from '../../utils/result';
 import { splitFrontmatter } from '../../utils/strategy-utils';
-import { BaseChunkingStrategy } from './base-chunking-strategy';
+import { BaseChunkingStrategy, ChunkFileOptions } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 
 /** Companion artifact names present in a session root (top-level entries). */
@@ -337,7 +337,8 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     content: string,
     filePath: string,
     sourceId: string,
-    _sourceConfig: WatchSourceConfig,
+    sourceConfig: WatchSourceConfig,
+    options?: ChunkFileOptions,
   ): Promise<Result<ContentChunk[]>> {
     // 1. Locate parent session.md
     const sessionPath = await locateSessionRoot(filePath);
@@ -368,8 +369,14 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, sessionMetadata));
     }
 
-    // 6. Chunk body with Mastra
-    const bodyChunksResult = await this.mastraChunkingService.chunkFile(body, filePath, sourceId);
+    // 6. Chunk body with Mastra. The optional `options` override (at least
+    //    `{ skipEnrichment }`, spec §4.3/ADR-2) is forwarded so the Mastra LLM
+    //    gate honors it for agent-session sources too — otherwise the
+    //    verification path would run `extractMetadata` when
+    //    `enrichment.enabled` is true (Task 6 spec-deviation fix).
+    const bodyChunksResult = options
+      ? await this.mastraChunkingService.chunkFile(body, filePath, sourceId, sourceConfig, options)
+      : await this.mastraChunkingService.chunkFile(body, filePath, sourceId);
     const bodyChunks = bodyChunksResult.isOk() ? bodyChunksResult.getValue() : [];
 
     // 7. Enrich all chunks with session metadata and companion edges

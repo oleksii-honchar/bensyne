@@ -756,6 +756,20 @@ describe('VaultChunkingStrategy', () => {
       expect(mockMastra.chunkFile).toHaveBeenCalledWith(expectedCleanedBody, NOTE_PATH(), 'test-source');
     });
 
+    it('forwards skipEnrichment to the delegated Mastra chunkFile call (spec-deviation fix)', async () => {
+      const config = vaultConfig(root);
+      await sut.chunkFile(NOTE_CONTENT, NOTE_PATH(), 'test-source', config, { skipEnrichment: true });
+
+      const expectedCleanedBody = 'Decision body links the concept and RB_PLAIN.';
+      expect(mockMastra.chunkFile).toHaveBeenCalledWith(
+        expectedCleanedBody,
+        NOTE_PATH(),
+        'test-source',
+        config,
+        { skipEnrichment: true },
+      );
+    });
+
     it('re-indexes final list densely 0..m-1 with totalChunks = m (D41)', async () => {
       mockMastra = aMastraChunkingService([aBodyChunk({ chunkIndex: 0 }), aBodyChunk({ chunkIndex: 1 })]);
       sut = new VaultChunkingStrategy(mockMastra as unknown as MastraChunkingService, aLogger());

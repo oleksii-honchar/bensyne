@@ -506,6 +506,34 @@ describe('AgentSessionChunkingStrategy', () => {
       expect(mockMastraChunkingService.chunkFile).toHaveBeenCalledTimes(1);
     });
 
+    it('forwards skipEnrichment to the delegated Mastra chunkFile call (spec-deviation fix)', async () => {
+      mockMastraChunkingService = aMastraChunkingService([aBodyChunk()]);
+      sut = new AgentSessionChunkingStrategy(
+        mockSessionMetadataService as unknown as SessionMetadataService,
+        mockMastraChunkingService as unknown as MastraChunkingService,
+        mockLogger,
+      );
+
+      const config = aWatchSourceConfig({
+        id: 'test-source',
+        path: '/test/path',
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'agent-sessions',
+      });
+      await sut.chunkFile(WITH_FRONTMATTER, '/test/path/file.md', 'test-source', config, {
+        skipEnrichment: true,
+      });
+
+      expect(mockMastraChunkingService.chunkFile).toHaveBeenCalledWith(
+        expect.any(String),
+        '/test/path/file.md',
+        'test-source',
+        config,
+        { skipEnrichment: true },
+      );
+    });
+
     it('returns multiple body chunks from Mastra', async () => {
       const chunk1 = aBodyChunk({ chunkIndex: 0 });
       const chunk2 = aBodyChunk({ chunkIndex: 1 });

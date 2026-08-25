@@ -12,6 +12,7 @@ import 'reflect-metadata';
 import { AppModule } from './app.module';
 import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
+import { RecoverService } from './application/recover.service';
 import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
@@ -59,18 +60,21 @@ export async function bootstrap(): Promise<void> {
   const logger = app.get(BasePinoLogger);
   const configurationService = app.get(ConfigurationService);
   const forceReprocessService = app.get(ForceReprocessService);
+  const recoverService = app.get(RecoverService);
   const excludeReconciliationService = app.get(ExcludeReconciliationService);
   const ttlService = app.get(TtlReconciliationService);
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
-  const mode = args.resume
-    ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
-    : args.forceReprocess
-      ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
-      : args.processOnly
-        ? 'process-only'
-        : 'watch';
+  const mode = args.recover
+    ? `recover${args.source ? ` (${args.source})` : ' (all)'}`
+    : args.resume
+      ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
+      : args.forceReprocess
+        ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
+        : args.processOnly
+          ? 'process-only'
+          : 'watch';
   logger.info(
     `racochu starting: mode="${mode}", verbose=${args.verbose}, config="${args.config}"${args.source ? `, source="${args.source}"` : ''}`,
   );
@@ -170,6 +174,24 @@ export async function bootstrap(): Promise<void> {
     }
     await processingQueue.waitForEmpty();
     logger.info('Processing complete, exiting');
+    await app.close();
+    process.exit(0);
+  }
+
+  // Handle recover: repair chunk-level gaps for DB-tracked files, then exit.
+  // Runs before the watch start (mirroring --process-only) and always exits,
+  // regardless of --process-only. Exclude reconciliation + TTL sweep above
+  // still ran at startup in this mode.
+  if (args.recover) {
+    if (args.source) {
+      logger.info(`Recovering missing chunks for source: ${args.source}`);
+      await recoverService.recoverSource(args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+    } else {
+      logger.info('Recovering missing chunks for all sources');
+      await recoverService.recoverAll(sources, args.dryRun ? { dryRun: true } : undefined);
+    }
+    await processingQueue.waitForEmpty();
+    logger.info('Recover complete, exiting');
     await app.close();
     process.exit(0);
   }

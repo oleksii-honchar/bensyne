@@ -5,6 +5,7 @@ import {
   ReconciliationSummary,
 } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
+import { RecoverService } from './application/recover.service';
 import { TtlReconciliationService, TtlSweepSummary } from './application/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
@@ -46,6 +47,10 @@ interface Harness {
     forceReprocessSource: jest.Mock;
     forceReprocessAll: jest.Mock;
   };
+  recoverService: {
+    recoverSource: jest.Mock;
+    recoverAll: jest.Mock;
+  };
   fileWatcherService: { start: jest.Mock };
   ttlReconciliationService: {
     run: jest.MockedFunction<(dryRun?: boolean, sourceId?: string) => Promise<TtlSweepSummary>>;
@@ -80,6 +85,12 @@ const setupBootstrap = (argv: string[]): Harness => {
   };
   services.set(ForceReprocessService, forceReprocessService);
 
+  const recoverService = {
+    recoverSource: jest.fn().mockResolvedValue(undefined),
+    recoverAll: jest.fn().mockResolvedValue(undefined),
+  };
+  services.set(RecoverService, recoverService);
+
   const fileWatcherService = {
     start: jest.fn().mockResolvedValue({ isOk: () => true }),
   };
@@ -110,7 +121,14 @@ const setupBootstrap = (argv: string[]): Harness => {
   jest.mocked(NestFactory.createApplicationContext).mockResolvedValue(app as never);
   process.argv = argv;
 
-  return { excludeReconciliationService, forceReprocessService, fileWatcherService, ttlReconciliationService, app };
+  return {
+    excludeReconciliationService,
+    forceReprocessService,
+    recoverService,
+    fileWatcherService,
+    ttlReconciliationService,
+    app,
+  };
 };
 
 describe('main bootstrap — startup exclude reconciliation wiring', () => {
@@ -256,5 +274,71 @@ describe('main bootstrap — startup exclude reconciliation wiring', () => {
 
     expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
     expect(ttlReconciliationService.startDailySweep).toHaveBeenCalledTimes(1);
+  });
+
+  it('recover mode: runs exclude reconciliation + TTL sweep at startup, then recovers all and exits', async () => {
+    const {
+      excludeReconciliationService,
+      ttlReconciliationService,
+      recoverService,
+      fileWatcherService,
+      app,
+    } = setupBootstrap(['node', 'main.js', '--recover']);
+
+    await bootstrap();
+
+    // Startup reconciliation + TTL sweep still run in recover mode.
+    expect(excludeReconciliationService.run).toHaveBeenCalledTimes(1);
+    expect(ttlReconciliationService.run).toHaveBeenCalledWith(false);
+    // Routes to recoverAll (no source), waits for the queue, closes the app, exits 0.
+    expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
+    expect(recoverService.recoverSource).not.toHaveBeenCalled();
+    expect(app.close).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    // Watch mode is never started in recover mode.
+    expect(fileWatcherService.start).not.toHaveBeenCalled();
+  });
+
+  it('recover mode with -s: routes to recoverSource and exits without starting the watcher', async () => {
+    const { recoverService, fileWatcherService, app } = setupBootstrap([
+      'node',
+      'main.js',
+      '--recover',
+      '-s',
+      'src-1',
+    ]);
+
+    await bootstrap();
+
+    expect(recoverService.recoverSource).toHaveBeenCalledTimes(1);
+    expect(recoverService.recoverSource).toHaveBeenCalledWith(
+      'src-1',
+      [{ id: 'src-1', path: '/src/1' }],
+      undefined,
+    );
+    expect(recoverService.recoverAll).not.toHaveBeenCalled();
+    expect(app.close).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(fileWatcherService.start).not.toHaveBeenCalled();
+  });
+
+  it('recover mode with --dry-run: passes dryRun option through to recover', async () => {
+    const { recoverService } = setupBootstrap(['node', 'main.js', '--recover', '--dry-run']);
+
+    await bootstrap();
+
+    expect(recoverService.recoverAll).toHaveBeenCalledWith([{ id: 'src-1', path: '/src/1' }], {
+      dryRun: true,
+    });
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('recover mode: exits after the pass even without --process-only', async () => {
+    const { recoverService } = setupBootstrap(['node', 'main.js', '--recover']);
+
+    await bootstrap();
+
+    expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
   });
 });

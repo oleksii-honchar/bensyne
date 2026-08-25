@@ -5,8 +5,13 @@ import { ContentChunk } from '../../domain/content-chunk.entity';
 import { aContentChunk } from '../../domain/content-chunk.entity.test-utils';
 import { ConfigurationService } from '../config/configuration.service';
 import { aConfigService } from '../config/configuration.service.test-utils';
+import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { aLogger } from '../logging/logger.test-utils';
+import {
+  aGetFileChunksToolResponse,
+  aRawStoredChunk,
+} from './bensyne-client.test-utils';
 import { BensyneClient } from './bensyne-client.service';
 
 jest.mock('http', () => ({
@@ -588,6 +593,108 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const result = await client.remember(aContentChunk({ text: 'Test chunk content' }));
       expect(result.isKo()).toBe(true);
       expect(result.getErrors()[0].message).toContain('Internal error');
+    });
+
+    it('sends force_reembed: true at the tool payload top level when forceReembed is set', async () => {
+      let lastReq: MockReq | null = null;
+
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          lastReq = req;
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const chunk = aContentChunk({ text: 'force reembed test', chunkIndex: 0, totalChunks: 1 });
+      const result = await client.remember(chunk, { forceReembed: true });
+      expect(result.isOk()).toBe(true);
+
+      const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
+      // Tool-level argument, NOT inside the v1 metadata contract.
+      expect(body.params.arguments.force_reembed).toBe(true);
+      expect(body.params.arguments.metadata).not.toHaveProperty('force_reembed');
+    });
+
+    it('omits force_reembed entirely when the option is absent (byte-identical to today)', async () => {
+      let lastReq: MockReq | null = null;
+
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          lastReq = req;
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const chunk = aContentChunk({ text: 'no option test', chunkIndex: 0, totalChunks: 1 });
+      const result = await client.remember(chunk);
+      expect(result.isOk()).toBe(true);
+
+      const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
+      expect(body.params.arguments).not.toHaveProperty('force_reembed');
+      // Deep-equal to the untouched DTO payload — same keys, same values.
+      expect(body.params.arguments).toEqual(BensyneRememberDto.fromChunk(chunk));
+    });
+
+    it('omits force_reembed when the option is explicitly false', async () => {
+      let lastReq: MockReq | null = null;
+
+      (http.request as jest.Mock).mockImplementation(
+        (_options: unknown, callback: (res: MockRes) => void) => {
+          const req = createMockReq();
+          lastReq = req;
+          const res = createMockResponse(
+            200,
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              result: {
+                content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+              },
+            }),
+          );
+          process.nextTick(() => callback(res));
+          return req;
+        },
+      );
+
+      const chunk = aContentChunk({ text: 'false option test', chunkIndex: 0, totalChunks: 1 });
+      const result = await client.remember(chunk, { forceReembed: false });
+      expect(result.isOk()).toBe(true);
+
+      const body = JSON.parse(lastReq!.write.mock.calls[0][0]);
+      expect(body.params.arguments).not.toHaveProperty('force_reembed');
+    });
+
+    it('keeps BensyneRememberDto free of force_reembed (v1 metadata contract unchanged)', () => {
+      const payload = BensyneRememberDto.fromChunk(
+        aContentChunk({ text: 'dto contract test', chunkIndex: 0, totalChunks: 1 }),
+      );
+      expect(payload).not.toHaveProperty('force_reembed');
+      expect(payload.metadata).not.toHaveProperty('force_reembed');
     });
   });
 
@@ -1431,6 +1538,125 @@ describe('BensyneClient (Streamable HTTP)', () => {
 
       const result = await client.registerBank('ns', 'desc');
       expect(result.isKo()).toBe(true);
+    });
+  });
+
+  describe('getFileChunks', () => {
+    let client: BensyneClient;
+    let sendRequestMock: jest.Mock;
+
+    const mockSendRequest = (impl: (...args: unknown[]) => unknown) => {
+      sendRequestMock = jest.fn(impl);
+      // Shadow the private sendRequest with a controlled mock.
+      (client as unknown as { sendRequest: unknown }).sendRequest = sendRequestMock;
+      return sendRequestMock;
+    };
+
+    beforeEach(async () => {
+      client = await createClient();
+    });
+
+    it('sends a tools/call for getFileChunks with snake_case file_path and memory_bank arguments', async () => {
+      mockSendRequest(() =>
+        aGetFileChunksToolResponse({ status: 'present', file_id: 'file-1', chunks: [] }),
+      );
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(sendRequestMock).toHaveBeenCalledTimes(1);
+      const sent = sendRequestMock.mock.calls[0][0];
+      expect(sent.method).toBe('tools/call');
+      expect(sent.params.name).toBe('getFileChunks');
+      expect(sent.params.arguments).toEqual({ file_path: '/notes/a.md', memory_bank: 'default' });
+    });
+
+    it('parses a present response into camelCase typed fields', async () => {
+      mockSendRequest(() =>
+        aGetFileChunksToolResponse({
+          status: 'present',
+          file_id: 'file-42',
+          file_hash: 'f'.repeat(64),
+          total_chunks: 2,
+          source_type: 'vault',
+          chunks: [
+            aRawStoredChunk({ chunk_index: 0, content_hash: 'a'.repeat(64), memory_id: 'mem-1', memory_status: 'present' }),
+            aRawStoredChunk({ chunk_index: 1, content_hash: 'b'.repeat(64), memory_id: 'mem-2', memory_status: 'missing' }),
+          ],
+        }),
+      );
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({
+        status: 'present',
+        fileId: 'file-42',
+        fileHash: 'f'.repeat(64),
+        totalChunks: 2,
+        chunks: [
+          { chunkIndex: 0, contentHash: 'a'.repeat(64), memoryId: 'mem-1', memoryStatus: 'present' },
+          { chunkIndex: 1, contentHash: 'b'.repeat(64), memoryId: 'mem-2', memoryStatus: 'missing' },
+        ],
+      });
+    });
+
+    it('maps a chunk without memory_id to undefined memoryId', async () => {
+      mockSendRequest(() =>
+        aGetFileChunksToolResponse({
+          status: 'present',
+          file_id: 'file-42',
+          chunks: [aRawStoredChunk({ chunk_index: 0, memory_id: undefined, memory_status: 'present' })],
+        }),
+      );
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue().chunks[0]).toEqual({
+        chunkIndex: 0,
+        contentHash: 'a'.repeat(64),
+        memoryId: undefined,
+        memoryStatus: 'present',
+      });
+    });
+
+    it('returns ok with FILE_NOT_FOUND status and empty chunks when the file is unknown', async () => {
+      mockSendRequest(() =>
+        aGetFileChunksToolResponse({ status: 'FILE_NOT_FOUND', file_id: 'file-unknown', chunks: [] }),
+      );
+
+      const result = await client.getFileChunks('/notes/unknown.md', 'default');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ status: 'FILE_NOT_FOUND', chunks: [] });
+    });
+
+    it('returns ko on transport error', async () => {
+      mockSendRequest(() => Promise.reject(new Error('ECONNREFUSED')));
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('ECONNREFUSED');
+    });
+
+    it('returns ko on MCP error response', async () => {
+      mockSendRequest(() => ({ error: { code: -32603, message: 'Internal error' }, _sessionId: null }));
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('Internal error');
+    });
+
+    it('returns ko on an unexpected status (malformed payload not swallowed)', async () => {
+      mockSendRequest(() => aGetFileChunksToolResponse({ status: 'internal_failure', error: 'boom' }));
+
+      const result = await client.getFileChunks('/notes/a.md', 'default');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('boom');
     });
   });
 

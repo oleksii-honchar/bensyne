@@ -59,20 +59,36 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
             lookup_result = self.hash_index_service.lookup(chunk_hash)
             if lookup_result.is_ok and lookup_result.value:
                 existing_memory_id = lookup_result.value
-                self.logger.info(
-                    "Memory deduplicated",
-                    use_case="remember_memory",
-                    existing_memory_id=existing_memory_id,
-                )
-                response: dict = {
-                    "status": "deduplicated",
-                    "memory_id": existing_memory_id,
-                    "memory_bank": memory_bank,
-                }
-                # D14 (S3): a dedup hit STILL materializes with the EXISTING id —
-                # idempotent upserts link the shared memory under this file.
-                self._materialize(parameters, memory_bank, existing_memory_id, response)
-                return Result.ok(response)
+                force_reembed = parameters.get("force_reembed") is True
+                if force_reembed and self.memory_repository.get(existing_memory_id) is None:
+                    # ADR-8 stale-hit repair: the dedup target's memory no longer
+                    # exists (external loss), so a plain dedup would return the
+                    # dead id forever. Drop the stale hash-index entry and the
+                    # stale file_chunks rows, then fall through to the normal
+                    # miss path — save (embedding) → store → materialize — which
+                    # re-embeds under a NEW memory id.
+                    self.logger.info(
+                        "Force re-embedding stale dedup hit",
+                        use_case="remember_memory",
+                        stale_memory_id=existing_memory_id,
+                    )
+                    self.hash_index_service.remove(existing_memory_id)
+                    self._remove_stale_chunk_rows(existing_memory_id)
+                else:
+                    self.logger.info(
+                        "Memory deduplicated",
+                        use_case="remember_memory",
+                        existing_memory_id=existing_memory_id,
+                    )
+                    response: dict = {
+                        "status": "deduplicated",
+                        "memory_id": existing_memory_id,
+                        "memory_bank": memory_bank,
+                    }
+                    # D14 (S3): a dedup hit STILL materializes with the EXISTING id —
+                    # idempotent upserts link the shared memory under this file.
+                    self._materialize(parameters, memory_bank, existing_memory_id, response)
+                    return Result.ok(response)
 
         # 2. Create memory entity — generate id if not provided
         create_params = dict(parameters)
@@ -164,6 +180,23 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                 "status": "failed",
                 "errors": [error.error_code for error in materialize_result.errors],
             }
+
+    def _remove_stale_chunk_rows(self, memory_id: str) -> None:
+        """Drop stale ``file_chunks`` rows referencing a dead memory (ADR-8).
+
+        Uses the same primitives as ``ForgetMemoryUseCase._cleanup_chunks_and_files``
+        (``file_service.get_chunks_by_memory_id`` + ``remove_chunk``) but directly —
+        never via ``ForgetMemoryUseCase`` (its ``pure_memories``-only bank guard
+        rejects file banks, and its ``mnemosyne_client.forget`` would try to delete
+        an already-gone memory). ``delete_file`` is deliberately NOT called on a
+        0-chunk file: the following miss-path ``materialize_file_context``
+        immediately re-creates the chunk rows (idempotent upsert).
+        """
+        chunks_result = self.file_service.get_chunks_by_memory_id(memory_id)
+        if chunks_result.is_ko or not chunks_result.value:
+            return
+        for chunk in chunks_result.value:
+            self.file_service.remove_chunk(chunk.file_id, memory_id)
 
     @staticmethod
     def _extract_chunk_hash(parameters: dict) -> str | None:

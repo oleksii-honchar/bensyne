@@ -15,6 +15,7 @@ export interface ParsedCliArgs {
   processOnly: boolean;
   resume: boolean;
   ttlSweep: boolean;
+  recover: boolean;
   source: string | null;
 }
 
@@ -36,6 +37,7 @@ Options:
   --process-only            Process files once and exit (no watching)
   -f, --force-reprocess     Force re-process all sources
   -r, --resume              Resume missing chunks: re-process only files with missing stored chunks
+  --recover                 Recover missing chunks for DB-tracked files, then exit
   -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, or --process-only)
   --ttl-sweep               Run TTL sweep once and exit
 `;
@@ -61,6 +63,7 @@ Options:
       processOnly: false,
       resume: false,
       ttlSweep: false,
+      recover: false,
       source: null,
     };
 
@@ -108,6 +111,10 @@ Options:
           break;
         case '--ttl-sweep':
           result.ttlSweep = true;
+          break;
+        case '--recover':
+          result.recover = true;
+          result.watch = false;
           break;
       }
     }
