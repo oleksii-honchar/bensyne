@@ -168,6 +168,30 @@ The TTL sweep runs:
 > measured from first ingest (`FileTracker.createdAt`); the source files
 > themselves are never deleted from disk — only their memories and trackers.
 
+## CLI Modes
+
+Racochu is a CLI with one-shot maintenance modes and a default watch mode.
+Pass the flag to select the mode (help: `racochu --help`):
+
+| Flag | Mode |
+| ---- | ---- |
+| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously |
+| `--process-only` | Process existing files once, then exit (no watching) |
+| `-f, --force-reprocess` | Force re-process all sources (sequential reprocess of every file) |
+| `-r, --resume` | Resume missing chunks: re-process only files with missing stored chunks |
+| `--recover` | Recover missing chunks for DB-tracked files, then exit |
+| `--ttl-sweep` | Run the TTL sweep once, then exit (optionally scoped with `-s/--source`) |
+
+`-s/--source <id>` scopes the one-shot modes (`--force-reprocess`, `--resume`,
+`--process-only`, `--recover`, `--ttl-sweep`) to a single source id.
+`--dry-run` reports what *would* change without changing anything.
+
+`--recover` repairs chunk-level gaps for files already tracked in the local
+database: it computes the expected chunk set locally (without LLM enrichment),
+compares it against the stored chunk set via bensyne's read-only `getFileChunks`
+tool, and re-ingests only the missing chunks (with enrichment when enabled).
+Untracked files are never touched, and the process exits after the pass.
+
 ## Scripts
 
 | Script                    | Description                                                  |
