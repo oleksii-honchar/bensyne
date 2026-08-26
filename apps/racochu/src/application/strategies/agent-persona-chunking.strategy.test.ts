@@ -2,8 +2,11 @@ import * as fsSync from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { aLogger } from '../../infrastructure/logging/logger.test-utils';
+import { ContentChunk } from '../../domain/content-chunk.entity';
 import { aSourceConfig } from '../../infrastructure/config/configuration.service.test-utils';
+import { aLogger } from '../../infrastructure/logging/logger.test-utils';
+import { ErrorWithDetails } from '../../utils/error-with-details';
+import { Result } from '../../utils/result';
 import {
   AgentPersonaChunkingStrategy,
   buildFolderHierarchyEdges,
@@ -307,5 +310,28 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
     const edges = result.getValue()[0].edges ?? [];
     expect(edges.filter(e => e.relation_type === 'folder_hierarchy')).toEqual([]);
+  });
+
+  it('propagates a Ko result from ContentChunk.of as a Ko chunkFile result (typed Result<ContentChunk[]>, no throw)', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const content = fsSync.readFileSync(path.join(tmpRoot, '00-entry.md'), 'utf-8');
+    const koError = new ErrorWithDetails('Invalid chunk data: forced failure', 'InvalidChunk');
+
+    const spy = jest.spyOn(ContentChunk, 'of').mockReturnValue(Result.ko([koError]));
+    try {
+      const result: Result<ContentChunk[]> = await strategy.chunkFile(
+        content,
+        path.join(tmpRoot, '00-entry.md'),
+        'persona-architect',
+        sourceConfig,
+      );
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()).toEqual([koError]);
+      expect(() => result.getValue()).toThrow(/Invalid chunk data: forced failure/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

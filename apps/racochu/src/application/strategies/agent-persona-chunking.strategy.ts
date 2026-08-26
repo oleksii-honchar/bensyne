@@ -329,7 +329,9 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
     });
 
     if (chunkResult.isKo()) {
-      return chunkResult;
+      // Re-wrap as a Ko typed for the chunk array: Result.ko(...) yields
+      // Result<never>, which is assignable to Result<ContentChunk[]>.
+      return Result.ko(chunkResult.getErrors());
     }
     return Result.ok([chunkResult.getValue()]);
   }
