@@ -12,6 +12,7 @@ import { HardwareIdDetectorService } from '../infrastructure/services/hardware-i
 import { ChunkContentUseCase } from '../use-cases/chunk-content.use-case';
 import { IngestChunkUseCase } from '../use-cases/ingest-chunk.use-case';
 import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
+import { classifyContent } from './content-classifier.service';
 
 /**
  * Outcome of the per-file recovery decision table (spec §4.2).
@@ -19,6 +20,7 @@ import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
  */
 export type RecoverOutcome =
   | { status: 'skipped-missing-on-disk' }
+  | { status: 'skipped-filtered' }
   | { status: 'reingested'; eventType: 'add' | 'change' }
   | { status: 'healthy' }
   | { status: 'repaired'; repairedChunks: number }
@@ -137,6 +139,17 @@ export class RecoverService {
         `Skipping tracked file for recovery; failed to read: path="${filePath}", error="${error instanceof Error ? error.message : String(error)}"`,
       );
       return { status: 'error', reason: 'read-failed' };
+    }
+
+    // 2a. Content filter — a filtered file must never be resurrected by
+    // recover (no FILE_NOT_FOUND re-ingest, no repair). Runs before the
+    // decision table. `enabled: false` short-circuits inside the classifier.
+    const classification = classifyContent(content, source.contentFilter);
+    if (classification.filtered) {
+      this.logger.info(
+        `Skipping filtered file for recovery: path="${filePath}", reasons="${classification.reasons.join('; ')}"`,
+      );
+      return { status: 'skipped-filtered' };
     }
 
     let fileHash: string | undefined;

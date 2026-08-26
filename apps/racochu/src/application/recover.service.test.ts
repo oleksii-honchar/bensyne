@@ -3,6 +3,7 @@ import '@/utils/mastra-rag.test-utils';
 import { aBodyChunk } from '@/domain/content-chunk.entity.test-utils';
 import { FileTracker } from '@/domain/file-tracker.aggregate';
 import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { aLogger } from '@/infrastructure/logging/logger.test-utils';
 import { FileTrackerRepository } from '@/infrastructure/repositories/file-tracker.repository';
@@ -91,8 +92,8 @@ function aTracker(overrides: { fileHash?: string | null; hardwareId?: string | n
   }).getValue();
 }
 
-function aSource() {
-  return aWatchSourceConfig({ id: 'source-1', path: '/tmp/source', memoryBank: 'bank-1' });
+function aSource(overrides: Parameters<typeof aWatchSourceConfig>[0] = {}) {
+  return aWatchSourceConfig({ id: 'source-1', path: '/tmp/source', memoryBank: 'bank-1', ...overrides });
 }
 
 /** Two expected chunks (indexes 0 and 1) with stable chunkHashes. */
@@ -481,6 +482,69 @@ describe('RecoverService', () => {
       await expect(service.recoverAll([aSource()])).resolves.not.toThrow();
       expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
       expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+  });
+  describe('content filter', () => {
+    // git merge-tree dump excerpt — 3 of 11 lines match the machine-marker
+    // patterns (27% > 5% default markerRatio), so the classifier flags it.
+    const FILTERED_DUMP_CONTENT = [
+      'added in remote',
+      '  their  100644 57d0e502d5855bd14208313fa99a4cecac1faeee .vault/_Vault-Home.md',
+      '@@ -0,0 +1,20 @@',
+      '+---',
+      '+type: index',
+      '+title: "Vault Home"',
+      '+createdAt: "2026-06-08T18:32:00Z"',
+      '+updatedAt: "2026-06-10T20:00:00Z"',
+      '+tags: []',
+      '+',
+      '+# Vault Home',
+    ].join('\n');
+
+    it('skips a filtered file before the decision table — getFileChunks never consulted even when it would return FILE_NOT_FOUND', async () => {
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
+      fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
+      deps.bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }),
+      );
+
+      await service.recoverAll([aSource()]);
+
+      expect(deps.bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(deps.chunkContentUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('skips a filtered file even when the file hash changed — no change re-ingest, no repair', async () => {
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker({ fileHash: 'old-hash' })]);
+      fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
+      deps.fileHasherService.compute.mockResolvedValue('current-hash');
+
+      await service.recoverAll([aSource()]);
+
+      expect(deps.bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(deps.chunkContentUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('proceeds with the decision table when contentFilter.enabled is false — filtered-looking content is re-ingested', async () => {
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
+      fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
+      deps.bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }),
+      );
+
+      await service.recoverAll([
+        aSource({ contentFilter: { ...DEFAULT_CONTENT_FILTER_OPTIONS, enabled: false } }),
+      ]);
+
+      expect(deps.bensyneClient.getFileChunks).toHaveBeenCalledTimes(1);
+      expect(deps.processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(deps.processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: FILE_PATH, eventType: 'add' }),
+      );
     });
   });
 });

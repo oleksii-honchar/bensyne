@@ -1,3 +1,4 @@
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { SOURCE_TYPES } from '@/infrastructure/config/source-types';
 import { BensyneClient } from '@/infrastructure/services/bensyne-client.service';
@@ -24,6 +25,7 @@ describe('[E2E] Chunking and Mnemosyne Ingestion Flow', () => {
     description: '',
     exclude: [],
     debounceMs: 3000,
+    contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
   };
 
   beforeAll(async () => {

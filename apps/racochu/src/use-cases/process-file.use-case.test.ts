@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 
 import '@/utils/mastra-rag.test-utils';
 
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { FileAddedEvent, FileChangedEvent, FileDeletedEvent } from '../domain/events/file-events';
 import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';
@@ -1275,6 +1276,91 @@ describe('ProcessFileUseCase', () => {
       expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({ content: shortB64 }),
       );
+    });
+  });
+
+  describe('content filter', () => {
+    const filePath = '/path/to/dump.txt';
+    const sourceId = 'test-source';
+    const memoryBank = 'test-memoryBank';
+    // git merge-tree dump excerpt — 3 of 11 lines match the machine-marker
+    // patterns (27% > 5% default markerRatio), so the classifier flags it.
+    const FILTERED_DUMP_CONTENT = [
+      'added in remote',
+      '  their  100644 57d0e502d5855bd14208313fa99a4cecac1faeee .vault/_Vault-Home.md',
+      '@@ -0,0 +1,20 @@',
+      '+---',
+      '+type: index',
+      '+title: "Vault Home"',
+      '+createdAt: "2026-06-08T18:32:00Z"',
+      '+updatedAt: "2026-06-10T20:00:00Z"',
+      '+tags: []',
+      '+',
+      '+# Vault Home',
+    ].join('\n');
+
+    it('skips a filtered file entirely on ADD — no chunking, no ingest, no tracker row, empty outcome', async () => {
+      (fs.readFile as jest.Mock).mockResolvedValue(FILTERED_DUMP_CONTENT);
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig: aSourceConfig({ id: sourceId, memoryBank }),
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(mockBensyneClient.remember).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+    });
+
+    it('skips a filtered file on CHANGE — no chunking, no ingest, no remember', async () => {
+      (fs.readFile as jest.Mock).mockResolvedValue(FILTERED_DUMP_CONTENT);
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-old']);
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+
+      const result = await useCase.execute({
+        filePath,
+        eventType: 'change',
+        sourceId,
+        memoryBank,
+        sourceConfig: aSourceConfig({ id: sourceId, memoryBank }),
+      });
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(mockBensyneClient.remember).not.toHaveBeenCalled();
+    });
+
+    it('ingests filtered-looking content when contentFilter.enabled is false', async () => {
+      (fs.readFile as jest.Mock).mockResolvedValue(FILTERED_DUMP_CONTENT);
+      const chunks = [aContentChunk()];
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok(chunks));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+
+      await useCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId,
+        memoryBank,
+        sourceConfig: aSourceConfig({
+          id: sourceId,
+          memoryBank,
+          contentFilter: { ...DEFAULT_CONTENT_FILTER_OPTIONS, enabled: false },
+        }),
+      });
+
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ content: FILTERED_DUMP_CONTENT }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
     });
   });
 

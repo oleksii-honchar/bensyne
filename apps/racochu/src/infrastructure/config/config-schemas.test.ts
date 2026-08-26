@@ -204,6 +204,93 @@ describe('config-schemas', () => {
         expect(result.data.memoryBank).toBe('legacy-bank');
       }
     });
+
+    describe('contentFilter', () => {
+      it('accepts a full contentFilter config and preserves every field', () => {
+        const input = {
+          id: 'test-source',
+          path: '/path',
+          contentFilter: {
+            enabled: false,
+            maxLineLength: 5000,
+            longLineChars: 1000,
+            longLineRatio: 0.01,
+            markerPatterns: ['^MERGE CONFLICT'],
+            markerRatio: 0.1,
+            minTokenDiversity: 0.2,
+          },
+        };
+        const result = watchSourceConfigSchema.safeParse(input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.contentFilter).toEqual({
+            enabled: false,
+            maxLineLength: 5000,
+            longLineChars: 1000,
+            longLineRatio: 0.01,
+            markerPatterns: ['^MERGE CONFLICT'],
+            markerRatio: 0.1,
+            minTokenDiversity: 0.2,
+          });
+        }
+      });
+
+      it('applies conservative defaults when contentFilter is absent', () => {
+        const input = { id: 'test-source', path: '/path' };
+        const result = watchSourceConfigSchema.safeParse(input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.contentFilter).toEqual({
+            enabled: true,
+            maxLineLength: 100_000,
+            longLineChars: 10_000,
+            longLineRatio: 0.001,
+            markerPatterns: [
+              '^diff --git',
+              '^@@ -\\d+,\\d+ \\+\\d+,\\d+ @@',
+              '^index [0-9a-f]{7,}\\.\\.[0-9a-f]{7,}',
+              'added in remote',
+              '(?:their|our) \\d{6}',
+            ],
+            markerRatio: 0.05,
+            minTokenDiversity: 0.1,
+          });
+        }
+      });
+
+      it('fills defaults for the fields omitted in a partial contentFilter', () => {
+        const input = {
+          id: 'test-source',
+          path: '/path',
+          contentFilter: { enabled: false },
+        };
+        const result = watchSourceConfigSchema.safeParse(input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.contentFilter.enabled).toBe(false);
+          expect(result.data.contentFilter.maxLineLength).toBe(100_000);
+          expect(result.data.contentFilter.markerRatio).toBe(0.05);
+        }
+      });
+
+      it('rejects non-positive line thresholds', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'test-source',
+          path: '/path',
+          contentFilter: { maxLineLength: 0 },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('rejects ratios outside 0..1', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'test-source',
+          path: '/path',
+          contentFilter: { markerRatio: 1.5 },
+        });
+        expect(result.success).toBe(false);
+      });
+    });
   });
 
   describe('enhancementConfigSchema', () => {

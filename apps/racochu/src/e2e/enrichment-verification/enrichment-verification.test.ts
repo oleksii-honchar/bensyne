@@ -1,3 +1,4 @@
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { ConfigurationService } from '@/infrastructure/config/configuration.service';
 import { SOURCE_TYPES } from '@/infrastructure/config/source-types';
@@ -38,6 +39,7 @@ describe('[E2E] Enrichment Verification — Full Flow', () => {
     description: 'E2E enrichment verification source',
     exclude: [],
     debounceMs: 3000,
+    contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
   };
 
   // ~500 char test document with clear, identifiable content for enrichment

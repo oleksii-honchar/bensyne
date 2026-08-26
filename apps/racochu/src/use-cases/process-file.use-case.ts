@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import * as fs from 'fs/promises';
 import { z } from 'zod';
+import { DEFAULT_CONTENT_FILTER_OPTIONS, classifyContent } from '../application/content-classifier.service';
 import {
   FILE_EVENTS,
   FILE_OPERATIONS,
@@ -46,6 +47,7 @@ const defaultSourceConfig = (): WatchSourceConfig => ({
   description: '',
   exclude: [],
   debounceMs: 3000,
+  contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
 });
 
 @Injectable()
@@ -260,6 +262,18 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
           filePath: params.filePath,
         }),
       ]);
+    }
+
+    // Content filter — machine-generated dumps (git merge-tree output, diff
+    // dumps, etc.) must never be chunked or enriched. This is the ingest gate
+    // covering --watch, --process-only, and --resume (all route here).
+    // `enabled: false` short-circuits inside the classifier → not filtered.
+    const classification = classifyContent(content, params.sourceConfig.contentFilter);
+    if (classification.filtered) {
+      this.logger.info(
+        `Skipping filtered file: path="${params.filePath}", reasons="${classification.reasons.join('; ')}"`,
+      );
+      return Result.ok({ memoryIds: [] });
     }
 
     // Guard against whole-file base64 blobs (ReDoS prevention): mnemosyne's

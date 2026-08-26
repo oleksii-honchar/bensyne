@@ -1,5 +1,6 @@
 import { ChunkingConfig, Configuration, McpConfig, WatchSourceConfig } from './config-schemas';
 import { ConfigurationService } from './configuration.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { SOURCE_TYPES } from './source-types';
 
 const DEFAULT_CHUNKING: ChunkingConfig = {
@@ -23,6 +24,7 @@ export function aSourceConfig(overrides?: Partial<WatchSourceConfig>): WatchSour
     description: '',
     exclude: [],
     debounceMs: 3000,
+    contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
     ...overrides,
   };
 }

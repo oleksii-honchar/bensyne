@@ -13,6 +13,7 @@ import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
 import { cleanupTempDir, createTempDir, FIXTURES_DIR } from '../../e2e/e2e-utils';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { SessionMetadataService } from '../../infrastructure/services/session-metadata.service';
@@ -96,6 +97,7 @@ const createObsidianSourceConfig = (): WatchSourceConfig => ({
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.OBSIDIAN,
+  contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
 });
 
 const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
@@ -105,6 +107,7 @@ const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.AGENT_SESSIONS,
+  contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
 });
 
 const createContentAwareSourceConfig = (): WatchSourceConfig => ({
@@ -114,6 +117,7 @@ const createContentAwareSourceConfig = (): WatchSourceConfig => ({
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.VAULT,
+  contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
 });
 
 // --- Tests ---
@@ -678,6 +682,7 @@ describe('VaultChunkingStrategy with a real tmp/vault fixture', () => {
     exclude: ['**/node_modules/**'],
     debounceMs: 3000,
     sourceType: SOURCE_TYPES.VAULT,
+    contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
   });
 
   const readFile = async (relPath: string): Promise<string> =>
@@ -971,6 +976,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
       exclude: ['**/node_modules/**'],
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.VAULT,
+      contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
     };
     const sut = new VaultChunkingStrategy(mockMastra, mockLogger);
 
@@ -1016,6 +1022,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
       exclude: ['**/node_modules/**'],
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.OBSIDIAN,
+      contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
     };
     const sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 

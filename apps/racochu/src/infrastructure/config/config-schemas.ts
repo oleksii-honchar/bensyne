@@ -1,5 +1,16 @@
 import { z } from 'zod';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { SOURCE_TYPES } from './source-types';
+
+export const contentFilterConfigSchema = z.object({
+  enabled: z.boolean().default(DEFAULT_CONTENT_FILTER_OPTIONS.enabled),
+  maxLineLength: z.number().positive().default(DEFAULT_CONTENT_FILTER_OPTIONS.maxLineLength),
+  longLineChars: z.number().positive().default(DEFAULT_CONTENT_FILTER_OPTIONS.longLineChars),
+  longLineRatio: z.number().min(0).max(1).default(DEFAULT_CONTENT_FILTER_OPTIONS.longLineRatio),
+  markerPatterns: z.array(z.string()).default([...DEFAULT_CONTENT_FILTER_OPTIONS.markerPatterns]),
+  markerRatio: z.number().min(0).max(1).default(DEFAULT_CONTENT_FILTER_OPTIONS.markerRatio),
+  minTokenDiversity: z.number().min(0).max(1).default(DEFAULT_CONTENT_FILTER_OPTIONS.minTokenDiversity),
+});
 
 export const watchSourceConfigSchema = z
   .object({
@@ -12,6 +23,9 @@ export const watchSourceConfigSchema = z
     ttlDays: z.number().int().positive().optional(),
     exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
     debounceMs: z.number().positive().default(3000),
+    // Optional content-classifier config; defaults are conservative (see
+    // content-classifier.service.ts). Absent = classifier enabled with defaults.
+    contentFilter: contentFilterConfigSchema.optional().default(DEFAULT_CONTENT_FILTER_OPTIONS),
     // D29: the field IS the source type (default vault, the content-aware
     // successor). `unknown` is the wire-side fallback only.
     sourceType: z
