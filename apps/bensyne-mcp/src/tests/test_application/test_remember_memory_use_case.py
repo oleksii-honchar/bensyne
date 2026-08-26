@@ -402,15 +402,49 @@ class TestRememberMemoryUseCase:
 
     def test_execute_returns_ko_when_memory_of_fails(self, use_case) -> None:
         """When Memory.of fails validation, return Result.ko."""
-        # Invalid scope triggers Memory.of validation failure
+        # Importance outside [0, 1] triggers Memory.of validation failure
         result = use_case.execute(
             {
                 "content": "some content",
-                "scope": "invalid_scope",
+                "importance": 1.5,
             }
         )
 
         assert result.is_ko is True
+
+    def test_execute_stores_with_free_form_scope(self, use_case, memory_repository) -> None:
+        """Free-form scope (e.g. 'user-profile', per the tool schema) STORES successfully."""
+        memory = a_memory(id="scoped_memory_id")
+        memory_repository.save.return_value = Result.ok(memory)
+
+        result = use_case.execute(
+            {
+                "id": "scoped_memory_id",
+                "content": "some content",
+                "scope": "user-profile",
+            }
+        )
+
+        assert result.is_ok is True
+        assert result.value["status"] == "stored"
+        assert result.value["memory_id"] == "scoped_memory_id"
+
+    def test_execute_ko_details_are_json_serializable(self, use_case) -> None:
+        """INVALID_MEMORY error details must survive json.dumps (no raw ctx.error)."""
+        import json
+
+        result = use_case.execute(
+            {
+                "content": "some content",
+                "importance": 1.5,
+            }
+        )
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "INVALID_MEMORY"
+        # Must NOT raise — the MCP handler json.dumps' these details.
+        serialized = json.dumps(result.errors[0].details)
+        assert "importance" in serialized
 
 
 # ---------------------------------------------------------------------------

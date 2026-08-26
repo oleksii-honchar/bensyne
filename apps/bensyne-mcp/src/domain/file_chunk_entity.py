@@ -13,6 +13,7 @@ from src.domain.events.file_chunk_events import (
     FileChunkCreatedEvent,
     FileChunkUpdatedEvent,
 )
+from src.utils.errors import sanitize_pydantic_errors
 from src.utils.result import ErrorWithDetails, Result
 from src.domain.models.file_chunk_model import ContentType, FileChunkSchema
 from src.domain.value_objects.file_hash import FileHash
@@ -63,7 +64,7 @@ class FileChunk:
                 return Result.ko(event.errors)
             return Result.ok(chunk, events=[event.value])
         except ValidationError as e:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK", e.errors())])
+            return Result.ko([ErrorWithDetails("INVALID_FILE_CHUNK", sanitize_pydantic_errors(e.errors()))])
 
     def update_metadata(
         self,

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import ValidationError
 
+from src.utils.errors import sanitize_pydantic_errors
 from src.utils.result import ErrorWithDetails, Result
 from src.domain.models.memory_model import MemorySchema
 
@@ -42,7 +43,7 @@ class Memory:
                 )
             )
         except ValidationError as e:
-            return Result.ko([ErrorWithDetails("INVALID_MEMORY", e.errors())])
+            return Result.ko([ErrorWithDetails("INVALID_MEMORY", sanitize_pydantic_errors(e.errors()))])
 
     def update(
         self,

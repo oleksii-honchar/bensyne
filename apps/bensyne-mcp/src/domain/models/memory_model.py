@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class MemorySchema(BaseModel):
@@ -17,11 +17,3 @@ class MemorySchema(BaseModel):
     updated_at: datetime | None = None
     veracity: float | None = Field(ge=0.0, le=1.0, default=None)
     metadata: dict | None = None
-
-    @field_validator("scope")
-    @classmethod
-    def validate_scope(cls, v: str) -> str:
-        valid_scopes = ["working", "episodic", "semantic", "suspended"]
-        if v not in valid_scopes:
-            raise ValueError(f"Invalid scope: {v}")
-        return v

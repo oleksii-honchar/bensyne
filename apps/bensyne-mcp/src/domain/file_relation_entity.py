@@ -13,6 +13,7 @@ from src.domain.events.file_relation_events import (
     FileRelationCreatedEvent,
     FileRelationUpdatedEvent,
 )
+from src.utils.errors import sanitize_pydantic_errors
 from src.utils.result import ErrorWithDetails, Result
 from src.domain.models.file_relation_model import Direction, FileRelationSchema, RelationType
 
@@ -56,7 +57,7 @@ class FileRelation:
                 return Result.ko(event.errors)
             return Result.ok(rel, events=[event.value])
         except ValidationError as e:
-            return Result.ko([ErrorWithDetails("INVALID_FILE_RELATION", e.errors())])
+            return Result.ko([ErrorWithDetails("INVALID_FILE_RELATION", sanitize_pydantic_errors(e.errors()))])
 
     def update_strength(self, strength: float) -> "Result[FileRelation]":
         """Update the relation strength.

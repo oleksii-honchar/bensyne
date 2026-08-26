@@ -11,6 +11,7 @@ from src.domain.events.file_events import (
     FileIndexCompletedEvent,
     FileUpdatedEvent,
 )
+from src.utils.errors import sanitize_pydantic_errors
 from src.utils.result import ErrorWithDetails, Result
 from src.domain.models.file_model import FileRole, FileSchema, FileStatus, SourceType
 
@@ -65,7 +66,7 @@ class File:
                 events=[FileCreatedEvent.of(validated.id, validated.path).value],
             )
         except ValidationError as e:
-            return Result.ko([ErrorWithDetails("INVALID_FILE", e.errors())])
+            return Result.ko([ErrorWithDetails("INVALID_FILE", sanitize_pydantic_errors(e.errors()))])
 
     def _is_deleted(self) -> bool:
         """Check if file is in deleted state."""
@@ -207,7 +208,7 @@ class File:
                 updated_at=self.updated_at,
             )
         except ValidationError as e:
-            return Result.ko([ErrorWithDetails("INVALID_FILE", e.errors())])
+            return Result.ko([ErrorWithDetails("INVALID_FILE", sanitize_pydantic_errors(e.errors()))])
 
         changed = []
         if new_path != self.path:

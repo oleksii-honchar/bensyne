@@ -94,7 +94,7 @@ class TestMemorySchemaRejectsInvalidImportance:
 
 
 class TestMemorySchemaValidScope:
-    """MemorySchema accepts valid scope values."""
+    """MemorySchema accepts scope values."""
 
     @pytest.mark.parametrize("scope", ["working", "episodic", "semantic", "suspended"])
     def test_accepts_valid_scope(self, scope):
@@ -117,19 +117,19 @@ class TestMemorySchemaValidScope:
         assert schema.scope == "working"
 
 
-class TestMemorySchemaRejectsInvalidScope:
-    """MemorySchema rejects scope not in working/episodic/semantic/suspended."""
+class TestMemorySchemaAcceptsFreeFormScope:
+    """MemorySchema treats scope as a free-form tag (matches the tool schema)."""
 
-    @pytest.mark.parametrize("scope", ["invalid", "long_term", "", "WORKING"])
-    def test_rejects_invalid_scope(self, scope):
-        with pytest.raises(ValidationError):
-            MemorySchema.model_validate(
-                {
-                    "id": "m1",
-                    "content": "test",
-                    "scope": scope,
-                }
-            )
+    @pytest.mark.parametrize("scope", ["user-profile", "project", "personal", "system", "WORKING"])
+    def test_accepts_free_form_scope(self, scope):
+        schema = MemorySchema.model_validate(
+            {
+                "id": "m1",
+                "content": "test",
+                "scope": scope,
+            }
+        )
+        assert schema.scope == scope
 
 
 class TestMemorySchemaContentValidation:

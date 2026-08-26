@@ -1,5 +1,6 @@
 """Unit tests for Memory domain entity."""
 
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -120,17 +121,38 @@ class TestMemoryOfRejectsInvalidData:
         assert result.value is None
         assert result.errors[0].error_code == "INVALID_MEMORY"
 
-    def test_of_rejects_invalid_scope(self):
+    def test_of_accepts_free_form_scope(self):
+        """Scope is a free-form tag (matches the tool schema, e.g. 'user-profile')."""
         result = Memory.of(
             {
                 "id": "m8",
                 "content": "test",
-                "scope": "invalid_scope",
+                "scope": "user-profile",
+            }
+        )
+        assert result.is_ok is True
+        assert result.value is not None
+        assert result.value.scope == "user-profile"
+
+    def test_of_rejects_empty_content_with_json_serializable_details(self):
+        """Validation failure details must be JSON-serializable (no raw ctx.error object)."""
+        result = Memory.of(
+            {
+                "id": "m8",
+                "content": "",
             }
         )
         assert result.is_ko is True
         assert result.value is None
         assert result.errors[0].error_code == "INVALID_MEMORY"
+
+        details = result.errors[0].details
+        # json.dumps must NOT raise (the handler serializes these details).
+        serialized = json.dumps(details)
+        # The invalid field is mentioned in the error details.
+        assert "content" in serialized
+        # No raw exception objects leak into details via pydantic's ctx.error.
+        assert not any(isinstance(err.get("ctx", {}).get("error"), Exception) for err in details)
 
 
 class TestMemoryUpdate:
