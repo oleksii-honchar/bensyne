@@ -6,7 +6,7 @@ system: racochu
 createdAt: "2026-07-31T07:30:00Z"
 updatedAt: "2026-08-25T13:45:19Z"
 tags: [architecture, component]
-see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md]
+see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md]
 linked_elements: []
 deprecated:
   date: null
@@ -36,8 +36,9 @@ C4Component
     Component(sessionMetadata, "SessionMetadataService", "TypeScript", "Cached session.md metadata extraction (5-min TTL)")
     Component(mastraChunking, "MastraChunkingService", "TypeScript + @mastra/rag", "MDocument-based chunking with strategy selection")
     Component(enhancement, "EnhancementPipelineService", "TypeScript", "Post-chunking: importance scoring + tag extraction")
-    Component(ingestChunk, "IngestChunkUseCase", "TypeScript", "Batches chunks to MnemosyneClient")
-    Component(mnemosyneClient, "MnemosyneClient", "TypeScript + native http", "Streamable HTTP MCP client (remember/recall)")
+    Component(ingestChunk, "IngestChunkUseCase", "TypeScript", "Batches chunks to BensyneClient")
+    Component(recover, "RecoverService", "TypeScript", "DB-anchored recover: FileTracker iteration → skipEnrichment chunk-set check → getFileChunks verify → repair-set submit")
+    Component(bensyneClient, "BensyneClient", "TypeScript + native http", "Streamable HTTP MCP client (getFileChunks read-only + remember(forceReembed))")
     Component(config, "ConfigurationService", "TypeScript + Zod", "Loads and validates config schemas")
     Component(shutdown, "GracefulShutdownService", "TypeScript", "SIGTERM/SIGINT handler: drain queue, close clients")
     Component(ttlSweep, "TtlReconciliationService", "TypeScript", "TTL sweep: forgets expired trackers via bensyne forgetFile (startup + daily + --ttl-sweep)")
@@ -45,8 +46,7 @@ C4Component
   }
 
   Component_Ext(filesystem, "File System", "OS", "Watched directories")
-  Component_Ext(mnemosyne, "better-mnemosyne MCP", "Python", "Remote MCP server")
-  Component_Ext(bensyneMCP, "Bensyne MCP", "Python FastMCP", "localhost:3000 — forgetFile tool (shared-memory guard)")
+  Component_Ext(bensyneMCP, "Bensyne MCP", "Python FastMCP", "localhost:3000 — getFileChunks/remember/forgetFile (shared-memory guard)")
 
   Rel(filesystem, fileWatcher, "Triggers events")
   Rel(fileWatcher, eventBus, "Emits FILE_ADDED/CHANGED/DELETED")
@@ -62,8 +62,12 @@ C4Component
   Rel(obsidian, mastraChunking, "Delegates body chunking")
   Rel(mastraChunking, enhancement, "Passes chunks for enhancement")
   Rel(processFile, ingestChunk, "Delegates ingestion")
-  Rel(ingestChunk, mnemosyneClient, "Calls remember() per chunk")
-  Rel(mnemosyneClient, mnemosyne, "Streamable HTTP POST /mcp")
+  Rel(ingestChunk, bensyneClient, "Calls remember() per chunk")
+  Rel(bensyneClient, bensyneMCP, "Streamable HTTP POST /mcp — remember/getFileChunks")
+  Rel(recover, fileTracker, "findTrackedBySourceId(sourceId?)")
+  Rel(recover, chunkContent, "expected chunk set (skipEnrichment)")
+  Rel(recover, bensyneClient, "getFileChunks()")
+  Rel(recover, fileQueue, "queues repair submits")
   Rel(server, config, "Reads configuration")
   Rel(server, shutdown, "Registers shutdown hooks")
   Rel(config, ttlSweep, "Reads watchSources[].ttlDays")
@@ -80,19 +84,20 @@ C4Component
 | `eventBus` | AppEventEmitter | Component | @nestjs/event-emitter | Pub/sub event bus decoupling FileWatcher from ProcessFileUseCase |
 | `processFile` | ProcessFileUseCase | Component | DDD UseCase | Separate handlers: handleAdd (ingest), handleChange (ingest + forget old), handleDelete (forget + clear). Dedup via processing Set (see memory 0007) |
 | `fileQueue` | FileProcessingQueue | Component | Native TS | Bounded async queue — sequential processing, graceful drain on shutdown |
-| `chunkContent` | ChunkContentUseCase | Component | DDD UseCase | Delegates to StrategyRouter, applies enhancement pipeline |
+| `chunkContent` | ChunkContentUseCase | Component | DDD UseCase | Delegates to StrategyRouter, applies enhancement pipeline; `skipEnrichment` variant for zero-LLM verification |
 | `strategyRouter` | StrategyRouter | Component | TypeScript | Routes chunking to strategy based on `sourceConfig.strategy` (agent-sessions, obsidian, content-aware) |
 | `agentSession` | AgentSessionChunkingStrategy | Component | TypeScript | Extracts frontmatter, enriches chunks with session metadata via SessionMetadataService, delegates body to Mastra |
 | `obsidian` | ObsidianChunkingStrategy | Component | TypeScript | Extracts note frontmatter, merges tags, enriches chunks with note metadata, delegates body to Mastra |
 | `sessionMetadata` | SessionMetadataService | Component | TypeScript | Cached extraction of session.md frontmatter (5-min TTL, in-memory Map, graceful degradation) |
-| `mastraChunking` | MastraChunkingService | Component | @mastra/rag | Core chunking logic: MDocument factory → strategy selection → chunk → map to domain Chunk entities |
+| `mastraChunking` | MastraChunkingService | Component | @mastra/rag | Core chunking logic: MDocument factory → strategy selection → chunk → map to domain Chunk entities; optional 5th-param `skipEnrichment` override skips the `extractMetadata` LLM block |
 | `enhancement` | EnhancementPipelineService | Component | DDD Service | Post-chunking: ImportanceScoringService → TagExtractionService → namespace assignment |
-| `ingestChunk` | IngestChunkUseCase | Component | DDD UseCase | Batches enhanced chunks to MnemosyneClient.remember() |
-| `mnemosyneClient` | MnemosyneClient | Component | Native http | Streamable HTTP MCP client: initialize handshake, remember/recall, retry with backoff |
+| `ingestChunk` | IngestChunkUseCase | Component | DDD UseCase | Batches enhanced chunks to BensyneClient.remember(); repair submits carry `forceReembed: true` |
+| `recover` | RecoverService | Component | DDD UseCase | DB-anchored recover mode: FileTracker iteration → expected chunk set (skipEnrichment) → getFileChunks verify → repair-set submit; dry-run support |
+| `bensyneClient` | BensyneClient | Component | Native http | Streamable HTTP MCP client: `getFileChunks()` (read-only verification) + `remember(chunk, { forceReembed })`; retry with backoff |
 | `config` | ConfigurationService | Component | Zod | Parses YAML config, validates against Zod schemas, provides typed getters |
 | `shutdown` | GracefulShutdownService | Component | Node.js signals | Handles SIGTERM/SIGINT: stops watchers, drains queue (30s), closes MnemosyneClient |
 | `ttlSweep` | TtlReconciliationService | Component | TypeScript | TTL sweep — startup (all modes) + daily interval (watch mode) + `--ttl-sweep`; awaits empty queue; forgets expired trackers via bensyne `forgetByFile`, cleans up trackers; shares mass-forget guard |
-| `fileTracker` | FileMemoryTrackerService | Component | TypeScript | FileTracker queries + cleanup: `findExpiredBySourceId(sourceId, cutoff)`, `deleteByFilePath` |
+| `fileTracker` | FileMemoryTrackerService | Component | TypeScript | FileTracker queries + cleanup: `findExpiredBySourceId(sourceId, cutoff)`, `deleteByFilePath`; recover uses `FileTrackerRepository.findTrackedBySourceId(sourceId?)` (full aggregate incl. fileHash/hardwareId) |
 
 ## Notes
 

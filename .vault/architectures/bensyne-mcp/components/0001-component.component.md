@@ -12,6 +12,8 @@ see_also:
   - concepts/0003-memory-bank-aggregate.concept.md
   - concepts/0002-memory-domain.concept.md
   - specifications/0001-bensyne-ddd-migration.spec.md
+  - decisions/0079-recover-getfilechunks-readonly-tool.decision.md
+  - decisions/0086-recover-force-reembed.decision.md
 linked_elements:
   - mcp-server
   - use-cases
@@ -41,7 +43,7 @@ flowchart TB
     end
 
     subgraph Application["◇ Application"]
-        UC["Use Cases\nRememberMemory · RecallMemory · ForgetMemory · UpdateMemory\nSleep · ListBanks · RegisterBank · SearchFiles\nExpandFileRelations · FetchFile"]
+        UC["Use Cases\nRememberMemory (+force_reembed) · RecallMemory · ForgetMemory · UpdateMemory\nSleep · ListBanks · RegisterBank · SearchFiles\nExpandFileRelations · FetchFile · GetFileChunks"]
         FS["FileService\nAggregate-based orchestration for file metadata\ncreate/update/delete file · link_chunk · create_relation · get_file"]
     end
 
@@ -99,7 +101,7 @@ flowchart TB
 | ID | Name | Type | Technology | Description |
 |----|------|------|-----------|-------------|
 | mcp-server | FastMCP Server | Component | FastMCP | MCP protocol entry point — routes tool calls to use cases |
-| use-cases | Use Cases | Component | Python | 10 use cases: RememberMemory, RecallMemory, ForgetMemory, UpdateMemory, Sleep, ListBanks, RegisterBank, SearchFiles, ExpandFileRelations, FetchFile |
+| use-cases | Use Cases | Component | Python | 11 use cases: RememberMemory (optional `force_reembed` repair flag), RecallMemory, ForgetMemory, UpdateMemory, Sleep, ListBanks, RegisterBank, SearchFiles, ExpandFileRelations, FetchFile, GetFileChunks |
 | file-service | FileService | Component | Python | Application service — aggregate-based orchestration for file CRUD, chunk linking, relations |
 | memory-bank-aggregate | MemoryBankAggregate | Component | Python/frozen dataclass | Aggregate root — orchestrates MemoryBank + List[Memory] |
 | memory-bank-entity | MemoryBank Entity | Component | Python/frozen dataclass | name, description, status (active/registered/suspended), memory_count |
@@ -124,3 +126,5 @@ flowchart TB
 - File repositories are **concrete SQLAlchemy ORM classes** (no repository interfaces — collapsed per repo rules)
 - `FileRepository.save_file` uses `session.merge()` upsert (avoids INSERT OR REPLACE cascade pitfall)
 - `forgetMemory` performs file-chunk cleanup via FileService + chunk repository (only on `pure_memories` banks it is allowed)
+- `getFileChunks` is a **read-only** verification tool: deterministic `file_id` derivation + `files`/`file_chunks` SQLite reads + per-chunk Mnemosyne point reads (`memory_status`). Never embeds, never writes (DEC-0080).
+- `rememberMemory` `force_reembed` (default off) guards the stale-hash-index dedup trap: drops stale hash-index + file_chunks rows before the save+embed miss path when the dedup hit's memory is gone (DEC-0087).

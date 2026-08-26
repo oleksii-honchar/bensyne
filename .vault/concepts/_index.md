@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-23"
+updatedAt: "2026-08-26"
 tags: []
 ---
 
@@ -15,6 +15,7 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0020-file-hash-deduplication]] — Dual-Hash Deduplication
 - [[0022-bensyne-bundle-cornerstone]] — Bensyne Bundle Cornerstone
 - [[0005-source-type-file-role]] — Source Type Taxonomy and File Type Classification
+- [[0025-cheap-chunk-verification]] — Cheap Chunk Verification (Zero-LLM Recovery)
 
 ### bensyne-mcp
 

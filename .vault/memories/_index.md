@@ -2,13 +2,13 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-25"
+updatedAt: "2026-08-26"
 tags: []
 ---
 
 # Memories
 
-Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0021). Grouped by `system` frontmatter.
+Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0022). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -39,3 +39,4 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0021). 
 - [[0018-typed-keys-casing-typed-key-leakage]] — TYPED_KEYS Casing Fix — Capitalized Keys Leak into Properties
 - [[0019-enrichment-metadata-not-indexed]] — Enrichment Metadata Not Indexed — Enrichment Pipeline Is Basically Useless
 - [[0020-mnemosyne-valid-until-soft-expiry]] — Mnemosyne Native valid_until Is Soft Expiry — Not Per-Source Retention or Auto-Sweep
+- [[0022-enrichment-chunkhash-invariant]] — Enrichment Never Rewrites Chunk Text — chunkHash Is Invariant

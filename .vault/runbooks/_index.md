@@ -2,7 +2,7 @@
 type: index
 title: "Runbooks"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-19"
+updatedAt: "2026-08-26"
 tags: []
 ---
 
@@ -17,3 +17,4 @@ Operational runbooks. All nodes are `system: racochu`.
 - [[0003-troubleshooting]] — Troubleshooting
 - [[0004-prisma-setup]] — Prisma SQLite Setup
 - [[0005-vault-chunking-smoke-test]] — Vault Chunking Smoke Test
+- [[0006-racochu-recover-mode]] — Racochu Recover Mode (--recover)

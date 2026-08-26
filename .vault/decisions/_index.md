@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-25"
+updatedAt: "2026-08-26"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0079; per-folder filenames 0061–0078 map to DEC-0062..0079). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0087; per-folder filenames 0061–0086 map to DEC-0062..0087). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -35,6 +35,9 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0016-racochu-source-enrichment]] — Source-Type Enrichment in Racochu (Not Bensyne)
 - [[0017-file-content-reconstruction]] — File Content Reconstruction from Chunks with chunk_index Ordering
 - [[0018-on-conflict-do-update]] — Safe File Upserts — session.merge() over INSERT OR REPLACE
+- [[0079-recover-getfilechunks-readonly-tool]] — Read-Only getFileChunks MCP Tool for Chunk Verification
+- [[0085-recover-memory-status-point-reads]] — Embedding-Existence Detection in getFileChunks via Mnemosyne Point Reads
+- [[0086-recover-force-reembed]] — force_reembed Repair Flag on rememberMemory (Stale-Hash-Index Guard)
 
 ### racochu
 
@@ -96,3 +99,8 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0076-ttl-sweep-cadence]] — TTL Sweep Cadence: Startup (All Modes) + Daily Interval (Watch Mode) + --ttl-sweep CLI
 - [[0077-ttl-mass-forget-guard]] — Reuse Mass-Forget Guard (MASS_FORGET_THRESHOLD=20 + RACOCHU_RECONCILE_FORCE_FORGET=1)
 - [[0078-ttl-tombstone-acceptance]] — Accept Bensyne DELETED Tombstones (No Purge in TTL Scope)
+- [[0080-recover-skipenrichment-chunking]] — Enrichment-Free Chunking via Explicit skipEnrichment Flag
+- [[0081-recover-exiting-cli-mode]] — --recover as an Exiting CLI Mode with --source Support
+- [[0082-recover-additive-recovery-change-semantics]] — Recovery Is Additive; Changed Files Use Existing Change Semantics
+- [[0083-recover-filetracker-known-files]] — FileTracker Rows Are the Known-Files Source; No Local Schema Change in v1
+- [[0084-recover-hash-gate-chunk-set-check]] — Hash Equality Is the Change Gate; Chunk-Set Comparison Is the Completeness Check
