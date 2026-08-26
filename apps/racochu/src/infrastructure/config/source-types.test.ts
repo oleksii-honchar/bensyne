@@ -2,13 +2,18 @@ import { SOURCE_TYPES, SOURCE_TYPE_UNKNOWN, sourceTypeSchema } from './source-ty
 
 describe('D29 source-type axis (spec §6.6)', () => {
   describe('SOURCE_TYPES — 1:1 gate (spec §14.11)', () => {
-    it('is the exact producer set [obsidian, agent-sessions, vault] (cross-app lock with bensyne SourceType)', () => {
-      expect(Object.values(SOURCE_TYPES)).toEqual(['obsidian', 'agent-sessions', 'vault']);
+    it('is the exact producer set [obsidian, agent-sessions, vault, agent-persona] (cross-app lock with bensyne SourceType)', () => {
+      expect(Object.values(SOURCE_TYPES)).toEqual([
+        'obsidian',
+        'agent-sessions',
+        'vault',
+        'agent-persona',
+      ]);
     });
   });
 
-  describe('sourceTypeSchema — the 4-value wire axis (obsidian | agent-sessions | vault | unknown)', () => {
-    it.each(['obsidian', 'agent-sessions', 'vault', 'unknown'])(
+  describe('sourceTypeSchema — the 5-value wire axis (obsidian | agent-sessions | vault | agent-persona | unknown)', () => {
+    it.each(['obsidian', 'agent-sessions', 'vault', 'agent-persona', 'unknown'])(
       'accepts wire value %s (exactly what bensyne SourceType accepts)',
       value => {
         expect(sourceTypeSchema.safeParse(value).success).toBe(true);

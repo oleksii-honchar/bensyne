@@ -335,8 +335,21 @@ describe('Chunk', () => {
         'override',
         'dependency',
         'recommendation',
+        'decision_next',
       ];
       expect([...FILE_RELATION_TYPES].sort()).toEqual([...expected].sort());
+    });
+  });
+
+  describe('fileEdgeSchema — decision_next relation (agent-persona traversal)', () => {
+    it('accepts an edge with relation_type decision_next', () => {
+      const chunk = aContentChunk({
+        edges: [{ target_path: '10-assess-intent.md', relation_type: 'decision_next', strength: 1 }],
+      });
+
+      expect(chunk.edges).toEqual([
+        { target_path: '10-assess-intent.md', relation_type: 'decision_next', strength: 1 },
+      ]);
     });
   });
 });

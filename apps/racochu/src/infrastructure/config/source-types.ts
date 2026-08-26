@@ -11,14 +11,17 @@ import { ValuesType } from '@/utils/values-type';
  * the degrade-never-reject marker (`SOURCE_TYPE_UNKNOWN` below), present in the
  * contract for that reason only — never a configured watch-source value.
  *
+ * `agent-persona` joins the source axis via the D29 package pattern (ADR-2, spec §6.6).
+ *
  * Cross-app 1:1 lock (spec §14.11): bensyne asserts `set(SourceType) ==
- * {obsidian, agent-sessions, vault, unknown}`; this app asserts
- * `Object.values(SOURCE_TYPES) == [obsidian, agent-sessions, vault]`.
+ * {obsidian, agent-sessions, vault, agent-persona, unknown}`; this app asserts
+ * `Object.values(SOURCE_TYPES) == [obsidian, agent-sessions, vault, agent-persona]`.
  */
 export const SOURCE_TYPES = {
   OBSIDIAN: 'obsidian',
   AGENT_SESSIONS: 'agent-sessions',
   VAULT: 'vault',
+  AGENT_PERSONA: 'agent-persona',
 } as const;
 
 export type SourceType = ValuesType<typeof SOURCE_TYPES>;
@@ -35,6 +38,7 @@ export const sourceTypeSchema = z.enum([
   SOURCE_TYPES.OBSIDIAN,
   SOURCE_TYPES.AGENT_SESSIONS,
   SOURCE_TYPES.VAULT,
+  SOURCE_TYPES.AGENT_PERSONA,
   SOURCE_TYPE_UNKNOWN,
 ]);
 

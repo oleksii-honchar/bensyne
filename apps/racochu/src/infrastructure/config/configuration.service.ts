@@ -15,6 +15,7 @@ import {
   EnrichmentConfig,
   McpConfig,
   TelemetryConfig,
+  UserConfig,
   WatchSourceConfig,
 } from './config-schemas';
 import { SOURCE_TYPES } from './source-types';
@@ -191,6 +192,11 @@ export class ConfigurationService implements OnApplicationBootstrap {
 
   getWatchSources(): WatchSourceConfig[] {
     return this.config?.watchSources ?? [];
+  }
+
+  /** Declared user (ADR-1); undefined when the config has no `user` section. */
+  getUserConfig(): UserConfig | undefined {
+    return this.config?.user;
   }
 
   getChunkingConfig(): ChunkingConfig {

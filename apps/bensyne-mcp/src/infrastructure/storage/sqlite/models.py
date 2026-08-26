@@ -89,7 +89,7 @@ class FileORM(Base):
     __table_args__ = (
         CheckConstraint(
             "source_type IN "
-            "('obsidian', 'agent-sessions', 'vault', 'unknown')",
+            "('obsidian', 'agent-sessions', 'vault', 'unknown', 'agent-persona')",
             name="ck_files_source_type",
         ),
         CheckConstraint(

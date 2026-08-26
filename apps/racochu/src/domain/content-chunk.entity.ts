@@ -39,6 +39,7 @@ export const FILE_RELATION_TYPES = [
   'override',
   'dependency',
   'recommendation',
+  'decision_next',
 ] as const;
 
 /** File relation type (mirrors bensyne RelationType values). */

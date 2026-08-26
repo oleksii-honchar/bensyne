@@ -204,9 +204,10 @@ class TestRecallMemoryToolRegistration:
         assert props["memory_bank"]["type"] == "string"
         assert props["limit"]["type"] == "integer"
 
-    def test_tool_registry_exactly_13_tools(self) -> None:
-        """Registry holds exactly 13 tools: the 12 memory/file tools plus the
-        operator-only forgetFile tool. Adding a param must NOT add a tool."""
+    def test_tool_registry_exactly_14_tools(self) -> None:
+        """Registry holds exactly 14 tools: the 12 memory/file tools plus the
+        operator-only forgetFile tool and getPersonaStatus. Adding a param must
+        NOT add a tool."""
         from src.app import register_tools
 
         mock_mcp = MagicMock()
@@ -215,7 +216,7 @@ class TestRecallMemoryToolRegistration:
         register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
-        assert len(names) == 13
+        assert len(names) == 14
         assert "getFileChunks" in names
 
 
@@ -488,9 +489,9 @@ class TestFetchFileNeighborParams:
         assert 'args["center_chunk_index"]' in source
         assert 'args["adjacent_chunks"]' in source
 
-    def test_registry_exactly_13_tools_after_neighbor_params(self) -> None:
+    def test_registry_exactly_14_tools_after_neighbor_params(self) -> None:
         """Adding neighbor params must NOT add a new tool — registry stays at exactly
-        13 (12 memory/file tools + operator-only forgetFile)."""
+        14 (12 memory/file tools + operator-only forgetFile + getPersonaStatus)."""
         from src.app import register_tools
 
         mock_mcp = MagicMock()
@@ -499,5 +500,5 @@ class TestFetchFileNeighborParams:
         register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
-        assert len(names) == 13
+        assert len(names) == 14
         assert "fetchFile" in names

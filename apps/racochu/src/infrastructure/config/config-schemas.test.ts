@@ -5,6 +5,7 @@ import {
   enrichmentConfigSchema,
   mcpConfigSchema,
   telemetryConfigSchema,
+  userConfigSchema,
   watchSourceConfigSchema,
 } from './config-schemas';
 import { SOURCE_TYPES } from './source-types';
@@ -513,7 +514,73 @@ describe('config-schemas', () => {
     });
   });
 
+  describe('userConfigSchema (ADR-1: config-declared user-profile, exactly one per host)', () => {
+    it('parses a user section with id and explicit bank', () => {
+      const input = { id: 'oleksii', bank: 'user_oleksii' };
+
+      const result = userConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.id).toBe('oleksii');
+        expect(result.data.bank).toBe('user_oleksii');
+      }
+    });
+
+    it('defaults bank to user_<id> when omitted', () => {
+      const input = { id: 'oleksii' };
+
+      const result = userConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.id).toBe('oleksii');
+        expect(result.data.bank).toBe('user_oleksii');
+      }
+    });
+
+    it('resolves bank to user_<id> with a hyphenated id (no sanitization, ADR-4)', () => {
+      const input = { id: 'sam-smith' };
+
+      const result = userConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.bank).toBe('user_sam-smith');
+      }
+    });
+
+    it('rejects a user section with a missing id', () => {
+      const input = { bank: 'user_oleksii' };
+      const result = userConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a user section with an empty id', () => {
+      const input = { id: '' };
+      const result = userConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe('configurationSchema', () => {
+    it('parses a user section with id and defaults its bank', () => {
+      const input = {
+        user: { id: 'oleksii' },
+      };
+
+      const result = configurationSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.user).toEqual({ id: 'oleksii', bank: 'user_oleksii' });
+      }
+    });
+
+    it('keeps the user section optional (config without it still parses)', () => {
+      const result = configurationSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.user).toBeUndefined();
+      }
+    });
+
     it('parses full valid configuration', () => {
       const input = {
         watchSources: [

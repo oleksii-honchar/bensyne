@@ -219,3 +219,29 @@ class MnemosyneClient:
                 error=str(exc),
             )
             return None
+
+    def list_memory_validities(self) -> list[tuple[str, str | None]]:
+        """Return (memory_id, valid_until) for every memory in this bank.
+
+        Covers working_memory + episodic_memory (the BEAM stores), deduplicated
+        by id so a memory present in both is counted once (working wins,
+        mirroring Mnemosyne.get()). Expired (valid_until in the past) and
+        superseded memories are intentionally NOT filtered out — the caller
+        (getPersonaStatus) needs them to derive the expired-occasional count.
+        """
+        conn = self._instance.conn
+        pairs: dict[str, str | None] = {}
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, valid_until FROM working_memory")
+        for row in cursor.fetchall():
+            pairs[str(row["id"])] = row["valid_until"]
+
+        cursor.execute("SELECT id, valid_until FROM episodic_memory")
+        for row in cursor.fetchall():
+            mem_id = str(row["id"])
+            # working_memory wins on collision (dedup), but keep episodic rows
+            # for ids not already seen.
+            pairs.setdefault(mem_id, row["valid_until"])
+
+        return list(pairs.items())

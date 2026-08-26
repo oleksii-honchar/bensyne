@@ -1,22 +1,26 @@
 """Fresh-database bootstrap tests (D28, spec §6.5).
 
-A brand-new (empty) database must bootstrap cleanly to the final schema via a
-single bootstrap migration (version 1) — the union of the historical V1–V6
-migrations. Per D28 there is no in-place upgrade path: pre-existing dev DB
-files are deleted manually by a human.
+A brand-new (empty) database must bootstrap cleanly to the final schema: the
+bootstrap migration (version 1) — the union of the historical V1–V6
+migrations — followed by the post-bootstrap ``agent-persona`` migration
+(version 2, ADR-2) that extends the ``source_type`` CHECK constraint.
 
-The ``source_type`` CHECK constraint is frozen with D29's canonical value set
-(spec §6.5 item 2 — the one deliberate deviation from byte-identical DDL):
-``obsidian | agent-sessions | vault | unknown``.
+The bootstrap DDL CHECK is frozen with D29's canonical value set (spec §6.5
+item 2 — the one deliberate deviation from byte-identical DDL):
+``obsidian | agent-sessions | vault | unknown``. The post-bootstrap
+migration extends the effective final CHECK with ``agent-persona`` while
+leaving the bootstrap DDL verbatim.
 
 These tests pin:
-- exactly one migration exists (version 1); a fresh DB applies it and lands at
-  ``schema_version`` 1;
+- the migration list is the version-1 bootstrap plus the version-2
+  post-bootstrap extension; a fresh DB applies both and lands at
+  ``schema_version`` 2;
 - the final schema, asserted per table: tables, columns, indexes, triggers,
   primary keys, foreign keys, and the FTS5 virtual table DDL;
-- the ``source_type`` CHECK value set (accepts each D29 value, rejects the
-  legacy 7-value set members and arbitrary garbage);
-- bootstrap idempotency: a second bootstrap on the same DB succeeds and leaves
+- the ``source_type`` CHECK value set (accepts each canonical value including
+  ``agent-persona``, rejects the legacy 7-value set members and arbitrary
+  garbage);
+- bootstrap idempotency: a second startup on the same DB succeeds and leaves
   the schema byte-identical.
 """
 
@@ -33,9 +37,10 @@ from src.infrastructure.storage.sqlite.file_metadata_connection import (
 )
 from src.infrastructure.storage.sqlite.file_metadata_migrations import MIGRATIONS
 
-# D29 canonical source_type value set (spec §6.6) — frozen into the bootstrap
-# DDL by D28 (spec §6.5 item 2).
-D29_SOURCE_TYPES = ["obsidian", "agent-sessions", "vault", "unknown"]
+# Canonical source_type value set (spec §6.6) — the effective final CHECK
+# set: D29's four values (frozen into the bootstrap DDL by D28) plus
+# ``agent-persona`` (the post-bootstrap migration, ADR-2).
+CANONICAL_SOURCE_TYPES = ["obsidian", "agent-sessions", "vault", "unknown", "agent-persona"]
 
 # The pre-D29 location-based 7-value set. None of these (except `unknown`)
 # may be accepted by the bootstrap CHECK constraint.
@@ -225,19 +230,23 @@ def _insert_file(db_path: Path, file_id: str, source_type: str) -> None:
 
 
 class TestBootstrapMigration:
-    """The migration list is a single version-1 bootstrap (D28)."""
+    """The migration list is the version-1 bootstrap (D28) plus the
+    version-2 post-bootstrap agent-persona extension (ADR-2)."""
 
-    def test_exactly_one_migration_exists(self) -> None:
-        assert len(MIGRATIONS) == 1
+    def test_migration_list_is_bootstrap_plus_post_bootstrap(self) -> None:
+        assert len(MIGRATIONS) == 2
 
     def test_bootstrap_migration_is_version_1(self) -> None:
         assert MIGRATIONS[0].version == 1
 
-    def test_fresh_db_lands_at_schema_version_1(self, manager: FileMetadataConnectionManager) -> None:
+    def test_agent_persona_migration_is_version_2(self) -> None:
+        assert MIGRATIONS[1].version == 2
+
+    def test_fresh_db_lands_at_schema_version_2(self, manager: FileMetadataConnectionManager) -> None:
         conn = _connect(manager.db_path)
         try:
             rows = conn.execute("SELECT version FROM schema_version ORDER BY version").fetchall()
-            assert [row[0] for row in rows] == [1]
+            assert [row[0] for row in rows] == [2]
         finally:
             conn.close()
 
@@ -371,10 +380,11 @@ class TestFinalSchemaSnapshot:
 
 
 class TestSourceTypeCheckConstraint:
-    """The CHECK constraint accepts exactly D29's canonical value set."""
+    """The effective final CHECK constraint accepts exactly the canonical
+    source_type value set (D29's four values + agent-persona)."""
 
-    @pytest.mark.parametrize("value", D29_SOURCE_TYPES)
-    def test_accepts_each_d29_value(self, manager: FileMetadataConnectionManager, value: str) -> None:
+    @pytest.mark.parametrize("value", CANONICAL_SOURCE_TYPES)
+    def test_accepts_each_canonical_value(self, manager: FileMetadataConnectionManager, value: str) -> None:
         _insert_file(manager.db_path, f"f_{value}", value)
         conn = _connect(manager.db_path)
         try:
@@ -414,8 +424,8 @@ class TestSourceTypeCheckConstraint:
 
 
 class TestBootstrapIdempotency:
-    """Re-running the bootstrap on an already-bootstrapped DB succeeds and
-    leaves the schema unchanged (applied migrations are no-ops)."""
+    """Re-running startup on an already-migrated DB succeeds and leaves the
+    schema unchanged (applied migrations are no-ops)."""
 
     def test_second_manager_on_same_db_succeeds(self, tmp_bank_dir: Path) -> None:
         first = FileMetadataConnectionManager(bank_dir=tmp_bank_dir)
@@ -426,7 +436,7 @@ class TestBootstrapIdempotency:
             conn = _connect(second.db_path)
             try:
                 rows = conn.execute("SELECT version FROM schema_version ORDER BY version").fetchall()
-                assert [row[0] for row in rows] == [1]
+                assert [row[0] for row in rows] == [2]
             finally:
                 conn.close()
         finally:
@@ -454,7 +464,7 @@ class TestBootstrapIdempotency:
         conn = _connect(manager.db_path)
         try:
             rows = conn.execute("SELECT version FROM schema_version ORDER BY version").fetchall()
-            assert [row[0] for row in rows] == [1]
+            assert [row[0] for row in rows] == [2]
         finally:
             conn.close()
 

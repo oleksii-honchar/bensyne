@@ -42,6 +42,7 @@ from src.application.use_cases.expand_file_relations_use_case import (
 from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
 from src.application.use_cases.forget_file_use_case import ForgetFileUseCase
 from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
+from src.application.use_cases.get_persona_status_use_case import GetPersonaStatusUseCase
 from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
 from src.application.use_cases.search_files_use_case import SearchFilesUseCase
@@ -219,6 +220,14 @@ class Container(containers.DeclarativeContainer):
         logger=logger,
     )
 
+    # Persona materialization signal (spec §4.4): mnemosyne_client /
+    # file_chunk_repository / materialization_threshold are per-request
+    # call-time arguments (D25), resolved by the handler and passed in.
+    get_persona_status_use_case = providers.Factory(
+        GetPersonaStatusUseCase,
+        logger=logger,
+    )
+
     # Operator-only file-granular forget: file_service / hash_index_service /
     # mnemosyne_client / memory_bank are per-request call-time arguments (D25),
     # resolved by the handler and passed into the factory.
@@ -294,6 +303,8 @@ class TestContainer(Container):
     recall_memory_use_case = providers.Factory(RecallMemoryUseCase, logger=logger)
 
     forget_memory_use_case = providers.Factory(ForgetMemoryUseCase, logger=logger)
+
+    get_persona_status_use_case = providers.Factory(GetPersonaStatusUseCase, logger=logger)
 
     forget_file_use_case = providers.Factory(ForgetFileUseCase, logger=logger)
 

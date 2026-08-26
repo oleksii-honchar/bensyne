@@ -18,6 +18,7 @@ import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { SessionMetadataService } from '../../infrastructure/services/session-metadata.service';
 import { Result } from '../../utils/result';
+import { AgentPersonaChunkingStrategy } from './agent-persona-chunking.strategy';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
@@ -441,6 +442,7 @@ describe('StrategyRouter with real content', () => {
   let mockObsidianStrategy: jest.Mocked<ObsidianChunkingStrategy>;
   let mockMastraStrategy: jest.Mocked<MastraChunkingService>;
   let mockVaultStrategy: jest.Mocked<VaultChunkingStrategy>;
+  let mockAgentPersonaStrategy: jest.Mocked<AgentPersonaChunkingStrategy>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -461,11 +463,16 @@ describe('StrategyRouter with real content', () => {
       chunkFile: jest.fn().mockResolvedValue(okResult([createBodyChunk('vault body')])),
     } as unknown as jest.Mocked<VaultChunkingStrategy>;
 
+    mockAgentPersonaStrategy = {
+      chunkFile: jest.fn().mockResolvedValue(okResult([createBodyChunk('agent-persona body')])),
+    } as unknown as jest.Mocked<AgentPersonaChunkingStrategy>;
+
     router = new StrategyRouter(
       mockAgentSessionStrategy,
       mockObsidianStrategy,
       mockMastraStrategy,
       mockVaultStrategy,
+      mockAgentPersonaStrategy,
       createMockLogger(),
     );
   });

@@ -224,6 +224,32 @@ class FileChunkRepository:
             self._conn_manager.close_session(session)
 
     # ------------------------------------------------------------------
+    # get_file_backed_memory_ids
+    # ------------------------------------------------------------------
+
+    def get_file_backed_memory_ids(self) -> set[str]:
+        """Return the set of distinct memory_ids that back at least one chunk.
+
+        Used by getPersonaStatus to classify file-backed (node) memories. An
+        empty / not-yet-initialised bank yields an empty set (no error).
+        """
+        if not self._db_exists():
+            return set()
+        session = self._conn_manager.get_session()
+        try:
+            rows = (
+                session.query(FileChunkORM.memory_id)
+                .filter(FileChunkORM.memory_id.is_not(None))
+                .distinct()
+                .all()
+            )
+            return {row[0] for row in rows}
+        except Exception:
+            return set()
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
     # delete_chunk
     # ------------------------------------------------------------------
 

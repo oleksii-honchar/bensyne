@@ -11,6 +11,7 @@ import { TtlReconciliationService } from './application/ttl-reconciliation.servi
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
 import { TagExtractionService } from './application/services/tag-extraction.service';
+import { AgentPersonaChunkingStrategy } from './application/strategies/agent-persona-chunking.strategy';
 import { AgentSessionChunkingStrategy } from './application/strategies/agent-session-chunking.strategy';
 import { MastraChunkingService } from './application/strategies/mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './application/strategies/obsidian-chunking.strategy';
@@ -30,6 +31,7 @@ import { FileWatcherService } from './infrastructure/services/file-watcher.servi
 import { GracefulShutdownService } from './infrastructure/services/graceful-shutdown.service';
 import { HardwareIdDetectorService } from './infrastructure/services/hardware-id-detector.service';
 import { SessionMetadataService } from './infrastructure/services/session-metadata.service';
+import { UserSourceBootstrapService } from './user-source.bootstrap.service';
 import { ChunkContentUseCase } from './use-cases/chunk-content.use-case';
 import { IngestChunkUseCase } from './use-cases/ingest-chunk.use-case';
 import { ProcessFileUseCase } from './use-cases/process-file.use-case';
@@ -57,6 +59,7 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
     AppBootstrapService,
     FileWatcherService,
     GracefulShutdownService,
+    UserSourceBootstrapService,
 
     // Use cases
     ChunkContentUseCase,
@@ -65,6 +68,7 @@ import { ProcessFileUseCase } from './use-cases/process-file.use-case';
 
     // Chunking
     MastraChunkingService,
+    AgentPersonaChunkingStrategy,
     AgentSessionChunkingStrategy,
     ObsidianChunkingStrategy,
     VaultChunkingStrategy,

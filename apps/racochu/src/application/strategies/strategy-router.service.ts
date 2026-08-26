@@ -7,6 +7,7 @@ import {
 } from '@/infrastructure/config/source-types';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { Injectable } from '@nestjs/common';
+import { AgentPersonaChunkingStrategy } from './agent-persona-chunking.strategy';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
 import { BaseChunkingStrategy } from './base-chunking-strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
@@ -21,11 +22,13 @@ import { VaultChunkingStrategy } from './vault-chunking.strategy';
  *   obsidian        → ObsidianChunkingStrategy
  *   agent-sessions  → AgentSessionChunkingStrategy
  *   vault           → VaultChunkingStrategy
+ *   agent-persona   → AgentPersonaChunkingStrategy (ADR-2 package pattern)
  *   unknown / other → MastraChunkingService (fallback)
  *
  * Degrade-never-reject (mirrors bensyne `_coerce_source_type`): any incoming
- * source type is resolved onto the 4-value axis (`obsidian | agent-sessions |
- * vault | unknown`) and never throws — off-axis values resolve to `unknown`.
+ * source type is resolved onto the 5-value axis
+ * (`obsidian | agent-sessions | vault | agent-persona | unknown`) and never
+ * throws — off-axis values resolve to `unknown`.
  */
 @Injectable()
 export class StrategyRouter {
@@ -36,15 +39,17 @@ export class StrategyRouter {
     private readonly obsidianStrategy: ObsidianChunkingStrategy,
     private readonly mastraStrategy: MastraChunkingService,
     private readonly vaultStrategy: VaultChunkingStrategy,
+    private readonly agentPersonaStrategy: AgentPersonaChunkingStrategy,
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'StrategyRouter' });
   }
 
   /**
-   * Resolves any incoming source type onto the 4-value wire axis
-   * (`obsidian | agent-sessions | vault | unknown`). Off-axis or missing values
-   * degrade to `unknown` — never throws (bensyne `_coerce_source_type` parity).
+   * Resolves any incoming source type onto the 5-value wire axis
+   * (`obsidian | agent-sessions | vault | agent-persona | unknown`). Off-axis
+   * or missing values degrade to `unknown` — never throws (bensyne
+   * `_coerce_source_type` parity).
    */
   resolveSourceType(sourceType: string | undefined): WireSourceType {
     if (sourceType === undefined) {
@@ -61,6 +66,7 @@ export class StrategyRouter {
       [SOURCE_TYPES.OBSIDIAN]: this.obsidianStrategy,
       [SOURCE_TYPES.AGENT_SESSIONS]: this.agentSessionStrategy,
       [SOURCE_TYPES.VAULT]: this.vaultStrategy,
+      [SOURCE_TYPES.AGENT_PERSONA]: this.agentPersonaStrategy,
       [SOURCE_TYPE_UNKNOWN]: this.mastraStrategy,
     };
 

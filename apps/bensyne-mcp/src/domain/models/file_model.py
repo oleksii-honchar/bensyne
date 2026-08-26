@@ -22,11 +22,13 @@ class SourceType(str, Enum):
 
     The real source types are the PROducers of the files — ``obsidian``,
     ``agent-sessions`` (plural: a sessions folder holds multiple sessions),
-    and ``vault`` (the generic/default knowledge vault). ``unknown`` is not a
-    producer — it is the degrade-never-reject fallback marker for absent or
-    invalid wire values. The value set is the 1:1 mirror of the contract v1
-    canonical set and of the frozen bootstrap DDL CHECK constraint
-    (locked by ``test_source_type_axis.py``).
+    ``vault`` (the generic/default knowledge vault), and ``agent-persona``
+    (the D29 package-pattern extension, ADR-2 — the producer of agent
+    decision-tree node files). ``unknown`` is not a producer — it is the
+    degrade-never-reject fallback marker for absent or invalid wire values.
+    The value set is the 1:1 mirror of the canonical set and of the
+    effective final schema CHECK constraint (locked by
+    ``test_source_type_axis.py``).
 
     Pre-D29 collapse: ``agent_session`` → ``agent-sessions``;
     ``file_system`` → ``vault`` (the file was the medium, not the source);
@@ -37,6 +39,7 @@ class SourceType(str, Enum):
     OBSIDIAN = "obsidian"
     AGENT_SESSIONS = "agent-sessions"
     VAULT = "vault"
+    AGENT_PERSONA = "agent-persona"
     UNKNOWN = "unknown"
 
 

@@ -456,6 +456,8 @@ class TestFileRelationRelationType:
         return FileRelation.of(props).value
 
     def test_all_relation_type_values(self):
+        # Closed relation-type set (TS↔PY lock, ADR-5): exactly these 10
+        # members — the racochu FILE_RELATION_TYPES mirror must match.
         expected = {
             "PARENT_CHILD": "parent_child",
             "SIBLING": "sibling",
@@ -466,7 +468,9 @@ class TestFileRelationRelationType:
             "OVERRIDE": "override",
             "DEPENDENCY": "dependency",
             "RECOMMENDATION": "recommendation",
+            "DECISION_NEXT": "decision_next",
         }
+        assert {m.name for m in RelationType} == set(expected)
         for name, value in expected.items():
             assert getattr(RelationType, name).value == value
 
@@ -505,6 +509,10 @@ class TestFileRelationRelationType:
     def test_recommendation_relation(self):
         rel = self._make_relation(relation_type=RelationType.RECOMMENDATION)
         assert rel.relation_type == RelationType.RECOMMENDATION
+
+    def test_decision_next_relation(self):
+        rel = self._make_relation(relation_type=RelationType.DECISION_NEXT)
+        assert rel.relation_type == RelationType.DECISION_NEXT
 
 
 class TestFileRelationUpdateStrength:

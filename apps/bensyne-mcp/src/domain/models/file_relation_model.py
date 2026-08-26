@@ -18,6 +18,7 @@ class RelationType(str, Enum):
     OVERRIDE = "override"
     DEPENDENCY = "dependency"
     RECOMMENDATION = "recommendation"
+    DECISION_NEXT = "decision_next"
 
 
 class Direction(str, Enum):

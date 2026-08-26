@@ -17,6 +17,7 @@ constructors directly.
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Callable
 
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
@@ -41,6 +42,27 @@ logger = get_logger(__name__)
 def _resolve_container(container: Container | None) -> Container:
     """Return the given container, or a fresh ProductionContainer (unit-test path)."""
     return container if container is not None else ProductionContainer()
+
+
+def _persona_materialization_threshold() -> int:
+    """Persona materialization threshold (configurable, default 10).
+
+    Read from BENSYNE_PERSONA_MATERIALIZATION_THRESHOLD; non-numeric or
+    non-positive values fall back to the default so a bad env never breaks the
+    tool (10 is a pilot starting point — spec §8 open decision 3).
+    """
+    from src.application.use_cases.get_persona_status_use_case import (
+        DEFAULT_MATERIALIZATION_THRESHOLD,
+    )
+
+    raw = os.environ.get("BENSYNE_PERSONA_MATERIALIZATION_THRESHOLD")
+    if not raw:
+        return DEFAULT_MATERIALIZATION_THRESHOLD
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MATERIALIZATION_THRESHOLD
+    return value if value > 0 else DEFAULT_MATERIALIZATION_THRESHOLD
 
 
 def _raise_on_ko(result, handler_name: str) -> dict:
@@ -490,3 +512,34 @@ async def handle_get_file_chunks(
         "source_type": file.source_type.value,
         "chunks": chunk_entries,
     }
+
+
+@log_tool_call("getPersonaStatus")
+async def handle_get_persona_status(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
+    """Report persona bank counts and the materialization signal (spec §4.4).
+
+    Pure read path: counts every memory in the bank, classifies it as node
+    (file-backed) / occasional / expired-occasional, and derives
+    materialization_due from the configurable threshold. Never mutates state.
+    """
+    memory_bank = require_memory_bank(arguments)
+
+    # Get MnemosyneClient from router (only its read methods are used).
+    instance = await router.get_instance(memory_bank)
+
+    # Per-bank file metadata dependencies via DI container (D25). Read-only:
+    # only the chunk_repository read methods are exercised.
+    container = _resolve_container(container)
+    bank_dir = router.get_bank_dir(memory_bank)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    chunk_repository = bundle.chunk_repository
+
+    use_case = container.get_persona_status_use_case(
+        mnemosyne_client=instance,
+        file_chunk_repository=chunk_repository,
+        materialization_threshold=_persona_materialization_threshold(),
+    )
+    result = use_case.execute({"memory_bank": memory_bank})
+    return _raise_on_ko(result, "getPersonaStatus")

@@ -46,6 +46,11 @@ _MEMORY_BANK_FILE_DESC = (
     "Source-type banks ('agent-sessions', 'vault', 'obsidian') hold Racochu-ingested "
     "file memories and are READ-ONLY. Run listMemoryBanks first to confirm the bank."
 )
+_PERSONA_BANK_READ_DESC = (
+    "Required. The persona memory bank (namespace) to report status for. "
+    "Read-only: reports how many node vs. pending-occasional memories the bank holds "
+    "and whether materialization is due. Run listMemoryBanks first to confirm the bank name."
+)
 
 
 def create_application(
@@ -479,6 +484,29 @@ def register_tools(
         """
         args = {"file_path": file_path, "memory_bank": memory_bank}
         return await handlers.handle_get_file_chunks(router, args, container)
+
+    @mcp.tool(name="getPersonaStatus")
+    async def get_persona_status(memory_bank: Annotated[str, _PERSONA_BANK_READ_DESC]):
+        """Report persona bank memory counts and the materialization signal.
+
+        When to use: checking how many of a persona's memories have been
+        materialized to files (node_memories) versus how many are still
+        pending experiences (occasional_memories), and whether the persona has
+        accumulated enough pending memories to trigger materialization
+        (materialization_due). Read-only.
+
+        Returns five fields:
+          - total: every memory in the bank
+          - node_memories: memories already materialized to files (file-backed)
+          - occasional_memories: pending experiences (non-file, not expired)
+          - expired_occasional_memories: expired pending experiences (non-file, past valid_until)
+          - materialization_due: true when occasional_memories >= the configured threshold
+
+        Pass the persona memory_bank to report on.
+        """
+        return await handlers.handle_get_persona_status(
+            router, {"memory_bank": memory_bank}, container
+        )
 
 
 def mount_health_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:

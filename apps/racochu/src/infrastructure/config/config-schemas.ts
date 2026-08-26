@@ -174,6 +174,28 @@ export const mcpConfigSchema = z
     retryDelayMs: data.retryDelayMs ?? 1000,
   }));
 
+/**
+ * ADR-1: the config-declared user-profile. Racochu serves exactly one user per
+ * host; this section declares that user. The exactly-one invariant is enforced
+ * at startup validation (user-source.validation.ts), not in the schema — the
+ * schema keeps the section optional so partial configs still parse.
+ */
+export const userConfigSchema = z
+  .object({
+    // Stable user identifier (username, staff id, …) — identity key for the
+    // user-profile virtual source and its memories.
+    id: z.string().min(1),
+    // Memory bank holding user-profile memories. Defaults to `user_<id>`
+    // (ADR-4: raw id, no sanitization — hyphens/underscores allowed).
+    bank: z.string().min(1).optional(),
+  })
+  .transform(data => ({
+    id: data.id,
+    bank: data.bank ?? `user_${data.id}`,
+  }));
+
+export type UserConfig = z.infer<typeof userConfigSchema>;
+
 export const telemetryConfigSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -203,6 +225,8 @@ export const telemetryConfigSchema = z
 export const configurationSchema = z
   .object({
     watchSources: z.array(watchSourceConfigSchema).optional().default([]),
+    // ADR-1: declared user (optional in schema; exactly-one enforced at startup).
+    user: userConfigSchema.optional(),
     chunking: chunkingConfigSchema.optional(),
     enrichment: enrichmentConfigSchema.optional(),
     enhancement: enhancementConfigSchema.optional(),
@@ -211,6 +235,7 @@ export const configurationSchema = z
   })
   .transform(data => ({
     watchSources: data.watchSources ?? [],
+    user: data.user,
     chunking: {
       maxSizes: {
         agentSessions: data.chunking?.maxSizes?.agentSessions ?? 400,
