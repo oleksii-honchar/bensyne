@@ -127,10 +127,20 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     // so chokidar avoids descending into it.
     const ignoreRegexes = buildIgnoreRegexes([...source.exclude, ...DEFAULT_IGNORE_GLOBS]);
 
+    // Defensive: normalize trailing slashes off the resolved root so the
+    // root guard below compares like-for-like with candidates.
+    const normalizedRoot = resolvedPath.replace(/\/+$/, '');
+
     let watcher: chokidar.FSWatcher;
     try {
-      watcher = chokidar.watch(resolvedPath, {
-        ignored: (candidatePath: string) => ignoreRegexes.some(regex => regex.test(candidatePath)),
+      watcher = chokidar.watch(normalizedRoot, {
+        // Root guard (ADR-1): never exclude the exact watched root. A
+        // dot-named root such as ~/.agent-sessions matches its own '**/.*'
+        // exclude; if chokidar sees ignored(root) === true it watches
+        // nothing under the root and no live events are delivered.
+        ignored: (candidatePath: string) =>
+          candidatePath.replace(/\/+$/, '') !== normalizedRoot &&
+          ignoreRegexes.some(regex => regex.test(candidatePath)),
         persistent: true,
         ignoreInitial: true,
         awaitWriteFinish: {
@@ -154,6 +164,13 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
       this.logger.error(
         `Watcher error: source="${source.id}", path="${resolvedPath}", error="${error instanceof Error ? error.message : String(error)}"`,
       );
+    });
+    // ADR-3: chokidar's `ready` fires once when a source's watcher is live.
+    // A source that never logs `ready` is immediately diagnosable as not
+    // being watched; `ready` does not fire on watcher errors (the `error`
+    // listener above covers that path).
+    emitter.on('ready', () => {
+      this.logger.info(`Watcher ready; source="${source.id}", path="${normalizedRoot}"`);
     });
 
     this.watchers.set(source.id, { watcher, sourceId: source.id, sourcePath: resolvedPath });

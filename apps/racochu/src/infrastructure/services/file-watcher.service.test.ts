@@ -192,6 +192,48 @@ describe('FileWatcherService', () => {
     });
   });
 
+  describe('ready event', () => {
+    it('registers a ready handler among the watcher emitter registrations', async () => {
+      configService.getWatchSources.mockReturnValue([
+        aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions' }),
+      ]);
+
+      await service.start();
+
+      // ADR-3: chokidar's 'ready' is the observable startup proof that a
+      // source is actually being watched; if the handler is never wired, a
+      // silently-broken watcher produces no signal at all.
+      expect(
+        mockWatcher.on.mock.calls.some(call => call[0] === 'ready' && typeof call[1] === 'function'),
+      ).toBe(true);
+    });
+
+    it('logs the source id and normalized root path when the ready handler is invoked', async () => {
+      const source = aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions' });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const readyHandler = mockWatcher.on.mock.calls.find(call => call[0] === 'ready')?.[1] as
+        | (() => void)
+        | undefined;
+      expect(readyHandler).toBeDefined();
+
+      readyHandler?.();
+
+      // The log message is the observable contract between the ready event
+      // and the source/path it refers to — assert the arguments passed to the
+      // log call as wiring verification, never logger calls in isolation.
+      const normalizedRoot = path.join(os.homedir(), '.agent-sessions');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining(`Watcher ready; source="${source.id}"`),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining(`path="${normalizedRoot}"`),
+      );
+    });
+  });
+
   describe('ignore patterns', () => {
     // chokidar calls this predicate with the FULL absolute path for both
     // files and directories; it must return true to ignore a path.
@@ -268,6 +310,179 @@ describe('FileWatcherService', () => {
         '/abs/.agent-sessions/x/session.md',
         '/abs/.agent-sessions/x/specifications/spec.md',
         '/abs/.agent-sessions/x/materials/notes.txt',
+      ];
+
+      for (const materialPath of materialPaths) {
+        expect(ignored(materialPath)).toBe(false);
+      }
+    });
+
+    it('never ignores the watched root itself, even when the root matches an exclude glob', async () => {
+      const source = aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions', exclude: ['**/.*'] });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+      const rootPath = path.join(os.homedir(), '.agent-sessions');
+
+      // chokidar calls ignored(root) before watching anything under the root;
+      // a dot-named root like ~/.agent-sessions must NOT be excluded by its own
+      // '**/.*' exclude, or no events are ever delivered.
+      expect(ignored(rootPath)).toBe(false);
+    });
+
+    it('normalizes a trailing slash on the root candidate before comparing (root guard)', async () => {
+      const source = aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions', exclude: ['**/.*'] });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+
+      // The guard compares the normalized candidate against the normalized
+      // root, so a trailing-slash variant of the root is still not excluded.
+      expect(ignored(`${path.join(os.homedir(), '.agent-sessions')}/`)).toBe(false);
+    });
+
+    it('uses the normalized root (without a trailing slash) as the chokidar watch path', async () => {
+      const source = aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions', exclude: ['**/.*'] });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const watchCall = mockWatchFn.mock.calls[0];
+      const watchPath = watchCall?.[0] as string;
+      expect(watchPath).toBe(path.join(os.homedir(), '.agent-sessions'));
+      expect(watchPath.endsWith('/')).toBe(false);
+    });
+
+    it('keeps ignoring dot-directories and dotfiles inside a dot-named root', async () => {
+      const source = aWatchSourceConfig({
+        id: 'sessions',
+        path: '~/.agent-sessions',
+        exclude: ['**/.*', '**/.opencode/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+      const rootPath = path.join(os.homedir(), '.agent-sessions');
+
+      // Excluded dot-directories themselves (directory avoidance) and the
+      // files under them stay ignored, even though the root is not.
+      expect(ignored(path.join(rootPath, '.git'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.git/FETCH_HEAD'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.opencode/x.json'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.smart-env'))).toBe(true);
+    });
+
+    it('is a no-op for a non-dot root (root and descendants behaviour preserved)', async () => {
+      const source = aWatchSourceConfig({
+        id: 'vault',
+        path: '~/vault',
+        exclude: ['**/.obsidian/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+      const rootPath = path.join(os.homedir(), 'vault');
+
+      // Root guard: the root itself is never excluded, even for a non-dot root
+      // (the predicate normalizes before comparing, so trailing-slash variants
+      // of the root also return false).
+      expect(ignored(rootPath)).toBe(false);
+      expect(ignored(`${rootPath}/`)).toBe(false);
+
+      // Descendant exclusion semantics are unchanged: an excluded descendant
+      // (and the excluded directory itself, for avoidance) is still ignored.
+      expect(ignored(path.join(rootPath, '.obsidian/workspace.json'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.obsidian'))).toBe(true);
+    });
+
+    it('unblocks real material files under a dot-named root despite a bare **/.* exclude', async () => {
+      const source = aWatchSourceConfig({
+        id: 'sessions',
+        path: '~/.agent-sessions',
+        exclude: ['**/.*'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+
+      // Without the root guard, the dot-named root would be excluded by its own
+      // '**/.*' and chokidar would never deliver events under it. The guard unblocks
+      // a real material session file.
+      expect(ignored(path.join(os.homedir(), '.agent-sessions/26/08/27/x/session.md'))).toBe(false);
+    });
+
+    it('never excludes the dot root itself regardless of configured excludes', async () => {
+      const rootPath = path.join(os.homedir(), '.agent-sessions');
+
+      for (const exclude of [['**/.*'], ['**/.*', '**/.*/**']]) {
+        const source = aWatchSourceConfig({ id: 'sessions', path: '~/.agent-sessions', exclude });
+        configService.getWatchSources.mockReturnValue([source]);
+
+        await service.start();
+
+        const ignored = getIgnoredCallback();
+
+        // Every path exactly equal to the root (with and without a trailing
+        // slash) is never excluded, no matter which exclude globs are set.
+        expect(ignored(rootPath)).toBe(false);
+        expect(ignored(`${rootPath}/`)).toBe(false);
+      }
+    });
+
+    it('keeps ignoring excluded descendants inside a dot-named root', async () => {
+      const source = aWatchSourceConfig({
+        id: 'sessions',
+        path: '~/.agent-sessions',
+        exclude: ['**/.obsidian/**', '**/tool-responses/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+      const rootPath = path.join(os.homedir(), '.agent-sessions');
+
+      // Explicit source excludes + DEFAULT_IGNORE_GLOBS cover all of these
+      // descendant categories; the root guard must not weaken them.
+      expect(ignored(path.join(rootPath, '.git/FETCH_HEAD'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.git'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.obsidian/workspace.json'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.obsidian'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.DS_Store'))).toBe(true);
+      expect(ignored(path.join(rootPath, '.env.local'))).toBe(true);
+      expect(ignored(path.join(rootPath, 'node_modules/pkg/index.js'))).toBe(true);
+      expect(ignored(path.join(rootPath, 'node_modules'))).toBe(true);
+      expect(ignored(path.join(rootPath, 'tool-responses/a.json'))).toBe(true);
+      expect(ignored(path.join(rootPath, 'tool-responses'))).toBe(true);
+    });
+
+    it('never filters material session files under a dot-named root', async () => {
+      const source = aWatchSourceConfig({
+        id: 'sessions',
+        path: '~/.agent-sessions',
+        exclude: ['**/.*', '**/.obsidian/**', '**/tool-responses/**'],
+      });
+      configService.getWatchSources.mockReturnValue([source]);
+
+      await service.start();
+
+      const ignored = getIgnoredCallback();
+      const rootPath = path.join(os.homedir(), '.agent-sessions');
+
+      const materialPaths = [
+        path.join(rootPath, 'session.md'),
+        path.join(rootPath, 'specifications/spec.md'),
+        path.join(rootPath, 'materials/notes.txt'),
       ];
 
       for (const materialPath of materialPaths) {
