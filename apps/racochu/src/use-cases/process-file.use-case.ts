@@ -131,59 +131,6 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
     return Result.ok(undefined as unknown as void);
   }
 
-  private async forgetOldMemoriesByIds(
-    memoryIds: string[],
-    params: ProcessFileParams,
-  ): Promise<Result<void>> {
-    if (memoryIds.length === 0) {
-      this.logger.debug(`No old memories to forget; path="${params.filePath}"`);
-      return Result.ok(undefined as unknown as void);
-    }
-
-    this.logger.info(
-      `Forgetting ${memoryIds.length} old memories after re-ingestion; path="${params.filePath}"`,
-    );
-
-    let failedCount = 0;
-    const errors: ErrorWithDetails[] = [];
-
-    for (const memoryId of memoryIds) {
-      try {
-        const result = await this.bensyneClient.forget(memoryId, params.memoryBank);
-        if (result.isKo()) {
-          failedCount++;
-          errors.push(
-            new ErrorWithDetails(
-              `Failed to forget memory ${memoryId}: ${result.getFormattedErrors()}`,
-              'ForgetMemoryError',
-            ),
-          );
-          this.logger.warn(
-            `Failed to forget memory; memoryId="${memoryId}", error="${result.getFormattedErrors()}"`,
-          );
-        }
-      } catch (error) {
-        failedCount++;
-        errors.push(
-          new ErrorWithDetails(error instanceof Error ? error.message : String(error), 'ForgetMemoryError'),
-        );
-        this.logger.warn(
-          `Error forgetting memory; memoryId="${memoryId}", error="${error instanceof Error ? error.message : String(error)}"`,
-        );
-      }
-    }
-
-    this.logger.info(
-      `Old memories forgotten: path="${params.filePath}", total="${memoryIds.length}", forgotten="${memoryIds.length - failedCount}", failed="${failedCount}"`,
-    );
-
-    if (failedCount > 0) {
-      return Result.ko(errors);
-    }
-
-    return Result.ok(undefined as unknown as void);
-  }
-
   private async handleAdd(params: ProcessFileParams): Promise<Result<void>> {
     const result = await this.ingestFile(params);
     if (result.isKo()) {
@@ -193,36 +140,47 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
   }
 
   private async handleChange(params: ProcessFileParams): Promise<Result<void>> {
-    // Step 1: Get old memory IDs (for later forget)
+    // Step 1: Get old memory IDs (for later tracker cleanup)
     const oldMemoryIds = await this.fileMemoryTrackerService.getMemoryIds(params.filePath);
 
-    // Step 2: Ingest new content — new memory IDs tracked alongside old ones
+    // Step 2: Forget the file's OLD non-shared memories BEFORE re-ingestion.
+    // forgetByFile (MCP forgetFile) bypasses the forgetMemory guard which is
+    // restricted to pure_memories banks (file-backed banks like agent-sessions
+    // return MEMORY_BANK_NOT_SUPPORTED). It also preserves shared memories.
+    // CRITICAL ordering: forgetFile tombstones the file and would destroy the
+    // newly-ingested memories if called after ingest — so it runs FIRST.
+    // Failure is non-fatal: ingest proceeds and tracker cleanup still runs.
+    if (oldMemoryIds.length > 0) {
+      try {
+        const forgetResult = await this.bensyneClient.forgetByFile(
+          params.filePath,
+          params.memoryBank,
+        );
+        if (forgetResult.isKo()) {
+          this.logger.warn(
+            `forgetByFile failed on change, continuing with ingest: path="${params.filePath}", memoryBank="${params.memoryBank}", error="${forgetResult.getFormattedErrors()}"`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `forgetByFile threw on change, continuing with ingest: path="${params.filePath}", memoryBank="${params.memoryBank}", error="${error instanceof Error ? error.message : String(error)}"`,
+        );
+      }
+    }
+
+    // Step 3: Ingest new content — re-creates the file row and new chunks
     const ingestResult = await this.ingestFile(params);
     if (ingestResult.isKo()) {
       return ingestResult as unknown as Result<void>;
     }
 
-    // Step 3: Compute stale memory IDs (old IDs not present in new ingest)
-    const newMemoryIds = ingestResult.getValue().memoryIds;
-    const staleIds = oldMemoryIds.filter(id => !newMemoryIds.includes(id));
-
-    // Step 4: Forget stale memories from Mnemosyne (continue on failure)
-    if (staleIds.length > 0) {
-      const forgetResult = await this.forgetOldMemoriesByIds(staleIds, params);
-      if (forgetResult.isKo()) {
-        this.logger.warn(
-          `Stale memory cleanup failed, new content ingested successfully: path="${params.filePath}", error="${forgetResult.getFormattedErrors()}"`,
-        );
-      }
-    }
-
-    // Step 5: Remove stale memory IDs from tracker (non-fatal)
-    if (staleIds.length > 0) {
+    // Step 4: Remove old memory IDs from tracker (non-fatal)
+    if (oldMemoryIds.length > 0) {
       try {
-        await this.fileMemoryTrackerService.forgetMemories(params.filePath, staleIds);
+        await this.fileMemoryTrackerService.forgetMemories(params.filePath, oldMemoryIds);
       } catch (error) {
         this.logger.warn(
-          `Failed to remove stale memories from tracker; path="${params.filePath}", error="${error instanceof Error ? error.message : String(error)}"`,
+          `Failed to remove old memories from tracker; path="${params.filePath}", error="${error instanceof Error ? error.message : String(error)}"`,
         );
       }
     }
