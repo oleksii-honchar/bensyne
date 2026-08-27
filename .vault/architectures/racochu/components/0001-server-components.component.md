@@ -6,7 +6,7 @@ system: racochu
 createdAt: "2026-07-31T07:30:00Z"
 updatedAt: "2026-08-25T13:45:19Z"
 tags: [architecture, component]
-see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md]
+see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md, decisions/0087-chokidar-dot-root-root-guard.decision.md, decisions/0088-chokidar-watcher-ready-log.decision.md]
 linked_elements: []
 deprecated:
   date: null
@@ -80,7 +80,7 @@ C4Component
 
 | ID | Name | Type | Technology | Description |
 |----|------|------|-----------|-------------|
-| `fileWatcher` | FileWatcherService | Component | Chokidar | Watches multiple configured directories with debounce per source |
+| `fileWatcher` | FileWatcherService | Component | Chokidar | Watches multiple configured directories with debounce per source; root guard never excludes the normalized watched root (dot-root fix, DEC-0088) + per-source `ready` log for detectability (DEC-0089) |
 | `eventBus` | AppEventEmitter | Component | @nestjs/event-emitter | Pub/sub event bus decoupling FileWatcher from ProcessFileUseCase |
 | `processFile` | ProcessFileUseCase | Component | DDD UseCase | Separate handlers: handleAdd (ingest), handleChange (ingest + forget old), handleDelete (forget + clear). Dedup via processing Set (see memory 0007) |
 | `fileQueue` | FileProcessingQueue | Component | Native TS | Bounded async queue — sequential processing, graceful drain on shutdown |

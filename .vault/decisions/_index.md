@@ -104,3 +104,5 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0082-recover-additive-recovery-change-semantics]] — Recovery Is Additive; Changed Files Use Existing Change Semantics
 - [[0083-recover-filetracker-known-files]] — FileTracker Rows Are the Known-Files Source; No Local Schema Change in v1
 - [[0084-recover-hash-gate-chunk-set-check]] — Hash Equality Is the Change Gate; Chunk-Set Comparison Is the Completeness Check
+- [[0087-chokidar-dot-root-root-guard]] — Protect the Watched Root from Its Own Exclude Patterns (dot-root fix)
+- [[0088-chokidar-watcher-ready-log]] — Per-Source Watcher `ready` Logging for Detectability

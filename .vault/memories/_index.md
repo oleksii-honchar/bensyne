@@ -40,3 +40,4 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0022). 
 - [[0019-enrichment-metadata-not-indexed]] — Enrichment Metadata Not Indexed — Enrichment Pipeline Is Basically Useless
 - [[0020-mnemosyne-valid-until-soft-expiry]] — Mnemosyne Native valid_until Is Soft Expiry — Not Per-Source Retention or Auto-Sweep
 - [[0022-enrichment-chunkhash-invariant]] — Enrichment Never Rewrites Chunk Text — chunkHash Is Invariant
+- [[0023-chokidar-dot-root-self-exclusion]] — Exclude Glob Matching the Watched Root (dot-named root self-exclusion)

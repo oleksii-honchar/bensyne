@@ -24,12 +24,24 @@ npm run mnemosyne:start
 
 ### Files not being watched
 
-**Cause:** Path misconfiguration or exclude patterns matching files.
+**Cause 1:** Path misconfiguration or exclude patterns matching files.
 
 **Fix:**
 - Verify absolute paths or ~/ expansion in config
 - Check exclude patterns: `['.git/**', '**/.git/**', 'node_modules/**']`
 - Test with `NODE_ENV=development` for verbose logs
+
+**Cause 2 — dot-named watched root + blanket dotfile exclude.** An exclude like `'**/.*'`
+compiles to a regex that matches the watched root itself when the root is a dot-directory
+(e.g. `~/.agent-sessions`). chokidar `ignored(root)===true` ⇒ zero events under the root;
+startup force-reprocess masks the failure.
+
+**Fix:**
+- Root guard in `startWatchingSource` (never exclude the normalized root) + explicit
+  per-directory dot excludes instead of `'**/.*'` (see
+  [[decisions/0087-chokidar-dot-root-root-guard]])
+- **Verify:** new watcher logs `Watcher ready; source="…"`; drop a probe file and expect
+  `File added` within `debounceMs`. See [[memories/0023-chokidar-dot-root-self-exclusion]].
 
 ### "No session_id received from SSE endpoint"
 
