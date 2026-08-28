@@ -1393,6 +1393,26 @@ describe('BensyneClient (Streamable HTTP)', () => {
       expect(result.getValue().status).toBe('FILE_NOT_FOUND');
     });
 
+    it('returns ok (no-op) without retrying when a FastMCP error-wrapped text contains FILE_NOT_FOUND', async () => {
+      mockSendRequest(() => ({
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: "Error calling tool 'forgetFile': forgetFile failed: FILE_NOT_FOUND - details: {\"path\": \"/notes/unknown.md\"}",
+            },
+          ],
+        },
+        _sessionId: null,
+      }));
+
+      const result = await client.forgetByFile('/notes/unknown.md', 'default');
+
+      expect(sendRequestMock).toHaveBeenCalledTimes(1);
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ status: 'FILE_NOT_FOUND' });
+    });
+
     it('returns ko on transport error after exhausting retries', async () => {
       mockSendRequest(() => Promise.reject(new Error('ECONNREFUSED')));
 

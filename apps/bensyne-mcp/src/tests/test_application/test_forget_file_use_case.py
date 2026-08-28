@@ -129,15 +129,28 @@ class TestForgetFileUseCase:
     def test_execute_returns_file_not_found_when_file_not_found(
         self, use_case: ForgetFileUseCase, file_service: MagicMock
     ) -> None:
-        """When get_file_by_path returns FILE_NOT_FOUND, propagate it."""
+        """When get_file_by_path returns FILE_NOT_FOUND, treat as idempotent no-op status."""
         file_service.get_file_by_path.return_value = Result.ko(
             [ErrorWithDetails("FILE_NOT_FOUND", {"path": "/vault/notes/test.md"})]
         )
 
         result = use_case.execute({"file_path": "/vault/notes/test.md"})
 
+        assert result.is_ok is True
+        assert result.value["status"] == "FILE_NOT_FOUND"
+
+    def test_execute_propagates_other_get_file_by_path_errors(
+        self, use_case: ForgetFileUseCase, file_service: MagicMock
+    ) -> None:
+        """When get_file_by_path returns a ko with a different error code, propagate it."""
+        file_service.get_file_by_path.return_value = Result.ko(
+            [ErrorWithDetails("DB_ERROR", {"detail": "Database unavailable"})]
+        )
+
+        result = use_case.execute({"file_path": "/vault/notes/test.md"})
+
         assert result.is_ko is True
-        assert result.errors[0].error_code == "FILE_NOT_FOUND"
+        assert result.errors[0].error_code == "DB_ERROR"
 
     # -- Already deleted --
 

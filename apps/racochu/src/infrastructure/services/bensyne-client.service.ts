@@ -414,6 +414,24 @@ export class BensyneClient implements OnApplicationBootstrap {
           const parsed = this.parseMcpResponse(response);
           const status = String(parsed.status ?? '');
 
+          // Defensive fallback (ADR-002): a future server regression or alternate
+          // server may wrap `FILE_NOT_FOUND` inside a FastMCP error text instead
+          // of returning a JSON `status`. When `status` is absent but the parsed
+          // text/error string contains the literal `FILE_NOT_FOUND`, treat it as
+          // the same idempotent no-op and skip the retry loop.
+          if (status === '' && typeof parsed.text === 'string' && parsed.text.includes('FILE_NOT_FOUND')) {
+            this.logger.debug(
+              `File not found on bensyne side (error-wrapped): filePath="${filePath}", attempt=${attempt}`,
+            );
+            return Result.ok({ status: 'FILE_NOT_FOUND' });
+          }
+          if (status === '' && typeof parsed.error === 'string' && parsed.error.includes('FILE_NOT_FOUND')) {
+            this.logger.debug(
+              `File not found on bensyne side (error-wrapped): filePath="${filePath}", attempt=${attempt}`,
+            );
+            return Result.ok({ status: 'FILE_NOT_FOUND' });
+          }
+
           // forgotten = success; already_deleted / FILE_NOT_FOUND = idempotent no-ops
           if (status === 'forgotten' || status === 'already_deleted' || status === 'FILE_NOT_FOUND') {
             const fileId = parsed.file_id != null ? String(parsed.file_id) : undefined;
@@ -502,9 +520,7 @@ export class BensyneClient implements OnApplicationBootstrap {
           typeof parsed.error === 'string'
             ? parsed.error
             : JSON.stringify(parsed) || 'Unexpected getFileChunks response';
-        this.logger.warn(
-          `Unexpected getFileChunks response: filePath="${filePath}", response="${errMsg}"`,
-        );
+        this.logger.warn(`Unexpected getFileChunks response: filePath="${filePath}", response="${errMsg}"`);
         return Result.ko([new ErrorWithDetails(errMsg, 'UnexpectedMcpResponse')]);
       }
 

@@ -73,6 +73,11 @@ class ForgetFileUseCase(BaseUseCase[dict, dict]):
         # Step 2: Get the file by path
         file_result = self.file_service.get_file_by_path(file_path)
         if file_result.is_ko:
+            # A missing row is an idempotent no-op: there is nothing to forget.
+            # Return it as a success status (matching the getFileChunks
+            # convention); all other errors still propagate.
+            if file_result.errors and file_result.errors[0].error_code == "FILE_NOT_FOUND":
+                return Result.ok({"status": "FILE_NOT_FOUND"})
             return file_result
 
         file = file_result.value
