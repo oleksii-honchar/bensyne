@@ -12,9 +12,6 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const emptyMetadata = (): SessionMetadata => ({
   sessionId: '',
   createdAt: '',
-  status: '',
-  phase: '',
-  nextAgent: '',
 });
 
 interface CacheEntry {
@@ -59,12 +56,11 @@ export class SessionMetadataService {
         return emptyMetadata();
       }
 
+      // Identity-only extraction: sessionId + createdAt. Live session state
+      // (status/phase/nextAgent) belongs to history.jsonl, not this frontmatter.
       return {
         sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : '',
         createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : '',
-        status: typeof parsed.status === 'string' ? parsed.status : '',
-        phase: typeof parsed.phase === 'string' ? parsed.phase : '',
-        nextAgent: typeof parsed.nextAgent === 'string' ? parsed.nextAgent : '',
       };
     } catch (error) {
       if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'ENOENT') {

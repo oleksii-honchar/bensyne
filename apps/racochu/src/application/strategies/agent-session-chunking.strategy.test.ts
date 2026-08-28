@@ -43,9 +43,6 @@ const WITHOUT_FRONTMATTER = fsSync.readFileSync(
 const EMPTY_SESSION_META: SessionMetadata = {
   sessionId: '',
   createdAt: '',
-  status: '',
-  phase: '',
-  nextAgent: '',
 };
 
 // --- Tests ---
@@ -236,21 +233,21 @@ describe('AgentSessionChunkingStrategy', () => {
 
       const chunks = result.getValue();
 
-      // Frontmatter chunk metadata
+      // Frontmatter chunk metadata — identity-only: ONLY session.id/createdAt
       const fmMeta = chunks[0].metadata;
       expect(fmMeta?.['session.id']).toBe('ses_test123');
       expect(fmMeta?.['session.createdAt']).toBe('2026-07-28T09:46:23Z');
-      expect(fmMeta?.['session.status']).toBe('in-progress');
-      expect(fmMeta?.['session.phase']).toBe('implementation');
-      expect(fmMeta?.['session.nextAgent']).toBe('developer');
+      expect(fmMeta?.['session.status']).toBeUndefined();
+      expect(fmMeta?.['session.phase']).toBeUndefined();
+      expect(fmMeta?.['session.nextAgent']).toBeUndefined();
 
-      // Body chunk metadata
+      // Body chunk metadata — identity-only: ONLY session.id/createdAt
       const bodyMeta = chunks[1].metadata;
       expect(bodyMeta?.['session.id']).toBe('ses_test123');
       expect(bodyMeta?.['session.createdAt']).toBe('2026-07-28T09:46:23Z');
-      expect(bodyMeta?.['session.status']).toBe('in-progress');
-      expect(bodyMeta?.['session.phase']).toBe('implementation');
-      expect(bodyMeta?.['session.nextAgent']).toBe('developer');
+      expect(bodyMeta?.['session.status']).toBeUndefined();
+      expect(bodyMeta?.['session.phase']).toBeUndefined();
+      expect(bodyMeta?.['session.nextAgent']).toBeUndefined();
     });
 
     it('calls SessionMetadataService.extract with session root path', async () => {
@@ -370,9 +367,9 @@ describe('AgentSessionChunkingStrategy', () => {
       const fmMeta = chunks[0].metadata;
       expect(fmMeta?.['session.id']).toBe('');
       expect(fmMeta?.['session.createdAt']).toBe('');
-      expect(fmMeta?.['session.status']).toBe('');
-      expect(fmMeta?.['session.phase']).toBe('');
-      expect(fmMeta?.['session.nextAgent']).toBe('');
+      expect(fmMeta?.['session.status']).toBeUndefined();
+      expect(fmMeta?.['session.phase']).toBeUndefined();
+      expect(fmMeta?.['session.nextAgent']).toBeUndefined();
     });
   });
 
@@ -950,12 +947,13 @@ describe('AgentSessionChunkingStrategy', () => {
       const chunks = result.getValue();
       expect(chunks.length).toBe(2); // frontmatter + body
 
-      // Frontmatter chunk still has session metadata
+      // Frontmatter chunk still has session metadata (identity-only: session.id/createdAt)
       const fmMeta = chunks[0].metadata;
       expect(fmMeta?.['session.id']).toBe('ses_test123');
-      expect(fmMeta?.['session.status']).toBe('in-progress');
+      expect(fmMeta?.['session.createdAt']).toBe('2026-07-28T09:46:23Z');
+      expect(fmMeta?.['session.status']).toBeUndefined();
 
-      // Body chunk still has session metadata
+      // Body chunk still has session metadata (identity-only)
       const bodyMeta = chunks[1].metadata;
       expect(bodyMeta?.['session.id']).toBe('ses_test123');
     });

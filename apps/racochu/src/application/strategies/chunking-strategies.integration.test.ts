@@ -283,9 +283,6 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
   const realSessionMetadata: SessionMetadata = {
     sessionId: 'ses_057e2d847ffeJkvVN1hTxIim8L',
     createdAt: '2026-07-28T09:46:23Z',
-    status: 'in-progress',
-    phase: 'implementation',
-    nextAgent: 'reviewer',
   };
 
   beforeEach(() => {
@@ -353,21 +350,22 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
 
     const chunks = result.getValue();
 
-    // Verify session metadata in frontmatter chunk
+    // Verify session metadata in frontmatter chunk — identity-only: ONLY
+    // session.id/createdAt (state fields live in history.jsonl, not chunk metadata)
     const fmMeta = chunks[0].metadata;
     expect(fmMeta?.['session.id']).toBe('ses_057e2d847ffeJkvVN1hTxIim8L');
     expect(fmMeta?.['session.createdAt']).toBe('2026-07-28T09:46:23Z');
-    expect(fmMeta?.['session.status']).toBe('in-progress');
-    expect(fmMeta?.['session.phase']).toBe('implementation');
-    expect(fmMeta?.['session.nextAgent']).toBe('reviewer');
+    expect(fmMeta?.['session.status']).toBeUndefined();
+    expect(fmMeta?.['session.phase']).toBeUndefined();
+    expect(fmMeta?.['session.nextAgent']).toBeUndefined();
 
-    // Verify session metadata in body chunk
+    // Verify session metadata in body chunk — identity-only
     const bodyMeta = chunks[1].metadata;
     expect(bodyMeta?.['session.id']).toBe('ses_057e2d847ffeJkvVN1hTxIim8L');
     expect(bodyMeta?.['session.createdAt']).toBe('2026-07-28T09:46:23Z');
-    expect(bodyMeta?.['session.status']).toBe('in-progress');
-    expect(bodyMeta?.['session.phase']).toBe('implementation');
-    expect(bodyMeta?.['session.nextAgent']).toBe('reviewer');
+    expect(bodyMeta?.['session.status']).toBeUndefined();
+    expect(bodyMeta?.['session.phase']).toBeUndefined();
+    expect(bodyMeta?.['session.nextAgent']).toBeUndefined();
   });
 
   it('processes real session.md — body content passed to Mastra without frontmatter', async () => {
@@ -646,11 +644,13 @@ describe('SessionMetadataService with real files', () => {
 
     expect(result.isOk()).toBe(true);
     const metadata = result.getValue();
-    expect(metadata.sessionId).toBe('ses_057e2d847ffeJkvVN1hTxIim8L');
-    expect(metadata.createdAt).toBe('2026-07-28T09:46:23Z');
-    expect(metadata.status).toBe('in-progress');
-    expect(metadata.phase).toBe('implementation');
-    expect(metadata.nextAgent).toBe('reviewer');
+    // Identity-only metadata: exactly sessionId + createdAt — the frontmatter
+    // state fields (status/phase/nextAgent) are no longer parsed (history.jsonl
+    // is the source of truth for live session state).
+    expect(metadata).toEqual({
+      sessionId: 'ses_057e2d847ffeJkvVN1hTxIim8L',
+      createdAt: '2026-07-28T09:46:23Z',
+    });
   });
 
   it('caches metadata from real file within TTL', async () => {
@@ -889,9 +889,6 @@ describe('Cross-file traversal — non-md target integration (all source types)'
   const integrationSessionMetadata: SessionMetadata = {
     sessionId: 'ses_057e2d847ffeJkvVN1hTxIim8L',
     createdAt: '2026-07-28T09:46:23Z',
-    status: 'in-progress',
-    phase: 'implementation',
-    nextAgent: 'reviewer',
   };
 
   beforeEach(async () => {

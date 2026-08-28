@@ -56,11 +56,9 @@ nextAgent: developer
 
       expect(result.isOk()).toBe(true);
       const metadata = result.getValue();
-      expect(metadata.sessionId).toBe('ses_test123');
-      expect(metadata.createdAt).toBe('2026-07-28T09:46:23Z');
-      expect(metadata.status).toBe('in-progress');
-      expect(metadata.phase).toBe('implementation');
-      expect(metadata.nextAgent).toBe('developer');
+      // Identity-only metadata: exactly sessionId + createdAt, nothing else
+      // (state fields status/phase/nextAgent live in history.jsonl, not frontmatter).
+      expect(metadata).toEqual({ sessionId: 'ses_test123', createdAt: '2026-07-28T09:46:23Z' });
       expect(mockedFs.readFile).toHaveBeenCalledWith('/test/session/path/session.md', 'utf-8');
     });
 
@@ -109,11 +107,7 @@ nextAgent: developer
 
       expect(result.isOk()).toBe(true);
       const metadata = result.getValue();
-      expect(metadata.sessionId).toBe('');
-      expect(metadata.createdAt).toBe('');
-      expect(metadata.status).toBe('');
-      expect(metadata.phase).toBe('');
-      expect(metadata.nextAgent).toBe('');
+      expect(metadata).toEqual({ sessionId: '', createdAt: '' });
     });
 
     it('returns empty metadata on YAML parse failure (graceful degradation)', async () => {
@@ -126,11 +120,7 @@ nextAgent: developer
 
       expect(result.isOk()).toBe(true);
       const metadata = result.getValue();
-      expect(metadata.sessionId).toBe('');
-      expect(metadata.createdAt).toBe('');
-      expect(metadata.status).toBe('');
-      expect(metadata.phase).toBe('');
-      expect(metadata.nextAgent).toBe('');
+      expect(metadata).toEqual({ sessionId: '', createdAt: '' });
     });
 
     it('returns empty metadata when frontmatter is missing', async () => {
@@ -141,11 +131,7 @@ nextAgent: developer
 
       expect(result.isOk()).toBe(true);
       const metadata = result.getValue();
-      expect(metadata.sessionId).toBe('');
-      expect(metadata.createdAt).toBe('');
-      expect(metadata.status).toBe('');
-      expect(metadata.phase).toBe('');
-      expect(metadata.nextAgent).toBe('');
+      expect(metadata).toEqual({ sessionId: '', createdAt: '' });
     });
   });
 });

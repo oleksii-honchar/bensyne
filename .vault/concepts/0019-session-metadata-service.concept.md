@@ -3,7 +3,7 @@ type: concept
 system: racochu
 title: "Session Metadata Service"
 createdAt: "2026-08-06T12:00:00Z"
-updatedAt: "2026-08-06T12:00:00Z"
+updatedAt: "2026-08-28T15:00:00Z"
 tags: [infrastructure, caching, session, metadata]
 see_also: [concepts/0017-agent-session-chunking.concept.md, concepts/0016-chunking-strategy-pattern.concept.md]
 ---
@@ -44,9 +44,10 @@ class SessionMetadataService {
 |-------|------|-------------|
 | `sessionId` | `string` | Platform session ID (e.g., `ses_057e...`) |
 | `createdAt` | `string` | Session creation timestamp (ISO 8601) |
-| `status` | `string` | Session status (e.g., `in-progress`) |
-| `phase` | `string` | Session phase (e.g., `implementation`) |
-| `nextAgent` | `string` | Next agent in the workflow |
+
+> **Identity-only (2026-08-28):** the state fields `status`, `phase`, `nextAgent`
+> were dropped. `history.jsonl` is the single source of truth for live session
+> state; `session.md` frontmatter now carries static identity only.
 
 **Caching behavior:**
 - **In-memory Map** — keyed by `sessionPath` (not file path)

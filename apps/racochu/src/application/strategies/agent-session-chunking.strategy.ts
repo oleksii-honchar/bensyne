@@ -307,12 +307,11 @@ async function locateSessionRoot(filePath: string): Promise<string> {
  * prefixed with "session." to namespace them alongside other metadata (filePath, sourceId, etc.).
  */
 function formatSessionMetadata(metadata: SessionMetadata): Record<string, string> {
+  // Identity-only chunk metadata: session.id + session.createdAt.
+  // Live session state (status/phase/nextAgent) is carried by history.jsonl.
   return {
     'session.id': metadata.sessionId,
     'session.createdAt': metadata.createdAt,
-    'session.status': metadata.status,
-    'session.phase': metadata.phase,
-    'session.nextAgent': metadata.nextAgent,
   };
 }
 
@@ -347,7 +346,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     const sessionMetadataResult = await this.sessionMetadataService.extract(sessionPath);
     const sessionMetadata = sessionMetadataResult.isOk()
       ? sessionMetadataResult.getValue()
-      : { sessionId: '', createdAt: '', status: '', phase: '', nextAgent: '' };
+      : { sessionId: '', createdAt: '' };
 
     // 3. List companion artifacts (fs error ⇒ empty list, chunking still succeeds)
     const companions = await this.listCompanionsSafe(sessionPath);
