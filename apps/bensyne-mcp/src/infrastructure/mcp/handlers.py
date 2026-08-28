@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Callable
 
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
+from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 from src.application.use_cases.sleep_use_case import SleepUseCase
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
 from src.application.services.file_service import derive_file_id
@@ -312,6 +313,26 @@ async def handle_list_banks(
     return _raise_on_ko(result, "listMemoryBanks")
 
 
+@log_tool_call("searchMemoryBank")
+async def handle_search_memory_bank(
+    router: MemoryBankRouter,
+    memory_bank_service: MemoryBankService,
+    arguments: dict,
+) -> dict:
+    """Search memory banks by free-text query (preferred discovery primitive).
+
+    Delegates to SearchMemoryBankUseCase (business via service, technical
+    via router). Returns ranked matches with score and metadata.
+    """
+    use_case = SearchMemoryBankUseCase(
+        memory_bank_service=memory_bank_service,
+        router=router,
+        logger=logger,
+    )
+    result = use_case.execute(arguments)
+    return _raise_on_ko(result, "searchMemoryBank")
+
+
 @log_tool_call("registerMemoryBank")
 async def handle_register_bank(
     router: MemoryBankRouter,
@@ -543,3 +564,34 @@ async def handle_get_persona_status(
     )
     result = use_case.execute({"memory_bank": memory_bank})
     return _raise_on_ko(result, "getPersonaStatus")
+
+
+async def handle_get_persona_entry_node(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
+    """Resolve a persona bank's decision-tree entry node (D2, RC2).
+
+    Pure read path: locates the entry file flagged ``persona.entry == "true"``
+    in ``files.metadata`` and returns it with its ``file_id`` (the id
+    ``expandFileRelations`` requires) so agents know where traversal starts.
+    Never mutates state.
+    """
+    memory_bank = require_memory_bank(arguments)
+
+    # mnemosyne.get is the chunk-content fetcher (file layer is a projection
+    # of the memory layer; content lives in mnemosyne.db).
+    instance = await router.get_instance(memory_bank)
+
+    # Per-bank file metadata dependencies via DI container (D25). Read-only:
+    # list_files (entry flag) + get_chunks_by_file_id (content link).
+    container = _resolve_container(container)
+    bank_dir = router.get_bank_dir(memory_bank)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+
+    use_case = container.get_persona_entry_node_use_case(
+        file_repository=bundle.file_repository,
+        file_chunk_repository=bundle.chunk_repository,
+        mnemosyne_client=instance.get,
+    )
+    result = use_case.execute({"memory_bank": memory_bank})
+    return _raise_on_ko(result, "getPersonaEntryNode")

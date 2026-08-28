@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as fsp from 'fs/promises';
 import * as yaml from 'js-yaml';
+import * as os from 'os';
 import * as path from 'path';
 import { ContentChunk, FILE_ROLES, FileEdge } from '../../domain/content-chunk.entity';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
@@ -13,6 +14,20 @@ import { BaseChunkingStrategy, ChunkFileOptions } from './base-chunking-strategy
 /** Bounded tree-walk limits (vault parity). */
 const MAX_WALK_DEPTH = 5;
 const MAX_WALK_FILES = 500;
+
+/**
+ * Expands a leading `~`, `~/`, or `~\` in a watchSource path to the home
+ * directory.
+ *
+ * Shared helper for all watchSource path consumers so `~` never leaks into
+ * `path.resolve`, which would turn `~/…` into a literal `<cwd>/~/…`.
+ */
+export function expandHome(p: string): string {
+  if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return p;
+}
 
 /**
  * Parsed §4.1 persona node frontmatter contract (ADR-9/ADR-10).
@@ -295,7 +310,7 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
     sourceConfig: WatchSourceConfig,
     _options?: ChunkFileOptions,
   ): Promise<Result<ContentChunk[]>> {
-    const treeRoot = path.resolve(sourceConfig.path);
+    const treeRoot = path.resolve(expandHome(sourceConfig.path));
     const selfPath = path.resolve(filePath);
     const { frontmatter, body } = splitFrontmatter(content);
     const meta = extractPersonaNodeMetadata(frontmatter, filePath);

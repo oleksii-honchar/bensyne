@@ -131,7 +131,7 @@ class TestRegisterTools:
 
         # Verify tool registration calls — each tool should be registered
         # Check that mcp.tool was called for each handler
-        assert mock_mcp.tool.call_count >= 6  # remember, recall, forget, update, sleep, stats + list_banks
+        assert mock_mcp.tool.call_count >= 7  # remember, recall, forget, update, sleep, stats + list_banks + search_memory_bank
 
 
 class TestListRegisterToolClosures:
@@ -192,6 +192,34 @@ class TestListRegisterToolClosures:
         assert result == {"status": "registered", "name": "ns"}
         mock_handle.assert_awaited_once_with(
             mock_router, mock_service, {"name": "ns", "description": "desc"}
+        )
+
+    def test_search_memory_bank_closure_invokes_service_backed_handler(self) -> None:
+        """searchMemoryBank closure forwards (query, limit, agent_id) into the handler
+        so the discovery primitive is wired through the same service-backed pattern
+        as listMemoryBanks / registerMemoryBank."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+        mock_service = MagicMock()
+
+        from src.app import register_tools
+
+        with patch(
+            "src.infrastructure.mcp.handlers.handle_search_memory_bank",
+            new=AsyncMock(return_value={"matches": [], "total": 0}),
+        ) as mock_handle:
+            register_tools(mock_mcp, mock_router, mock_service)
+            tool_fn = self._capture_tool_fn(mock_mcp, "searchMemoryBank")
+            result = asyncio.run(tool_fn("reviewer", 5, "reviewer"))
+
+        assert result == {"matches": [], "total": 0}
+        mock_handle.assert_awaited_once_with(
+            mock_router,
+            mock_service,
+            {"query": "reviewer", "limit": 5, "agent_id": "reviewer"},
         )
 
 

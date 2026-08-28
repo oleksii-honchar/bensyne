@@ -118,6 +118,42 @@ LIST_BANKS_SCHEMA = {
     },
 }
 
+SEARCH_MEMORY_BANK_SCHEMA = {
+    "name": "searchMemoryBank",
+    "description": (
+        "Discover memory banks relevant to a task. Prefer this over "
+        "listMemoryBanks for scoped discovery; listMemoryBanks remains "
+        "available for diagnostics and full enumeration."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "Free-text query matched against bank name, "
+                    "description, and per-role derived keywords."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max matches to return. Default 10.",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 50,
+            },
+            "agent_id": {
+                "type": "string",
+                "description": (
+                    "Optional caller agent id; adds a small relevance "
+                    "bonus to the matching persona_<agent_id> bank."
+                ),
+            },
+        },
+        "required": ["query"],
+    },
+}
+
 REGISTER_BANK_SCHEMA = {
     "name": "registerMemoryBank",
     "description": "Register a new memory bank with a description. Use to create named banks for isolating different memory contexts (e.g., projects, users, domains).",
@@ -158,4 +194,5 @@ ALL_TOOL_SCHEMAS = [
     LIST_BANKS_SCHEMA,
     REGISTER_BANK_SCHEMA,
     GET_FILE_CHUNKS_SCHEMA,
+    SEARCH_MEMORY_BANK_SCHEMA,
 ]

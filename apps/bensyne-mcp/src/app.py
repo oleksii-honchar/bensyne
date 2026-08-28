@@ -32,24 +32,27 @@ _MEMORY_BANK_WRITE_DESC = (
     "USE ONLY THE DEFAULT non-file bank ('default' or a newly user-created bank). "
     "Source-type banks ('agent-sessions', 'vault', 'obsidian') are Racochu-managed and "
     "RECALL-ONLY - writing to them via this tool is wrong. "
-    "Run listMemoryBanks first to confirm which banks exist."
+    "Use searchMemoryBank (preferred) or listMemoryBanks (diagnostic) to confirm banks."
 )
 _MEMORY_BANK_READ_DESC = (
     "Required. The memory bank (namespace) to read from. "
     "Read/recall is allowed in EVERY bank. Typical banks: 'default' (the user profile "
     "bank) plus Racochu-managed source banks 'agent-sessions', 'vault', 'obsidian' "
-    "(recall-only). Run listMemoryBanks first to see live banks. "
-    "At task start, recall 'agent-sessions' and 'default' first to build awareness."
+    "(recall-only). Use searchMemoryBank (preferred) or listMemoryBanks (diagnostic) to "
+    "confirm banks. At task start, recall 'agent-sessions' and 'default' first to build "
+    "awareness."
 )
 _MEMORY_BANK_FILE_DESC = (
     "Required. The memory bank (namespace) holding the file memories. "
     "Source-type banks ('agent-sessions', 'vault', 'obsidian') hold Racochu-ingested "
-    "file memories and are READ-ONLY. Run listMemoryBanks first to confirm the bank."
+    "file memories and are READ-ONLY. Use searchMemoryBank (preferred) or listMemoryBanks "
+    "(diagnostic) to confirm the bank."
 )
 _PERSONA_BANK_READ_DESC = (
     "Required. The persona memory bank (namespace) to report status for. "
     "Read-only: reports how many node vs. pending-occasional memories the bank holds "
-    "and whether materialization is due. Run listMemoryBanks first to confirm the bank name."
+    "and whether materialization is due. Use searchMemoryBank (preferred) or "
+    "listMemoryBanks (diagnostic) to confirm the bank name."
 )
 
 
@@ -290,16 +293,54 @@ def register_tools(
 
     @mcp.tool(name="listMemoryBanks")
     async def list_banks():
-        """List all available memory banks.
+        """List all available memory banks (diagnostic / full enumeration).
 
-        When to use: ALWAYS first - before any recall/write - to discover which banks
-        (namespaces) exist and to pick the right memory_bank for your next call.
+        When to use: diagnostics, full enumeration, or when searchMemoryBank
+        returns no useful matches. For routine discovery, prefer searchMemoryBank
+        with a short task query — it ranks banks by relevance and is faster than
+        scanning this list manually.
+
         Banks typically include 'default' (the user profile bank, writable) plus
         Racochu-managed source banks 'agent-sessions', 'vault', 'obsidian' (recall-only).
-
-        Call this tool first in any memory workflow to see live banks.
         """
         return await handlers.handle_list_banks(router, memory_bank_service, {})  # type: ignore[arg-type]
+
+    @mcp.tool(name="searchMemoryBank")
+    async def search_memory_bank(
+        query: Annotated[
+            str,
+            "Required. Free-text query matched against bank name, description, "
+            "and per-role derived keywords (e.g. 'reviewer', 'vault', 'runbook').",
+        ],
+        limit: Annotated[
+            int, "Optional. Max matches to return. Default 10, max 50."
+        ] = 10,
+        agent_id: Annotated[
+            str | None,
+            "Optional. Caller agent id; adds a relevance bonus to the matching "
+            "persona_<agent_id> bank.",
+        ] = None,
+    ):
+        """Discover memory banks relevant to a task (preferred discovery tool).
+
+        When to use: at task start, or whenever you need to choose a memory_bank
+        parameter for subsequent rememberMemory / recallMemory / getMemoryStats
+        calls. Prefer this over listMemoryBanks for scoped discovery — the results
+        are ranked by relevance (name > description > per-role keywords) so you
+        can jump straight to the right bank.
+
+        When NOT to use: for full enumeration or diagnostics, use listMemoryBanks.
+
+        Provide a short query (1-5 keywords is usually enough). The optional
+        agent_id gives the matching persona_<agent_id> bank a small relevance
+        bonus so the caller's own memory surfaces first.
+        """
+        args: dict = {"query": query, "limit": limit}
+        if agent_id is not None:
+            args["agent_id"] = agent_id
+        return await handlers.handle_search_memory_bank(
+            router, memory_bank_service, args  # type: ignore[arg-type]
+        )
 
     @mcp.tool(name="registerMemoryBank")
     async def register_bank(
@@ -505,6 +546,31 @@ def register_tools(
         Pass the persona memory_bank to report on.
         """
         return await handlers.handle_get_persona_status(
+            router, {"memory_bank": memory_bank}, container
+        )
+
+    @mcp.tool(name="getPersonaEntryNode")
+    async def get_persona_entry_node(memory_bank: Annotated[str, _PERSONA_BANK_READ_DESC]):
+        """Return a persona bank's decision-tree entry node and its file_id.
+
+        When to use: at the start of reasoning with a persona, to find where
+        traversal begins. The entry node is the root of the persona's decision
+        tree (the memory whose metadata carries persona.entry == "true"). Load
+        this node first, then follow its decision_next edges to continue.
+        Read-only.
+
+        Returns six fields:
+          - memory_id: the entry node's memory id
+          - file_id: the FileChunk file_id (what expandFileRelations requires);
+                     null if the entry node has not been chunked into a file yet
+          - title: the node's persona title
+          - text: the node's content (the guidance/instruction to apply)
+          - metadata: the parsed persona.* metadata (conditions, veto, etc.)
+          - tags: the node's chunk tags (["persona-node", node_id])
+
+        Pass the persona memory_bank to query.
+        """
+        return await handlers.handle_get_persona_entry_node(
             router, {"memory_bank": memory_bank}, container
         )
 

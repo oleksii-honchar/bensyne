@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 
 from src.app import register_tools
 
-# The 14 tools that must be exposed.
+# The 15 tools that must be exposed.
 EXPECTED_TOOLS = {
     "rememberMemory",
     "recallMemory",
@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "forgetFile",
     "getFileChunks",
     "getPersonaStatus",
+    "searchMemoryBank",
 }
 
 # Tools that accept a ``memory_bank`` parameter.
@@ -175,12 +176,41 @@ class TestWriteDisciplineEncoded:
         )
         assert "vault" in remember_desc, "rememberMemory must name the vault (recall-only) bank"
 
-    async def test_list_memory_banks_encodes_discovery_first(self, mcp_tools) -> None:
-        """listMemoryBanks must teach: run it first to discover available banks."""
+    async def test_list_memory_banks_marks_diagnostic(self, mcp_tools) -> None:
+        """listMemoryBanks must teach: it is diagnostic / full enumeration — NOT the
+        default first-step discovery tool (that role is now searchMemoryBank's)."""
         desc = _tool_descriptions(mcp_tools)["listMemoryBanks"].lower()
-        assert "first" in desc or "discover" in desc or "before" in desc, (
-            "listMemoryBanks must teach running it first to discover banks"
+        assert "diagnostic" in desc or "enumeration" in desc, (
+            "listMemoryBanks must mark itself as diagnostic or full enumeration"
         )
+        # Must NOT teach "run it first" / "before" — those cues are now searchMemoryBank's.
+        assert not (
+            "first - before" in desc or "call this tool first" in desc
+        ), (
+            "listMemoryBanks must NOT teach 'run it first'; that wording is reserved "
+            "for searchMemoryBank"
+        )
+
+    async def test_search_memory_bank_encodes_prefer(self, mcp_tools) -> None:
+        """searchMemoryBank must teach: prefer it over listMemoryBanks for scoped
+        discovery; listMemoryBanks is the diagnostic fallback."""
+        desc = _tool_descriptions(mcp_tools)["searchMemoryBank"].lower()
+        assert "prefer" in desc, (
+            "searchMemoryBank must teach it is the preferred discovery tool"
+        )
+        assert "listmemorybanks" in desc, (
+            "searchMemoryBank must reference listMemoryBanks as the fallback"
+        )
+
+    async def test_search_memory_bank_has_required_query_param(self, mcp_tools) -> None:
+        """searchMemoryBank schema must declare ``query`` as a required string param."""
+        tool = mcp_tools["searchMemoryBank"]
+        props = tool.parameters.get("properties", {}) if hasattr(tool, "parameters") else {}
+        query_param = props.get("query")
+        assert query_param is not None, "searchMemoryBank must declare a query parameter"
+        assert query_param.get("type") == "string", "searchMemoryBank query must be a string"
+        required = tool.parameters.get("required", []) if hasattr(tool, "parameters") else []
+        assert "query" in required, "searchMemoryBank must mark query as required"
 
     async def test_file_tools_explain_source_embedded_memories(self, mcp_tools) -> None:
         """searchFiles/fetchFile/expandFileRelations must explain they access

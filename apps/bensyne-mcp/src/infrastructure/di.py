@@ -42,6 +42,9 @@ from src.application.use_cases.expand_file_relations_use_case import (
 from src.application.use_cases.fetch_file_use_case import FetchFileUseCase
 from src.application.use_cases.forget_file_use_case import ForgetFileUseCase
 from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
+from src.application.use_cases.get_persona_entry_node_use_case import (
+    GetPersonaEntryNodeUseCase,
+)
 from src.application.use_cases.get_persona_status_use_case import GetPersonaStatusUseCase
 from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
@@ -225,6 +228,14 @@ class Container(containers.DeclarativeContainer):
     # call-time arguments (D25), resolved by the handler and passed in.
     get_persona_status_use_case = providers.Factory(
         GetPersonaStatusUseCase,
+        logger=logger,
+    )
+
+    # Persona decision-tree entry node (D2, RC2): mnemosyne_client /
+    # file_chunk_repository are per-request call-time arguments (D25),
+    # resolved by the handler and passed in.
+    get_persona_entry_node_use_case = providers.Factory(
+        GetPersonaEntryNodeUseCase,
         logger=logger,
     )
 

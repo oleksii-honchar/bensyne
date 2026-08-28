@@ -11,10 +11,34 @@ import {
   AgentPersonaChunkingStrategy,
   buildFolderHierarchyEdges,
   buildPersonaDecisionEdges,
+  expandHome,
   extractPersonaNodeMetadata,
 } from './agent-persona-chunking.strategy';
 
 const TREE_ROOT = '/home/ops/agent-personas/architect';
+
+describe('expandHome (~ expansion for watchSource paths, RC1)', () => {
+  const home = os.homedir();
+
+  it('expands a bare ~ to the home directory', () => {
+    expect(expandHome('~')).toBe(home);
+  });
+
+  it('expands a ~/relative path against the home directory', () => {
+    expect(expandHome('~/Documents/agent-rules-n-skills/agent-personas/researcher')).toBe(
+      path.join(home, 'Documents/agent-rules-n-skills/agent-personas/researcher'),
+    );
+  });
+
+  it('expands a backslash-prefixed ~ path', () => {
+    expect(expandHome('~\\x\\y')).toBe(path.join(home, 'x\\y'));
+  });
+
+  it('leaves absolute, relative, and tilde-less paths unchanged', () => {
+    expect(expandHome('/opt/personas/architect')).toBe('/opt/personas/architect');
+    expect(expandHome('relative/personas')).toBe('relative/personas');
+  });
+});
 
 /** File index for the canonical example tree (spec §3.0). */
 const EXAMPLE_INDEX = [
@@ -333,5 +357,60 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('AgentPersonaChunkingStrategy.chunkFile — tilde-prefixed tree roots (RC1)', () => {
+  let treeRoot: string;
+
+  beforeEach(async () => {
+    // Tree lives under the real home — the same one expandHome resolves to —
+    // so a `~`-prefixed watchSource path reaches it without mocking os.homedir
+    // (not configurable in this jest/Node setup).
+    treeRoot = await fsp.mkdtemp(path.join(os.homedir(), '.jest-persona-tilde-'));
+    fsSync.mkdirSync(path.join(treeRoot, '10-investigate'), { recursive: true });
+    fsSync.writeFileSync(
+      path.join(treeRoot, '00-entry.md'),
+      '---\nid: 00-entry\ntitle: Entry\nentry: true\nedges:\n  - target: 10-investigate/10-dig-in.md\n    when: always first\n---\nFrame the problem.',
+    );
+    fsSync.writeFileSync(
+      path.join(treeRoot, '10-investigate/10-dig-in.md'),
+      '---\nid: 10-dig-in\ntitle: Dig in\n---\nInvestigate.',
+    );
+  });
+
+  afterEach(async () => {
+    await fsp.rm(treeRoot, { recursive: true, force: true });
+  });
+
+  it('expands a ~ tree root so decision_next edges materialize', async () => {
+    const strategy = new AgentPersonaChunkingStrategy(aLogger());
+    const relative = path.relative(os.homedir(), treeRoot);
+    const sourceConfig = aSourceConfig({
+      id: 'persona-researcher',
+      path: `~/${relative}`,
+      sourceType: 'agent-persona',
+    });
+    const entryPath = path.join(treeRoot, '00-entry.md');
+    const content = fsSync.readFileSync(entryPath, 'utf-8');
+
+    const result = await strategy.chunkFile(content, entryPath, 'persona-researcher', sourceConfig);
+
+    expect(result.isOk()).toBe(true);
+    const edges = result.getValue()[0].edges ?? [];
+    expect(edges).toEqual([
+      {
+        target_path: path.join(treeRoot, '10-investigate/10-dig-in.md'),
+        relation_type: 'decision_next',
+        strength: 1.0,
+        description: 'always first',
+      },
+      {
+        target_path: path.join(treeRoot, '10-investigate/10-dig-in.md'),
+        relation_type: 'folder_hierarchy',
+        strength: 1.0,
+        description: 'folder branch 10-investigate from 00-entry.md',
+      },
+    ]);
   });
 });
