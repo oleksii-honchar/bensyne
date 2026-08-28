@@ -201,12 +201,10 @@ Wait **≥3s** for debounce + chunking + ingestion (so rb-as2 files have real `f
 - Call `recallMemory("RB_AS_FINDINGS_TOKEN", memory_bank="tmp-agent-sessions", limit=5)`.
 - Find the result row for the findings file (the row whose `file_enrichment.file.id == findings_id`).
 - **PASS — source_type:** `file_enrichment.file.source_type == "agent-sessions"`.
-- **PASS — session.* metadata** (present in `file_enrichment.file.metadata`):
+- **PASS — session.* metadata** (identity-only, present in `file_enrichment.file.metadata`):
   - `session.id` = "ses-rb-agent-sessions"
   - `session.createdAt` = "2026-08-19T12:00:00Z"
-  - `session.status` = "active"
-  - `session.phase` = "research"
-  - `session.nextAgent` = "developer"
+  - **no** `session.status` / `session.phase` / `session.nextAgent` keys (live state lives in `history.jsonl`)
 - **PASS — parent_child edge:** `file_enrichment.relations[]` contains an entry with `relation_type == "parent_child"` and `target.id == session_id`.
 - **PASS — sibling edge:** `file_enrichment.relations[]` contains an entry with `relation_type == "sibling"` and `target.id == materials_id`.
 - **PASS — traversal handles:** `file_enrichment.file.id == findings_id` and every `relations[].id` is **non-empty**.
