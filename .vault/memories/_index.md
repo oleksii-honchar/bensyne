@@ -2,13 +2,12 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-28"
-tags: []
+updatedAt: "2026-08-28T17:23:01Z"
 ---
 
 # Memories
 
-Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0025). Grouped by `system` frontmatter.
+Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0026). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -16,6 +15,7 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0025). 
 - [[0002-mcp-transport-streamable-http]] — MCP Transport — Streamable HTTP Recommended
 - [[0021-bensyne-forgetfile-tombstone]] — Bensyne forgetFile Leaves a DELETED Tombstone — Not a Hard Row Delete
 - [[0024-mcp-tool-description-is-canonical-teaching-surface]] — MCP Tool Description Is the Canonical Teaching Surface
+- [[0026-forgetfile-file-not-found-noop]] — forgetFile FILE_NOT_FOUND Is an Idempotent No-Op — Server Returns JSON Status
 
 ### bensyne-mcp
 

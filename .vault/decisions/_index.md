@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-28"
+updatedAt: "2026-08-28T17:23:01Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -46,6 +46,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0094-bank-discovery-search-tool]] — Bank Discovery Search Tool — searchMemoryBank as Sibling of listMemoryBanks
 - [[0095-channel-weighted-keyword-ranking]] — Channel-Weighted Keyword Ranking — v1 Substring/Token Scoring Without Embeddings
 - [[0096-bank-description-backfill-via-operator-script]] — Bank Description Backfill via Explicit Operator Script — Not Auto-Seed
+- [[0098-forgetfile-file-not-found-json-status]] — forgetFile Returns FILE_NOT_FOUND as JSON Status, Not a Raised Error (DEC-0099)
 
 ### racochu
 
@@ -115,3 +116,4 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0087-chokidar-dot-root-root-guard]] — Protect the Watched Root from Its Own Exclude Patterns (dot-root fix)
 - [[0088-chokidar-watcher-ready-log]] — Per-Source Watcher `ready` Logging for Detectability
 - [[0089-persona-tree-walk-tilde-expansion]] — Tilde Expansion in AgentPersonaChunkingStrategy Tree Walk (DEC-0090)
+- [[0099-forgetbyfile-error-wrapped-fallback]] — BensyneClient Defensive Fallback for Error-Wrapped FILE_NOT_FOUND (DEC-0100)
