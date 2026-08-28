@@ -2,19 +2,20 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-26"
+updatedAt: "2026-08-28"
 tags: []
 ---
 
 # Memories
 
-Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0022). Grouped by `system` frontmatter.
+Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0025). Grouped by `system` frontmatter.
 
 ### Shared
 
 - [[0001-mcp-transport-sse-deprecated]] — MCP Transport — SSE Deprecated
 - [[0002-mcp-transport-streamable-http]] — MCP Transport — Streamable HTTP Recommended
 - [[0021-bensyne-forgetfile-tombstone]] — Bensyne forgetFile Leaves a DELETED Tombstone — Not a Hard Row Delete
+- [[0024-mcp-tool-description-is-canonical-teaching-surface]] — MCP Tool Description Is the Canonical Teaching Surface
 
 ### bensyne-mcp
 
@@ -23,6 +24,7 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0022). 
 - [[0005-bensyne-file-logging-rotation]] — Bensyne Log File Location and Rotation
 - [[0006-sqlite-wal-concurrent-reads]] — HashIndex Uses SQLite WAL Mode for Concurrent Reads
 - [[0007-on-conflict-do-update]] — Safe File Upserts — session.merge() over INSERT OR REPLACE
+- [[0025-channel-weighting-makes-description-backfill-load-bearing]] — Channel Weighting Makes Description Backfill Load-Bearing
 
 ### racochu
 

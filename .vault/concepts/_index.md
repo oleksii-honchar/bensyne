@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-26"
+updatedAt: "2026-08-28"
 tags: []
 ---
 
@@ -25,6 +25,7 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0004-file-metadata-aggregate]] — FileMetadata
 - [[0006-file-chunk-relation]] — FileChunk and FileRelation Entities
 - [[0007-file-metadata-layer]] — File Metadata Layer Architecture Overview
+- [[0026-bank-discovery-search-vs-list]] — Bank Discovery — Search vs List
 
 ### racochu
 

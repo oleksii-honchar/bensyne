@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-26"
+updatedAt: "2026-08-28"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0087; per-folder filenames 0061–0086 map to DEC-0062..0087). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -17,6 +17,9 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0003-in-memory-namespace-registry]] — In-Memory Memory Bank Registry
 - [[0048-dual-hash-wire-contract]] — Dual-Hash Wire Contract — snake_case Naming, chunk_hash + file_hash in metadata (+ D29 source-type axis)
 - [[0059-llm-summary-producer-edges-population]] — LLM Whole-File Summary Producer + Edges Population
+- [[0091-file-tools-file-id-contract]] — File Tools Take file_id, Never memory_id (DEC-0092)
+- [[0093-load-first-rule-system-prompt]] — Load-First Rule Enforced at the System-Prompt Level (DEC-0094)
+- [[0097-bank-discovery-skill-nudge]] — Bank Discovery Skill Nudge — Centralised Edit + Inline Per-Agent Starter Keywords
 
 ### bensyne-mcp
 
@@ -38,6 +41,11 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0079-recover-getfilechunks-readonly-tool]] — Read-Only getFileChunks MCP Tool for Chunk Verification
 - [[0085-recover-memory-status-point-reads]] — Embedding-Existence Detection in getFileChunks via Mnemosyne Point Reads
 - [[0086-recover-force-reembed]] — force_reembed Repair Flag on rememberMemory (Stale-Hash-Index Guard)
+- [[0090-persona-entry-node-tool]] — Dedicated getPersonaEntryNode MCP Tool (DEC-0091)
+- [[0092-recall-bank-scoping-per-bank-clients]] — Recall Bank Scoping via Per-Bank Router Clients (DEC-0093)
+- [[0094-bank-discovery-search-tool]] — Bank Discovery Search Tool — searchMemoryBank as Sibling of listMemoryBanks
+- [[0095-channel-weighted-keyword-ranking]] — Channel-Weighted Keyword Ranking — v1 Substring/Token Scoring Without Embeddings
+- [[0096-bank-description-backfill-via-operator-script]] — Bank Description Backfill via Explicit Operator Script — Not Auto-Seed
 
 ### racochu
 
@@ -106,3 +114,4 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0084-recover-hash-gate-chunk-set-check]] — Hash Equality Is the Change Gate; Chunk-Set Comparison Is the Completeness Check
 - [[0087-chokidar-dot-root-root-guard]] — Protect the Watched Root from Its Own Exclude Patterns (dot-root fix)
 - [[0088-chokidar-watcher-ready-log]] — Per-Source Watcher `ready` Logging for Detectability
+- [[0089-persona-tree-walk-tilde-expansion]] — Tilde Expansion in AgentPersonaChunkingStrategy Tree Walk (DEC-0090)
