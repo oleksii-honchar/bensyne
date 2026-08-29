@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
 import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
@@ -17,6 +18,7 @@ export class ForceReprocessService {
     private readonly processFileUseCase: ProcessFileUseCase,
     private readonly processingQueue: FileProcessingQueue,
     private readonly fileMemoryTrackerService: FileMemoryTrackerService,
+    private readonly bensyneClient: BensyneClient,
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'ForceReprocessService' });
@@ -85,16 +87,36 @@ export class ForceReprocessService {
           continue;
         }
 
-        // Pure tracker lookup: a file that already has memories is treated as
-        // complete and skipped. No file read, no chunking, no bensyne call.
+        // Bank-verified skip: the tracker can be stale (e.g. bank wiped) — a
+        // file with tracked memories is verified against the bank before being
+        // trusted as complete (mirrors RecoverService.recoverFile).
         if (memoryIds.length > 0) {
-          this.logger.debug(
-            `Skipping tracked file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
-          );
-          continue;
-        }
+          const chunksResult = await this.bensyneClient.getFileChunks(file, source.memoryBank);
+          if (chunksResult.isKo()) {
+            // Bank read failed (MCP down / error). Skip defensively — never
+            // re-ingest on a transient failure (duplicate-memory risk);
+            // --recover remains the guaranteed reconciliation tool.
+            this.logger.warn(
+              `Bank read error for resume [${position}/${totalFilesInQueue}]: path="${file}", error="${chunksResult.getFormattedErrors()}" — skipping (preserving existing memories)`,
+            );
+            continue;
+          }
 
-        this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
+          const fileChunks = chunksResult.getValue();
+
+          if (fileChunks.status !== 'FILE_NOT_FOUND' && fileChunks.chunks.length > 0) {
+            this.logger.debug(
+              `Skipping verified file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
+            );
+            continue;
+          }
+
+          this.logger.info(
+            `Resuming stale-tracker file (absent from bank) [${position}/${totalFilesInQueue}]: path="${file}"`,
+          );
+        } else {
+          this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
+        }
 
         const result = await this.processFileUseCase.execute({
           filePath: file,

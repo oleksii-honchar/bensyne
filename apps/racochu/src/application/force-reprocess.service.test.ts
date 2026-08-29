@@ -6,6 +6,12 @@ import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
+import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
+import {
+  aBensyneClientService,
+  aFileChunksInfo,
+  aStoredChunkInfo,
+} from '../infrastructure/services/bensyne-client.test-utils';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
@@ -24,6 +30,7 @@ describe('ForceReprocessService', () => {
   let processFileUseCase: ReturnType<typeof aProcessFileUseCase>;
   let processingQueue: ReturnType<typeof aFileProcessingQueueService>;
   let fileMemoryTrackerService: ReturnType<typeof aFileMemoryTrackerService>;
+  let bensyneClient: ReturnType<typeof aBensyneClientService>;
   let logger: ReturnType<typeof aLogger>;
 
   beforeEach(async () => {
@@ -35,6 +42,7 @@ describe('ForceReprocessService', () => {
     processFileUseCase = aProcessFileUseCase();
     processingQueue = aFileProcessingQueueService();
     fileMemoryTrackerService = aFileMemoryTrackerService();
+    bensyneClient = aBensyneClientService();
     logger = aLogger();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -43,6 +51,7 @@ describe('ForceReprocessService', () => {
         { provide: ProcessFileUseCase, useValue: processFileUseCase },
         { provide: FileProcessingQueue, useValue: processingQueue },
         { provide: FileMemoryTrackerService, useValue: fileMemoryTrackerService },
+        { provide: BensyneClient, useValue: bensyneClient },
         { provide: BasePinoLogger, useValue: logger },
       ],
     }).compile();
@@ -458,6 +467,102 @@ describe('ForceReprocessService', () => {
     });
   });
 
+  describe('resumeAll (bank-verified skip logic)', () => {
+    it('should skip a tracked file the bank confirms present with chunks (verified skip)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('verified.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(
+          aFileChunksInfo({
+            chunks: [
+              aStoredChunkInfo({ chunkIndex: 0 }),
+              aStoredChunkInfo({ chunkIndex: 1 }),
+              aStoredChunkInfo({ chunkIndex: 2 }),
+            ],
+          }),
+        ),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).toHaveBeenCalledWith('/tmp/test/verified.md', 'test');
+    });
+
+    it('should re-ingest a tracked file the bank reports absent (stale-tracker — the fix)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/test/stale.md',
+        eventType: 'add',
+        sourceId: 'test',
+        memoryBank: 'test',
+        sourceConfig: source,
+      });
+    });
+
+    it('should process an untracked file without a bank check (new-file regression)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('newfile.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+    });
+
+    it('should skip a tracked file defensively when the bank read errors', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('bank-error.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(Result.ko([new Error('boom')]));
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should re-ingest a tracked file the bank reports present with zero chunks (defensive edge)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('empty.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(aFileChunksInfo({ status: 'present', chunks: [] })),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/test/empty.md',
+        eventType: 'add',
+        sourceId: 'test',
+        memoryBank: 'test',
+        sourceConfig: source,
+      });
+    });
+  });
+
   describe('resumeSource', () => {
     it('should process untracked files from the requested source by id', async () => {
       const sources = [
@@ -573,19 +678,19 @@ describe('ForceReprocessService', () => {
         );
       });
 
-      it('logs Skipping tracked file for resume with the same bracket', async () => {
+      it('logs Skipping verified file for resume with the same bracket (bank confirms chunks)', async () => {
         const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
         fsMock.stat.mockResolvedValue(mockDirStats());
         fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false)]);
         fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
+        // Default getFileChunks mock: present + 1 chunk → verified skip.
+        bensyneClient.getFileChunks.mockResolvedValue(Result.ok(aFileChunksInfo()));
 
         await service.resumeAll([source]);
 
         expect(logger.debug).toHaveBeenCalledWith(
-          expect.stringContaining(
-            'Skipping tracked file for resume [1/1]: path="/tmp/test/tracked.md"',
-          ),
+          expect.stringContaining('Skipping verified file for resume [1/1]: path="/tmp/test/tracked.md"'),
         );
       });
 
