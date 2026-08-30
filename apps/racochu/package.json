@@ -15,6 +15,7 @@
     "start:dev": "node scripts/kill-stale-racochu.mjs && APP_CONFIG_PATH=dev.yaml nodemon",
     "start:dev:reprocess": "node scripts/kill-stale-racochu.mjs && APP_CONFIG_PATH=dev.yaml nodemon -x 'npm run ts-node:reprocess'",
     "start:dev:resume": "node scripts/kill-stale-racochu.mjs && APP_CONFIG_PATH=dev.yaml nodemon -x 'npm run ts-node:resume'",
+    "start:recover": "node scripts/kill-stale-racochu.mjs && node dist/src/main.js --recover",
     "start:reprocess": "node scripts/kill-stale-racochu.mjs && node dist/src/main.js --force-reprocess",
     "start:resume": "node scripts/kill-stale-racochu.mjs && node dist/src/main.js --resume",
     "start:prod": "node scripts/kill-stale-racochu.mjs && node dist/src/main.js",
