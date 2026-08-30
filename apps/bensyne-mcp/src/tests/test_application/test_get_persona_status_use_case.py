@@ -60,7 +60,7 @@ def _mock_chunk_repository(file_backed: set[str]):
 
 
 def _execute(use_case: GetPersonaStatusUseCase) -> dict:
-    result = use_case.execute({"memory_bank": "persona_architect"})
+    result = use_case.execute({"memory_bank": "agent-persona_architect"})
     assert result.is_ok, f"use case returned ko: {result.errors}"
     return result.value
 

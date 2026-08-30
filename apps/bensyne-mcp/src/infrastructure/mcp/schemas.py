@@ -146,7 +146,7 @@ SEARCH_MEMORY_BANK_SCHEMA = {
                 "type": "string",
                 "description": (
                     "Optional caller agent id; adds a small relevance "
-                    "bonus to the matching persona_<agent_id> bank."
+                    "bonus to the matching agent-persona_<agent_id> bank."
                 ),
             },
         },

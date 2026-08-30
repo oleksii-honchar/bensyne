@@ -1,6 +1,6 @@
 """RC5 integration — recallMemory bank scoping (D3).
 
-The RC5 hypothesis: agents passing ``memory_bank="persona_researcher"`` might
+The RC5 hypothesis: agents passing ``memory_bank="agent-persona_researcher"`` might
 NOT actually scope recall to that bank.
 
 This test exercises the REAL router + REAL bank-bound MnemosyneClients (no
@@ -25,7 +25,7 @@ from src.infrastructure.bank.router import MemoryBankRouter
 from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.utils.structured_logging import LoggerMock
 
-PERSONA_BANK = "persona_researcher"
+PERSONA_BANK = "agent-persona_researcher"
 OTHER_BANK = "agent-sessions"
 
 # Distinctive tokens that should NOT collide across banks.
@@ -94,7 +94,7 @@ class TestRecallBankScoping:
     def test_persona_memory_returned_for_persona_bank(
         self, router: MemoryBankRouter
     ) -> None:
-        """Seeding persona_researcher and recalling there returns the persona memory."""
+        """Seeding agent-persona_researcher and recalling there returns the persona memory."""
         _seed(router, PERSONA_BANK, f"Note with {PERSONA_TOKEN}")
 
         results = _recall_via_router(router, PERSONA_BANK, PERSONA_TOKEN)

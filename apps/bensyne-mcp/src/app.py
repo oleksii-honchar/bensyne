@@ -318,7 +318,7 @@ def register_tools(
         agent_id: Annotated[
             str | None,
             "Optional. Caller agent id; adds a relevance bonus to the matching "
-            "persona_<agent_id> bank.",
+            "agent-persona_<agent_id> bank.",
         ] = None,
     ):
         """Discover memory banks relevant to a task (preferred discovery tool).
@@ -332,7 +332,7 @@ def register_tools(
         When NOT to use: for full enumeration or diagnostics, use listMemoryBanks.
 
         Provide a short query (1-5 keywords is usually enough). The optional
-        agent_id gives the matching persona_<agent_id> bank a small relevance
+        agent_id gives the matching agent-persona_<agent_id> bank a small relevance
         bonus so the caller's own memory surfaces first.
         """
         args: dict = {"query": query, "limit": limit}

@@ -40,7 +40,7 @@ from src.infrastructure.storage.sqlite.file_metadata_connection import (
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
 from src.utils.structured_logging import LoggerMock
 
-BANK = "persona_status_bank"
+BANK = "agent-persona_status_bank"
 PAST = "2000-01-01T00:00:00"
 FUTURE = "2999-01-01T00:00:00"
 

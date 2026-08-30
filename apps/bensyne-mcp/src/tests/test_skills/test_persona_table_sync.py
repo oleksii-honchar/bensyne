@@ -1,9 +1,9 @@
 """Drift test — the per-agent keyword table in `skills/bensyne/SKILL.md` must
 cover every persona bank the project owns.
 
-If a new persona bank is added (e.g. `persona_<new_role>`):
+If a new persona bank is added (e.g. `agent-persona_<new_role>`):
   1. Add a row to the skill-text table (`skills/bensyne/SKILL.md` Phase 1).
-  2. Add the corresponding `persona_<new_role>` to `EXPECTED_PERSONA_BANKS`
+  2. Add the corresponding `agent-persona_<new_role>` to `EXPECTED_PERSONA_BANKS`
      in `tests/test_application/test_search_memory_bank_use_case.py`.
 
 This test catches #1 vs #2 drift.
@@ -39,17 +39,17 @@ def _skill_path() -> Path:
 # add or remove a persona bank, update BOTH this set AND the test set.
 EXPECTED_PERSONA_BANKS: frozenset[str] = frozenset(
     {
-        "persona_architect",
-        "persona_developer",
-        "persona_generalist",
-        "persona_icm-operator",
-        "persona_researcher",
-        "persona_reviewer",
-        "persona_session",
-        "persona_super-developer",
-        "persona_super-worker",
-        "persona_vault-keeper",
-        "persona_worker",
+        "agent-persona_architect",
+        "agent-persona_developer",
+        "agent-persona_generalist",
+        "agent-persona_icm-operator",
+        "agent-persona_researcher",
+        "agent-persona_reviewer",
+        "agent-persona_session",
+        "agent-persona_super-developer",
+        "agent-persona_super-worker",
+        "agent-persona_vault-keeper",
+        "agent-persona_worker",
     }
 )
 
@@ -95,12 +95,12 @@ class TestPersonaTableSync:
     """Skill-text persona table must cover every persona bank the project owns."""
 
     def test_skill_table_covers_all_personas(self, skill_text: str) -> None:
-        """Every `persona_*` bank in `EXPECTED_PERSONA_BANKS` must have a
+        """Every `agent-persona_*` bank in `EXPECTED_PERSONA_BANKS` must have a
         corresponding row in the skill's per-agent starter-keyword table
-        (with the `persona_` prefix stripped)."""
+        (with the `agent-persona_` prefix stripped)."""
         skill_agents = _parse_skill_table_agents(skill_text)
         expected_short_names = {
-            name.removeprefix("persona_") for name in EXPECTED_PERSONA_BANKS
+            name.removeprefix("agent-persona_") for name in EXPECTED_PERSONA_BANKS
         }
         missing = expected_short_names - skill_agents
         assert not missing, (

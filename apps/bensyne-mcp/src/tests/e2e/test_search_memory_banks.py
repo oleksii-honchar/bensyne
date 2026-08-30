@@ -98,7 +98,7 @@ class TestSearchMemoryBank:
         assert result["total"] == 0
 
     def test_agent_id_bonus_surfaces_persona(self, mcp_client: httpx.Client) -> None:
-        """Passing agent_id='worker' must include persona_worker in results for a
+        """Passing agent_id='worker' must include agent-persona_worker in results for a
         query that overlaps the worker's domain — and it must score at least as
         high as the same bank would without agent_id."""
         without_agent = mcp_call_tool(
@@ -115,20 +115,20 @@ class TestSearchMemoryBank:
         )
         names_no = {m["name"] for m in without_agent["matches"]}
         names_yes = {m["name"] for m in with_agent["matches"]}
-        # agent_id adds a bonus to persona_worker — the bank must remain in both
-        # result sets (its base score is positive on a 'worker' query).
-        assert "persona_worker" in names_no or "persona_worker" in names_yes, (
-            f"persona_worker must surface for 'worker' query; got {names_no} / {names_yes}"
+        # agent_id adds a bonus to agent-persona_worker — the bank must remain in
+        # both result sets (its base score is positive on a 'worker' query).
+        assert "agent-persona_worker" in names_no or "agent-persona_worker" in names_yes, (
+            f"agent-persona_worker must surface for 'worker' query; got {names_no} / {names_yes}"
         )
-        if "persona_worker" in names_no and "persona_worker" in names_yes:
+        if "agent-persona_worker" in names_no and "agent-persona_worker" in names_yes:
             score_no = next(
-                m["score"] for m in without_agent["matches"] if m["name"] == "persona_worker"
+                m["score"] for m in without_agent["matches"] if m["name"] == "agent-persona_worker"
             )
             score_yes = next(
-                m["score"] for m in with_agent["matches"] if m["name"] == "persona_worker"
+                m["score"] for m in with_agent["matches"] if m["name"] == "agent-persona_worker"
             )
             assert score_yes > score_no, (
-                f"agent_id bonus must increase persona_worker score: "
+                f"agent_id bonus must increase agent-persona_worker score: "
                 f"without={score_no}, with={score_yes}"
             )
 

@@ -22,7 +22,7 @@ import pytest
 from src.domain.exceptions import ValidationError
 from src.utils.result import Result
 
-BANK = "persona_architect"
+BANK = "agent-persona_architect"
 
 
 def _a_bundle(chunk_repository: MagicMock) -> MagicMock:

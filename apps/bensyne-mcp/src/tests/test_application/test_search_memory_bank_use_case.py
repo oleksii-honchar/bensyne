@@ -3,7 +3,7 @@
 Reference:
 - spec.md C1 (use case contract), C3 (channel-weighted scoring)
 - decisions.md ADR-S12 (``CHANNEL_WEIGHTS = {"name": 1, "description": 2, "derived": 1}``,
-  ``+2`` persona-match bonus when ``agent_id`` matches ``persona_<agent_id>``)
+  ``+2`` persona-match bonus when ``agent_id`` matches ``agent-persona_<agent_id>``)
 
 The use case derives keywords purely from the bank ``name`` (tokenise on
 ``_`` / ``-`` / non-alphanumeric) — no hardcoded per-role table. Test
@@ -22,22 +22,22 @@ from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import LoggerMock
 
 
-# The 11 persona_<x> bank names the project owns. The use case module
+# The 11 agent-persona_<x> bank names the project owns. The use case module
 # (when implemented) must register a derived-keyword entry for each, and
 # the skill-text per-agent starter-keyword table must mirror this set.
 EXPECTED_PERSONA_BANKS: frozenset[str] = frozenset(
     {
-        "persona_architect",
-        "persona_developer",
-        "persona_generalist",
-        "persona_icm-operator",
-        "persona_researcher",
-        "persona_reviewer",
-        "persona_session",
-        "persona_super-developer",
-        "persona_super-worker",
-        "persona_vault-keeper",
-        "persona_worker",
+        "agent-persona_architect",
+        "agent-persona_developer",
+        "agent-persona_generalist",
+        "agent-persona_icm-operator",
+        "agent-persona_researcher",
+        "agent-persona_reviewer",
+        "agent-persona_session",
+        "agent-persona_super-developer",
+        "agent-persona_super-worker",
+        "agent-persona_vault-keeper",
+        "agent-persona_worker",
     }
 )
 
@@ -108,11 +108,11 @@ class TestDerivedKeywordsHelper:
         )
 
     def test_persona_name_splits_on_underscore(self) -> None:
-        """``persona_researcher`` → ``["persona", "researcher"]`` (no extras)."""
+        """``agent-persona_researcher`` → ``["agent", "persona", "researcher"]`` (no extras)."""
         from src.application.use_cases import search_memory_bank_use_case as mod
 
         helper = getattr(mod, "_derived_keywords_for", None) or getattr(mod, "derived_keywords_for")
-        terms = helper("persona_researcher")
+        terms = helper("agent-persona_researcher")
         assert "persona" in terms
         assert "researcher" in terms
         # Must NOT include words that are not in the name (no hardcoded mapping).
@@ -154,13 +154,13 @@ class TestDerivedKeywordsHelper:
 class TestScoringChannelWeights:
     """ADR-S12 — description carries ``+2`` per term; name and derived
     keywords carry ``+1`` each. The ``+2`` persona-match bonus applies
-    only when ``agent_id`` matches ``persona_<agent_id>``."""
+    only when ``agent_id`` matches ``agent-persona_<agent_id>``."""
 
     @pytest.fixture
     def fixtures(self, logger):
         """Build a use case pre-loaded with two banks: a well-described
         ``vault`` (backfilled) and a near-identical template-described
-        ``persona_reviewer``. Used to demonstrate description-channel
+        ``agent-persona_reviewer``. Used to demonstrate description-channel
         dominance under ADR-S12."""
         vault = _bank(
             "vault",
@@ -169,7 +169,7 @@ class TestScoringChannelWeights:
             memory_count=42,
         )
         reviewer = _bank(
-            "persona_reviewer",
+            "agent-persona_reviewer",
             description="Reviewer agent decision tree (persona)",
             status="registered",
             memory_count=7,
@@ -204,14 +204,14 @@ class TestScoringChannelWeights:
 
     def test_channel_weight_description_dominates_derived(self, fixtures) -> None:
         """``query='runbook'`` → ``vault`` (description hit +2) outscores
-        ``persona_reviewer`` (no match anywhere, score 0 → dropped) under
+        ``agent-persona_reviewer`` (no match anywhere, score 0 → dropped) under
         ADR-S12 channel weighting. Demonstrates that curated descriptions
         carry higher signal than the auto-generated persona templates.
 
         With pure-derived keywords (no PER_ROLE_KEYWORDS table), the
         derived channel from ``vault`` tokenises to ``["vault"]`` only —
         no "runbook" match. So vault's score is 2 (description channel
-        only), while persona_reviewer scores 0 and is dropped.
+        only), while agent-persona_reviewer scores 0 and is dropped.
         """
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
@@ -241,10 +241,10 @@ class TestScoringChannelWeights:
 
         # Persona_reviewer must NOT appear (zero-score entries are dropped).
         reviewer_present = any(
-            m["name"] == "persona_reviewer" for m in result.value["matches"]
+            m["name"] == "agent-persona_reviewer" for m in result.value["matches"]
         )
         assert reviewer_present is False, (
-            "persona_reviewer has zero score for query='runbook' and must be dropped"
+            "agent-persona_reviewer has zero score for query='runbook' and must be dropped"
         )
 
     def test_backfill_impact_empty_description_under_ranks(self, logger) -> None:
@@ -268,7 +268,7 @@ class TestScoringChannelWeights:
             memory_count=42,
         )
         reviewer = _bank(
-            "persona_reviewer",
+            "agent-persona_reviewer",
             description="Reviewer agent decision tree (persona)",
             status="registered",
             memory_count=7,
@@ -308,12 +308,12 @@ class TestScoringChannelWeights:
 
     def test_agent_id_bonus_pushes_matching_persona_to_top(self, logger) -> None:
         """With ``agent_id='researcher'`` and ``query='researcher'``,
-        ``persona_researcher`` ranks at index 0 (tiebreak by +2 bonus)."""
+        ``agent-persona_researcher`` ranks at index 0 (tiebreak by +2 bonus)."""
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
-        researcher = _bank("persona_researcher", description="Researcher agent decision tree (persona)")
-        reviewer = _bank("persona_reviewer", description="Reviewer agent decision tree (persona)")
-        architect = _bank("persona_architect", description="Architect agent decision tree (persona)")
+        researcher = _bank("agent-persona_researcher", description="Researcher agent decision tree (persona)")
+        reviewer = _bank("agent-persona_reviewer", description="Reviewer agent decision tree (persona)")
+        architect = _bank("agent-persona_architect", description="Architect agent decision tree (persona)")
         service = _service([researcher, reviewer, architect])
         router = _router()
         use_case = SearchMemoryBankUseCase(
@@ -325,7 +325,58 @@ class TestScoringChannelWeights:
         result = use_case.execute({"query": "researcher", "agent_id": "researcher"})
 
         assert result.is_ok is True
-        assert result.value["matches"][0]["name"] == "persona_researcher"
+        assert result.value["matches"][0]["name"] == "agent-persona_researcher"
+
+    def test_agent_id_bonus_applies_to_agent_persona_prefix(self, logger) -> None:
+        """The +2 bonus applies when the bank name is ``agent-persona_<agent_id>``.
+
+        ``agent-persona_researcher`` scores base 4 (name +1, description +2,
+        derived +1) for query='researcher'; with ``agent_id='researcher'``
+        the persona-match bonus raises it to 6.
+        """
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        researcher = _bank("agent-persona_researcher", description="Researcher agent decision tree (persona)")
+        service = _service([researcher])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "researcher", "agent_id": "researcher"})
+
+        assert result.is_ok is True
+        assert result.value["matches"][0]["score"] == 6, (
+            "agent-persona_researcher must score base 4 + persona-match bonus 2 = 6; "
+            f"got {result.value['matches'][0]['score']}"
+        )
+
+    def test_agent_id_bonus_breaks_tie_for_agent_persona_bank(self, logger) -> None:
+        """With equal base scores, the ``agent-persona_<agent_id>`` bank wins the
+        tie via the +2 bonus — alphabetical order alone would not."""
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        # Both banks score 4 base for query='researcher' (name +1, desc +2, derived +1).
+        persona_bank = _bank("agent-persona_researcher", description="Researcher agent decision tree (persona)")
+        rival = _bank("a-researcher-bank", description="Researcher bank (persona)")
+        service = _service([rival, persona_bank])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "researcher", "agent_id": "researcher"})
+
+        assert result.is_ok is True
+        # Without the bonus the tie breaks alphabetically to a-researcher-bank.
+        assert result.value["matches"][0]["name"] == "agent-persona_researcher", (
+            "persona-match bonus must break the base-score tie in favour of the "
+            f"agent-persona_<agent_id> bank; got {result.value['matches'][0]['name']}"
+        )
 
 
 # -- Derived-keyword-only match -----------------------------------------
@@ -337,13 +388,13 @@ class TestDerivedKeywordMatch:
     and matches nothing."""
 
     def test_query_researcher_returns_persona_researcher(self, logger) -> None:
-        """``query='researcher'`` → ``persona_researcher`` is the top match
+        """``query='researcher'`` → ``agent-persona_researcher`` is the top match
         via name + derived channels; noise personas with template
         descriptions and non-matching name tokens are dropped."""
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         researcher = _bank(
-            "persona_researcher",
+            "agent-persona_researcher",
             description="Researcher agent decision tree (persona)",
             status="registered",
             memory_count=18,
@@ -353,8 +404,8 @@ class TestDerivedKeywordMatch:
         # (no PER_ROLE_KEYWORDS), their derived terms are also a miss,
         # so they score 0 and are dropped.
         noise = [
-            _bank("persona_worker", description="Worker agent decision tree (persona)"),
-            _bank("persona_reviewer", description="Reviewer agent decision tree (persona)"),
+            _bank("agent-persona_worker", description="Worker agent decision tree (persona)"),
+            _bank("agent-persona_reviewer", description="Reviewer agent decision tree (persona)"),
         ]
         service = _service([researcher, *noise])
         router = _router()
@@ -368,37 +419,37 @@ class TestDerivedKeywordMatch:
 
         assert result.is_ok is True
         names = [m["name"] for m in result.value["matches"]]
-        assert "persona_researcher" in names, (
-            "persona_researcher must appear (name + description + derived match)"
+        assert "agent-persona_researcher" in names, (
+            "agent-persona_researcher must appear (name + description + derived match)"
         )
         # Noise banks must be dropped — their name tokens do not contain
         # "researcher" and their template descriptions do not either.
-        assert "persona_worker" not in names
-        assert "persona_reviewer" not in names
+        assert "agent-persona_worker" not in names
+        assert "agent-persona_reviewer" not in names
 
     def test_name_token_distinguishes_personas_with_same_template_desc(
         self, logger
     ) -> None:
         """Two banks sharing the template ``"X agent decision tree (persona)"``
-        description — query for ``reviewer`` matches persona_reviewer (name
-        and description both contain ``reviewer``) but NOT persona_researcher
+        description — query for ``reviewer`` matches agent-persona_reviewer (name
+        and description both contain ``reviewer``) but NOT agent-persona_researcher
         (whose name and description contain ``researcher``, not ``reviewer``).
         The derived channel (name tokens) reinforces this: ``["reviewer"]``
         for the reviewer bank, ``["researcher"]`` for the researcher bank.
 
         With pure-derived keywords (no PER_ROLE_KEYWORDS), the channels
-        that surface persona_reviewer are name + description + derived
-        (+1 +2 +1 = 4); persona_researcher scores 0 across all channels
+        that surface agent-persona_reviewer are name + description + derived
+        (+1 +2 +1 = 4); agent-persona_researcher scores 0 across all channels
         for query ``reviewer`` and is correctly dropped.
         """
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         researcher = _bank(
-            "persona_researcher",
+            "agent-persona_researcher",
             description="Researcher agent decision tree (persona)",
         )
         reviewer = _bank(
-            "persona_reviewer",
+            "agent-persona_reviewer",
             description="Reviewer agent decision tree (persona)",
         )
         service = _service([researcher, reviewer])
@@ -413,10 +464,10 @@ class TestDerivedKeywordMatch:
 
         assert result.is_ok is True
         names = [m["name"] for m in result.value["matches"]]
-        # Only persona_reviewer matches — persona_researcher is correctly
+        # Only agent-persona_reviewer matches — agent-persona_researcher is correctly
         # dropped (no name/description/derived channel hit for "reviewer").
-        assert names == ["persona_reviewer"], (
-            f"expected only persona_reviewer to match query='reviewer'; got {names}"
+        assert names == ["agent-persona_reviewer"], (
+            f"expected only agent-persona_reviewer to match query='reviewer'; got {names}"
         )
         # And the matching entry has score = 4 (name +1, desc +2, derived +1).
         assert result.value["matches"][0]["score"] == 4
@@ -503,7 +554,7 @@ class TestValidation:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         banks = [
-            _bank(f"persona_bank_{i:02d}", description=f"Bank {i}")
+            _bank(f"agent-persona_bank_{i:02d}", description=f"Bank {i}")
             for i in range(15)
         ]
         service = _service(banks)
@@ -530,7 +581,7 @@ class TestLimitClamp:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         banks = [
-            _bank(f"persona_role_{i:02d}", description="shared description match")
+            _bank(f"agent-persona_role_{i:02d}", description="shared description match")
             for i in range(5)
         ]
         service = _service(banks)
@@ -554,7 +605,7 @@ class TestLimitClamp:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         banks = [
-            _bank(f"persona_role_{i:02d}", description="alpha beta gamma")
+            _bank(f"agent-persona_role_{i:02d}", description="alpha beta gamma")
             for i in range(7)
         ]
         service = _service(banks)
@@ -581,7 +632,7 @@ class TestEmptyResult:
     def test_no_match_returns_empty_matches(self, logger) -> None:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
-        service = _service([_bank("persona_worker", description="Worker agent decision tree (persona)")])
+        service = _service([_bank("agent-persona_worker", description="Worker agent decision tree (persona)")])
         router = _router()
         use_case = SearchMemoryBankUseCase(
             memory_bank_service=service,
@@ -634,10 +685,10 @@ class TestDeterminism:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         # Two banks with identical scores via derived keywords only:
-        # 'persona_zulu' and 'persona_alpha' both get +1 from 'persona'
+        # 'agent-persona_zulu' and 'agent-persona_alpha' both get +1 from 'persona'
         # in derived keywords for query='persona'.
-        alpha = _bank("persona_alpha", description="Alpha agent")
-        zulu = _bank("persona_zulu", description="Zulu agent")
+        alpha = _bank("agent-persona_alpha", description="Alpha agent")
+        zulu = _bank("agent-persona_zulu", description="Zulu agent")
         service = _service([zulu, alpha])  # reversed input order on purpose
         router = _router()
         use_case = SearchMemoryBankUseCase(
@@ -657,7 +708,7 @@ class TestDeterminism:
         from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 
         banks = [
-            _bank(f"persona_role_{i:02d}", description="shared")
+            _bank(f"agent-persona_role_{i:02d}", description="shared")
             for i in range(5)
         ]
         service = _service(banks)

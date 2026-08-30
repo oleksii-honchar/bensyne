@@ -40,7 +40,7 @@ from src.infrastructure.storage.sqlite.file_metadata_connection import (
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
 from src.utils.structured_logging import LoggerMock
 
-BANK = "persona_entry_bank"
+BANK = "agent-persona_entry_bank"
 
 
 # ---------------------------------------------------------------------------

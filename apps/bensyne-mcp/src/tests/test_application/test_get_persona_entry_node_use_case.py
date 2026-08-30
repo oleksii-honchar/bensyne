@@ -150,7 +150,7 @@ def _use_case(
     )
 
 
-def _execute(use_case: GetPersonaEntryNodeUseCase, bank: str = "persona_researcher"):
+def _execute(use_case: GetPersonaEntryNodeUseCase, bank: str = "agent-persona_researcher"):
     return use_case.execute({"memory_bank": bank})
 
 

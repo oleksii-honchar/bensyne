@@ -5,7 +5,7 @@ match the query. Reuses ``ListBanksUseCase`` for the merged view
 (filesystem ∪ pool ∪ registry), then applies inline substring scoring with
 ADR-S12 channel weighting: ``description`` carries +2, ``name`` and
 ``derived`` carry +1 each. The +2 persona-match bonus applies when
-``agent_id == f"persona_{name}"``.
+``agent_id == f"agent-persona_{name}"``.
 
 Scoring algorithm follows ``spec.md`` C3 verbatim — substring match on
 each channel; no embeddings, no whole-word boundary. Derived keywords are
@@ -17,11 +17,11 @@ Rationale (per ADR-S2 / ADR-S8 / ADR-S12):
 
 - Description is the highest-trust signal because it is human-curated
   via ``registerMemoryBank(name=..., description=...)``.
-- Name is often a role slug (``persona_<x>``, ``agent-sessions``,
+- Name is often a role slug (``agent-persona_<x>``, ``agent-sessions``,
   ``vault``) — a system identifier, not a vocabulary surface.
 - Derived keywords normalise the name (split on ``_`` and ``-``) so that
-  a query for ``reviewer`` matches a bank named ``persona_reviewer`` even
-  when the description is missing or template-only.
+  a query for ``reviewer`` matches a bank named ``agent-persona_reviewer``
+  even when the description is missing or template-only.
 - The +2 description weight incentivises bank owners to maintain their
   descriptions: a well-described bank beats a well-named bank on equal
   vocabulary.
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 # Channel weights (ADR-S12): description is the highest-trust signal.
 CHANNEL_WEIGHTS: dict[str, int] = {"name": 1, "description": 2, "derived": 1}
-PERSONA_MATCH_BONUS: int = 2  # applied when agent_id matches persona_<agent_id>
+PERSONA_MATCH_BONUS: int = 2  # applied when agent_id matches agent-persona_<agent_id>
 DEFAULT_LIMIT: int = 10
 MIN_LIMIT: int = 1
 MAX_LIMIT: int = 50
@@ -60,7 +60,7 @@ def _derived_keywords_for(name: str) -> list[str]:
     non-alphanumeric), lowercased and deduped preserving first-seen order.
 
     Examples:
-        ``persona_reviewer`` → ``["persona", "reviewer"]``
+        ``agent-persona_reviewer`` → ``["agent", "persona", "reviewer"]``
         ``vault-racochu`` → ``["vault", "racochu"]``
         ``agent-sessions`` → ``["agent", "sessions"]``
 
@@ -264,9 +264,9 @@ class SearchMemoryBankUseCase(BaseUseCase[dict, dict]):
                 if term in derived:
                     score += CHANNEL_WEIGHTS["derived"]
 
-            # Persona-match bonus: only when agent_id matches a
-            # persona_<agent_id> bank name.
-            if agent_id and name == f"persona_{agent_id}":
+            # Persona-match bonus: only when agent_id matches an
+            # agent-persona_<agent_id> bank name.
+            if agent_id and name == f"agent-persona_{agent_id}":
                 score += PERSONA_MATCH_BONUS
 
             self.logger.debug(
