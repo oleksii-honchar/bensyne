@@ -1154,6 +1154,58 @@ describe('BensyneClient (Streamable HTTP)', () => {
     });
   });
 
+  describe('request path', () => {
+    const captureRequestOptions = () => {
+      let lastOptions: unknown = null;
+
+      (http.request as jest.Mock).mockImplementation((options: unknown, callback: (res: MockRes) => void) => {
+        lastOptions = options;
+        const req = createMockReq();
+        const res = createMockResponse(200, getInitResponse(), { 'mcp-session-id': 'session-abc' });
+        process.nextTick(() => callback(res));
+        return req;
+      });
+
+      return () => lastOptions as unknown as { path: string };
+    };
+
+    it('uses the URL pathname when the config URL has a path (gateway sub-route)', async () => {
+      const getLastOptions = captureRequestOptions();
+
+      const client = await createClient({ url: 'http://mcp.test/mcp/bensyne' });
+      await client.initialize();
+
+      expect(getLastOptions().path).toBe('/mcp/bensyne');
+    });
+
+    it('preserves an explicit /mcp pathname from the config URL', async () => {
+      const getLastOptions = captureRequestOptions();
+
+      const client = await createClient({ url: 'http://mcp.test/mcp' });
+      await client.initialize();
+
+      expect(getLastOptions().path).toBe('/mcp');
+    });
+
+    it('falls back to /mcp when the config URL has no path', async () => {
+      const getLastOptions = captureRequestOptions();
+
+      const client = await createClient({ url: 'http://mcp.test' });
+      await client.initialize();
+
+      expect(getLastOptions().path).toBe('/mcp');
+    });
+
+    it('falls back to /mcp when the config URL path is only /', async () => {
+      const getLastOptions = captureRequestOptions();
+
+      const client = await createClient({ url: 'http://mcp.test/' });
+      await client.initialize();
+
+      expect(getLastOptions().path).toBe('/mcp');
+    });
+  });
+
   describe('close', () => {
     it('resets session ID and logs closure', async () => {
       let callIndex = 0;

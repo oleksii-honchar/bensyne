@@ -874,7 +874,9 @@ export class BensyneClient implements OnApplicationBootstrap {
     return {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port,
-      path: '/mcp',
+      // Respect the configured URL's path (e.g. gateway sub-route /mcp/bensyne);
+      // fall back to /mcp for host-only URLs like http://localhost:3000
+      path: parsedUrl.pathname && parsedUrl.pathname !== '/' ? parsedUrl.pathname : '/mcp',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
