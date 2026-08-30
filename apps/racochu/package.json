@@ -10,7 +10,7 @@
     "npm": ">=11.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && mkdir -p dist/src/generated && cp -r src/generated/prisma dist/src/generated/prisma",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && node -e \"const fs=require('node:fs');fs.mkdirSync('dist/src/generated',{recursive:true});fs.cpSync('src/generated/prisma','dist/src/generated/prisma',{recursive:true})\"",
     "start": "node scripts/kill-stale-racochu.mjs && node dist/src/main.js",
     "start:dev": "node scripts/kill-stale-racochu.mjs && APP_CONFIG_PATH=dev.yaml nodemon",
     "start:dev:reprocess": "node scripts/kill-stale-racochu.mjs && APP_CONFIG_PATH=dev.yaml nodemon -x 'npm run ts-node:reprocess'",
@@ -112,7 +112,12 @@
     }
   },
   "allowScripts": {
-    "protobufjs@7.6.5": true,
-    "unrs-resolver@1.12.2": true
+    "unrs-resolver@1.12.2": true,
+    "@parcel/watcher@2.6.0": true,
+    "@prisma/engines@7.10.0": true,
+    "better-sqlite3": true,
+    "native-machine-id": true,
+    "prisma@7.10.0": true,
+    "protobufjs": true
   }
 }
