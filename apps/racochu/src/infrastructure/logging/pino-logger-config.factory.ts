@@ -93,15 +93,18 @@ export function pinoLoggerConfigFactory(configService: ConfigService): Params {
   });
 
   // File transport: JSON, line-delimited, with rotation
-  // symlink=true creates racochu.log → current active file
+  // symlink=true creates current.log → current active file (pino-roll hardcodes the link name)
   transports.push({
     target: 'pino-roll',
     options: {
       file: LOG_FILE,
-      period: '1d',
-      size: '10m',
-      keep: 3,
-      symlink: 'racochu.log',
+      frequency: 'daily', // was period: '1d' (invalid, silently ignored)
+      size: '10m', // unchanged — already correct
+      limit: {
+        count: 3, // was keep: 3 (no such v4 option)
+        removeOtherLogFiles: true, // prune legacy racochu.<n>.log files from prior processes
+      },
+      symlink: true, // was 'racochu.log' string; v4 contract is boolean
       sync: false,
       mkdir: true,
     },

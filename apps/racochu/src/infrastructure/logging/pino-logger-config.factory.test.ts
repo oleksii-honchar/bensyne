@@ -61,4 +61,25 @@ describe('pino-logger-config.factory', () => {
       expect(consoleTarget?.options.translateTime).toBe('SYS:yyyy-mm-dd HH:MM:ss');
     });
   });
+
+  describe('file transport (pino-roll)', () => {
+    it('uses pino-roll v4 rotation options (frequency, limit.count, symlink)', () => {
+      const params = pinoLoggerConfigFactory(configService);
+      const pinoHttp = params.pinoHttp as unknown as {
+        transport?: {
+          targets?: { target: string; options: Record<string, unknown> }[];
+        };
+      };
+      const rollTarget = pinoHttp.transport?.targets?.find(t => t.target === 'pino-roll');
+
+      expect(rollTarget?.options).toMatchObject({
+        frequency: 'daily',
+        limit: { count: 3 },
+      });
+      expect(rollTarget?.options).not.toHaveProperty('period');
+      expect(rollTarget?.options).not.toHaveProperty('keep');
+      expect(rollTarget?.options?.limit).toMatchObject({ removeOtherLogFiles: true });
+      expect(rollTarget?.options?.symlink).toBe(true);
+    });
+  });
 });
