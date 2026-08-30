@@ -3,12 +3,7 @@ import { SOURCE_TYPES, SOURCE_TYPE_UNKNOWN, sourceTypeSchema } from './source-ty
 describe('D29 source-type axis (spec §6.6)', () => {
   describe('SOURCE_TYPES — 1:1 gate (spec §14.11)', () => {
     it('is the exact producer set [obsidian, agent-sessions, vault, agent-persona] (cross-app lock with bensyne SourceType)', () => {
-      expect(Object.values(SOURCE_TYPES)).toEqual([
-        'obsidian',
-        'agent-sessions',
-        'vault',
-        'agent-persona',
-      ]);
+      expect(Object.values(SOURCE_TYPES)).toEqual(['obsidian', 'agent-sessions', 'vault', 'agent-persona']);
     });
   });
 

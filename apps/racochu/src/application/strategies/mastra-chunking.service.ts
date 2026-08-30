@@ -1,7 +1,7 @@
 import { LlmClientFactory } from '@/application/services/llm-client-factory';
 import { ContentChunk, FILE_ROLES, FileRole } from '@/domain/content-chunk.entity';
-import { ConfigurationService } from '@/infrastructure/config/configuration.service';
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
+import { ConfigurationService } from '@/infrastructure/config/configuration.service';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { generateId } from '@/utils/big-endian-id';
 import { ErrorWithDetails } from '@/utils/error-with-details';

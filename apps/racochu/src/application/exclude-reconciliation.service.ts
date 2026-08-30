@@ -6,7 +6,7 @@ import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
 import { isPathExcluded } from './glob-matcher';
-import { MASS_FORGET_THRESHOLD, FORCE_FORGET_ENV_VAR } from './mass-forget-guard';
+import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from './mass-forget-guard';
 
 /**
  * Outcome of a single reconciliation run.

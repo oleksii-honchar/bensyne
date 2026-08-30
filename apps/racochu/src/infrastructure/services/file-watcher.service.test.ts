@@ -215,8 +215,7 @@ describe('FileWatcherService', () => {
       await service.start();
 
       const readyHandler = mockWatcher.on.mock.calls.find(call => call[0] === 'ready')?.[1] as
-        | (() => void)
-        | undefined;
+        (() => void) | undefined;
       expect(readyHandler).toBeDefined();
 
       readyHandler?.();
@@ -228,16 +227,14 @@ describe('FileWatcherService', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining(`Watcher ready; source="${source.id}"`),
       );
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining(`path="${normalizedRoot}"`),
-      );
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining(`path="${normalizedRoot}"`));
     });
   });
 
   describe('ignore patterns', () => {
     // chokidar calls this predicate with the FULL absolute path for both
     // files and directories; it must return true to ignore a path.
-    const getIgnoredCallback = (): (candidatePath: string) => boolean => {
+    const getIgnoredCallback = (): ((candidatePath: string) => boolean) => {
       const watchCall = mockWatchFn.mock.calls[0];
       const options = watchCall?.[1] as Record<string, unknown>;
       return options.ignored as (candidatePath: string) => boolean;

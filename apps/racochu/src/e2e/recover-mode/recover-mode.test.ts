@@ -21,12 +21,12 @@
  *    - the CLI process exits (code 0) after the pass.
  */
 
+import { INestApplication } from '@nestjs/common';
 import * as child_process from 'child_process';
 import * as fs from 'fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import * as path from 'path';
 import { promisify } from 'util';
-import { INestApplication } from '@nestjs/common';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { FileMemoryTrackerRepository } from '../../infrastructure/repositories/file-memory-tracker.repository';
@@ -212,13 +212,14 @@ describe('[E2E] Recover mode — ingest → delete chunk row → CLI --recover �
   }
 
   function findBensyneFileId(db: DatabaseSync, filePath: string): string | undefined {
-    const row = db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as
-      | { id: string }
-      | undefined;
+    const row = db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as { id: string } | undefined;
     return row?.id;
   }
 
-  function getChunkRows(db: DatabaseSync, targetFileId: string): { chunk_index: number; memory_id: string }[] {
+  function getChunkRows(
+    db: DatabaseSync,
+    targetFileId: string,
+  ): { chunk_index: number; memory_id: string }[] {
     const rows = db
       .prepare('SELECT chunk_index, memory_id FROM file_chunks WHERE file_id = ? ORDER BY chunk_index')
       .all(targetFileId) as { chunk_index: number; memory_id: string }[];
@@ -230,8 +231,7 @@ describe('[E2E] Recover mode — ingest → delete chunk row → CLI --recover �
     // readBigInts so node:sqlite returns them as bigint (also binds cleanly
     // into the follow-up query).
     const row = db.prepare('SELECT id FROM FileTracker WHERE filePath = ?').get(filePath) as
-      | { id: bigint }
-      | undefined;
+      { id: bigint } | undefined;
     return row?.id;
   }
 
@@ -366,82 +366,88 @@ describe('[E2E] Recover mode — ingest → delete chunk row → CLI --recover �
       const remaining = getChunkRows(readDb, fileId!);
       expect(remaining.length).toBe(baselineChunkRows.length - 1);
       expect(remaining.some(c => c.chunk_index === deletedChunkIndex)).toBe(false);
-      console.log(`[E2E-Recover] Deleted chunk_index=${deletedChunkIndex}; remaining rows=${remaining.length}`);
+      console.log(
+        `[E2E-Recover] Deleted chunk_index=${deletedChunkIndex}; remaining rows=${remaining.length}`,
+      );
     } finally {
       readDb.close();
     }
   }, 120000);
 
-  it('3. run the real CLI --recover and assert the process exits after the pass', async () => {
-    // Release the app's SQLite connection before the CLI subprocess writes.
-    if (app) {
-      await app.close().catch(() => undefined);
-      app = null;
-    }
+  it(
+    '3. run the real CLI --recover and assert the process exits after the pass',
+    async () => {
+      // Release the app's SQLite connection before the CLI subprocess writes.
+      if (app) {
+        await app.close().catch(() => undefined);
+        app = null;
+      }
 
-    const configPath = process.env.APP_CONFIG_PATH;
-    expect(configPath).toBeDefined();
+      const configPath = process.env.APP_CONFIG_PATH;
+      expect(configPath).toBeDefined();
 
-    const childEnv: NodeJS.ProcessEnv = { ...process.env };
-    // Strip jest's ESM vm-modules flag — ts-node runs plain CJS here.
-    delete childEnv.NODE_OPTIONS;
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      // Strip jest's ESM vm-modules flag — ts-node runs plain CJS here.
+      delete childEnv.NODE_OPTIONS;
 
-    const childArgs = [
-      '-r',
-      'ts-node/register',
-      '-r',
-      'tsconfig-paths/register',
-      'src/main.ts',
-      '--recover',
-      '-s',
-      SOURCE_ID,
-    ];
+      const childArgs = [
+        '-r',
+        'ts-node/register',
+        '-r',
+        'tsconfig-paths/register',
+        'src/main.ts',
+        '--recover',
+        '-s',
+        SOURCE_ID,
+      ];
 
-    console.log(`[E2E-Recover] Spawning CLI: node ${childArgs.join(' ')} (cwd=${RACOCHU_APP_DIR})`);
+      console.log(`[E2E-Recover] Spawning CLI: node ${childArgs.join(' ')} (cwd=${RACOCHU_APP_DIR})`);
 
-    const { code, stdout, stderr } = await new Promise<{
-      code: number | null;
-      stdout: string;
-      stderr: string;
-    }>((resolve, reject) => {
-      const child = child_process.spawn(process.execPath, childArgs, {
-        cwd: RACOCHU_APP_DIR,
-        env: childEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
+      const { code, stdout, stderr } = await new Promise<{
+        code: number | null;
+        stdout: string;
+        stderr: string;
+      }>((resolve, reject) => {
+        const child = child_process.spawn(process.execPath, childArgs, {
+          cwd: RACOCHU_APP_DIR,
+          env: childEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let out = '';
+        let err = '';
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error(`racochu --recover did not exit within ${CLI_RUN_TIMEOUT_MS}ms`));
+        }, CLI_RUN_TIMEOUT_MS);
+        child.stdout.on('data', chunk => (out += chunk));
+        child.stderr.on('data', chunk => (err += chunk));
+        child.on('error', error => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        child.on('close', code => {
+          clearTimeout(timer);
+          resolve({ code, stdout: out, stderr: err });
+        });
       });
-      let out = '';
-      let err = '';
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        reject(new Error(`racochu --recover did not exit within ${CLI_RUN_TIMEOUT_MS}ms`));
-      }, CLI_RUN_TIMEOUT_MS);
-      child.stdout.on('data', chunk => (out += chunk));
-      child.stderr.on('data', chunk => (err += chunk));
-      child.on('error', error => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.on('close', code => {
-        clearTimeout(timer);
-        resolve({ code, stdout: out, stderr: err });
-      });
-    });
 
-    console.log(`[E2E-Recover] CLI exit code: ${code}`);
-    // Filtered dump for debugging: recover/repair/error lines from the real CLI.
-    const interesting = stdout
-      .split('\n')
-      .filter(line => /recover|repair|Repair|Recover|error|ERROR|warn|Tracked files/i.test(line));
-    if (interesting.length > 0) {
-      console.log(`[E2E-Recover] CLI recover-relevant lines:\n${interesting.slice(-40).join('\n')}`);
-    }
-    if (stderr.length > 0) {
-      console.log(`[E2E-Recover] CLI stderr tail:\n${stderr.split('\n').slice(-15).join('\n')}`);
-    }
+      console.log(`[E2E-Recover] CLI exit code: ${code}`);
+      // Filtered dump for debugging: recover/repair/error lines from the real CLI.
+      const interesting = stdout
+        .split('\n')
+        .filter(line => /recover|repair|Repair|Recover|error|ERROR|warn|Tracked files/i.test(line));
+      if (interesting.length > 0) {
+        console.log(`[E2E-Recover] CLI recover-relevant lines:\n${interesting.slice(-40).join('\n')}`);
+      }
+      if (stderr.length > 0) {
+        console.log(`[E2E-Recover] CLI stderr tail:\n${stderr.split('\n').slice(-15).join('\n')}`);
+      }
 
-    // Behavioral exit proof: the process exits on its own after the pass.
-    expect(code).toBe(0);
-  }, CLI_RUN_TIMEOUT_MS + 30000);
+      // Behavioral exit proof: the process exits on its own after the pass.
+      expect(code).toBe(0);
+    },
+    CLI_RUN_TIMEOUT_MS + 30000,
+  );
 
   it('4. post-recover — chunk re-created + memory tracked, untracked file untouched', async () => {
     expect(fileId).toBeDefined();
@@ -456,7 +462,9 @@ describe('[E2E] Recover mode — ingest → delete chunk row → CLI --recover �
       recreatedRow = rows.find(c => c.chunk_index === deletedChunkIndex);
       expect(recreatedRow).toBeDefined();
       expect(recreatedRow!.memory_id.length).toBeGreaterThan(0);
-      console.log(`[E2E-Recover] Recreated chunk_index=${deletedChunkIndex} memory_id=${recreatedRow!.memory_id}`);
+      console.log(
+        `[E2E-Recover] Recreated chunk_index=${deletedChunkIndex} memory_id=${recreatedRow!.memory_id}`,
+      );
     } finally {
       db.close();
     }

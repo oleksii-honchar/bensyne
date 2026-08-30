@@ -8,11 +8,8 @@ import { aConfigService } from '../config/configuration.service.test-utils';
 import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { aLogger } from '../logging/logger.test-utils';
-import {
-  aGetFileChunksToolResponse,
-  aRawStoredChunk,
-} from './bensyne-client.test-utils';
 import { BensyneClient } from './bensyne-client.service';
+import { aGetFileChunksToolResponse, aRawStoredChunk } from './bensyne-client.test-utils';
 
 jest.mock('http', () => ({
   request: jest.fn(),
@@ -1413,9 +1410,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
     });
 
     it('returns ok with the parsed forgotten payload on success', async () => {
-      mockSendRequest(() =>
-        toolResponse({ status: 'forgotten', file_id: 'file-42', files_affected: 7 }),
-      );
+      mockSendRequest(() => toolResponse({ status: 'forgotten', file_id: 'file-42', files_affected: 7 }));
 
       const result = await client.forgetByFile('/notes/a.md', 'default');
 
@@ -1451,7 +1446,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
           content: [
             {
               type: 'text',
-              text: "Error calling tool 'forgetFile': forgetFile failed: FILE_NOT_FOUND - details: {\"path\": \"/notes/unknown.md\"}",
+              text: 'Error calling tool \'forgetFile\': forgetFile failed: FILE_NOT_FOUND - details: {"path": "/notes/unknown.md"}',
             },
           ],
         },
@@ -1629,9 +1624,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
     });
 
     it('sends a tools/call for getFileChunks with snake_case file_path and memory_bank arguments', async () => {
-      mockSendRequest(() =>
-        aGetFileChunksToolResponse({ status: 'present', file_id: 'file-1', chunks: [] }),
-      );
+      mockSendRequest(() => aGetFileChunksToolResponse({ status: 'present', file_id: 'file-1', chunks: [] }));
 
       const result = await client.getFileChunks('/notes/a.md', 'default');
 
@@ -1652,8 +1645,18 @@ describe('BensyneClient (Streamable HTTP)', () => {
           total_chunks: 2,
           source_type: 'vault',
           chunks: [
-            aRawStoredChunk({ chunk_index: 0, content_hash: 'a'.repeat(64), memory_id: 'mem-1', memory_status: 'present' }),
-            aRawStoredChunk({ chunk_index: 1, content_hash: 'b'.repeat(64), memory_id: 'mem-2', memory_status: 'missing' }),
+            aRawStoredChunk({
+              chunk_index: 0,
+              content_hash: 'a'.repeat(64),
+              memory_id: 'mem-1',
+              memory_status: 'present',
+            }),
+            aRawStoredChunk({
+              chunk_index: 1,
+              content_hash: 'b'.repeat(64),
+              memory_id: 'mem-2',
+              memory_status: 'missing',
+            }),
           ],
         }),
       );

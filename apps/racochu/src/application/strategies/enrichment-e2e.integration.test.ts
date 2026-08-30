@@ -15,10 +15,7 @@ import { LlmClientFactory } from '../../application/services/llm-client-factory'
 import { FILE_ROLES } from '../../domain/content-chunk.entity';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
-import {
-  ENRICHMENT_CORRECTIVE_RETRY_INSTRUCTION,
-  MastraChunkingService,
-} from './mastra-chunking.service';
+import { ENRICHMENT_CORRECTIVE_RETRY_INSTRUCTION, MastraChunkingService } from './mastra-chunking.service';
 
 const mockedMDocument = MDocument as jest.Mocked<typeof MDocument>;
 
@@ -255,9 +252,11 @@ Do not include any other text, explanations, or markdown formatting.`,
         extractMetadata: jest
           .fn()
           .mockResolvedValueOnce({
-            getDocs: jest.fn().mockReturnValue([
-              { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
-            ]),
+            getDocs: jest
+              .fn()
+              .mockReturnValue([
+                { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
+              ]),
           })
           .mockResolvedValue({
             getDocs: jest.fn().mockReturnValue([
@@ -274,9 +273,11 @@ Do not include any other text, explanations, or markdown formatting.`,
             ]),
           }),
         chunkMarkdown: jest.fn(),
-        getDocs: jest.fn().mockReturnValue([
-          { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
-        ]),
+        getDocs: jest
+          .fn()
+          .mockReturnValue([
+            { text: 'Machine learning is a subset of artificial intelligence', metadata: {} },
+          ]),
       };
       mockedMDocument.fromMarkdown.mockReturnValue(retryDoc as never);
 
@@ -291,9 +292,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       const chunk = chunks[0];
       expect(chunk.metadata?.mastraDocTitle).toBe('Machine Learning Fundamentals');
       expect(chunk.metadata?.mastraDocKeywords).toBe('machine learning, artificial intelligence');
-      expect(chunk.metadata?.mastraDocSummary).toBe(
-        'A concise summary of machine learning fundamentals.',
-      );
+      expect(chunk.metadata?.mastraDocSummary).toBe('A concise summary of machine learning fundamentals.');
 
       // Bounded retry: exactly one corrective attempt after the resolve-empty first attempt.
       expect(retryDoc.extractMetadata).toHaveBeenCalledTimes(2);

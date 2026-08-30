@@ -1,7 +1,4 @@
-import {
-  classifyContent,
-  DEFAULT_CONTENT_FILTER_OPTIONS,
-} from './content-classifier.service';
+import { classifyContent, DEFAULT_CONTENT_FILTER_OPTIONS } from './content-classifier.service';
 
 // Representative excerpt of the REAL problem file
 // (`/Users/oleksii.honchar/.agent-sessions/26/07/07/260707-1033-fork-upgrade-plan/materials/merge-tree-output.txt`):
@@ -122,10 +119,7 @@ const MARKER_CONTENT = [
 ].join('\n');
 
 // Repetitive token stream: 2 unique tokens out of 1000 → diversity 0.002.
-const LOW_DIVERSITY_CONTENT = Array.from(
-  { length: 500 },
-  () => 'alpha beta',
-).join(' ');
+const LOW_DIVERSITY_CONTENT = Array.from({ length: 500 }, () => 'alpha beta').join(' ');
 
 describe('content-classifier', () => {
   describe('real-world fixture (git merge-tree dump excerpt)', () => {
@@ -163,10 +157,9 @@ describe('content-classifier', () => {
 
     it('does not filter when a long line is below maxLineLength and the ratio is not exceeded', () => {
       // 15_000-char line among 1000 lines: below maxLineLength, ratio 0.001.
-      const content = [
-        'z'.repeat(15_000),
-        ...Array.from({ length: 999 }, (_, i) => `line number ${i}`),
-      ].join('\n');
+      const content = ['z'.repeat(15_000), ...Array.from({ length: 999 }, (_, i) => `line number ${i}`)].join(
+        '\n',
+      );
       const result = classifyContent(content);
       expect(result.filtered).toBe(false);
     });

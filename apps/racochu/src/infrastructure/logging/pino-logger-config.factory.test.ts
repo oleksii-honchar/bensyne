@@ -1,9 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-import {
-  formatLocalIsoTimestamp,
-  pinoLoggerConfigFactory,
-} from './pino-logger-config.factory';
+import { formatLocalIsoTimestamp, pinoLoggerConfigFactory } from './pino-logger-config.factory';
 
 describe('pino-logger-config.factory', () => {
   const configService = {
@@ -43,9 +40,7 @@ describe('pino-logger-config.factory', () => {
       const pinoHttp = params.pinoHttp as { timestamp?: () => string };
       const fragment = pinoHttp.timestamp?.() ?? '';
 
-      expect(fragment).toMatch(
-        /^,"timestamp":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}"$/,
-      );
+      expect(fragment).toMatch(/^,"timestamp":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}"$/);
       expect(fragment).not.toContain('Z');
     });
 
@@ -53,10 +48,10 @@ describe('pino-logger-config.factory', () => {
       const params = pinoLoggerConfigFactory(configService);
       const pinoHttp = params.pinoHttp as unknown as {
         transport?: {
-          targets?: Array<{ target: string; options: { translateTime?: string } }>;
+          targets?: { target: string; options: { translateTime?: string } }[];
         };
       };
-      const consoleTarget = pinoHttp.transport?.targets?.find((t) => t.target === 'pino-pretty');
+      const consoleTarget = pinoHttp.transport?.targets?.find(t => t.target === 'pino-pretty');
 
       expect(consoleTarget?.options.translateTime).toBe('SYS:yyyy-mm-dd HH:MM:ss');
     });

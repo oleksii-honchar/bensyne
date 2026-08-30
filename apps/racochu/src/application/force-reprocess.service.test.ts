@@ -218,12 +218,10 @@ describe('ForceReprocessService', () => {
       });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir
-        .mockResolvedValueOnce([mockDirent('sub', true)])
-        .mockResolvedValueOnce([
-          mockDirent('tool-responses', true), // nested excluded directory
-          mockDirent('kept.md', false), // nested kept file
-        ]);
+      fsMock.readdir.mockResolvedValueOnce([mockDirent('sub', true)]).mockResolvedValueOnce([
+        mockDirent('tool-responses', true), // nested excluded directory
+        mockDirent('kept.md', false), // nested kept file
+      ]);
 
       await service.forceReprocessAll([source]);
 
@@ -242,10 +240,7 @@ describe('ForceReprocessService', () => {
       });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([
-        mockDirent('a.md', false),
-        mockDirent('b.md', false),
-      ]);
+      fsMock.readdir.mockResolvedValue([mockDirent('a.md', false), mockDirent('b.md', false)]);
 
       await service.forceReprocessAll([source]);
 
@@ -651,9 +646,7 @@ describe('ForceReprocessService', () => {
         await service.forceReprocessAll([source]);
 
         const processingLogs = logger.info.mock.calls
-          .map(call => (call[0] as string).includes('Processing file [')
-            ? (call[0] as string)
-            : null)
+          .map(call => ((call[0] as string).includes('Processing file [') ? (call[0] as string) : null))
           .filter((entry): entry is string => entry !== null);
 
         expect(processingLogs).toEqual([

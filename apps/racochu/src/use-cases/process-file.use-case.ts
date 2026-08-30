@@ -152,10 +152,7 @@ export class ProcessFileUseCase extends BaseUseCase<ProcessFileParams, void> {
     // Failure is non-fatal: ingest proceeds and tracker cleanup still runs.
     if (oldMemoryIds.length > 0) {
       try {
-        const forgetResult = await this.bensyneClient.forgetByFile(
-          params.filePath,
-          params.memoryBank,
-        );
+        const forgetResult = await this.bensyneClient.forgetByFile(params.filePath, params.memoryBank);
         if (forgetResult.isKo()) {
           this.logger.warn(
             `forgetByFile failed on change, continuing with ingest: path="${params.filePath}", memoryBank="${params.memoryBank}", error="${forgetResult.getFormattedErrors()}"`,

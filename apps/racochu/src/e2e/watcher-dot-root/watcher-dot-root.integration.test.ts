@@ -83,11 +83,7 @@ function waitForAddEvent(
   return new Promise<string>((resolve, reject) => {
     const timeout = setTimeout(() => {
       watcher.off('add', onAdd);
-      reject(
-        new Error(
-          `Timed out after ${timeoutMs}ms waiting for chokidar 'add' event for ${targetPath}`,
-        ),
-      );
+      reject(new Error(`Timed out after ${timeoutMs}ms waiting for chokidar 'add' event for ${targetPath}`));
     }, timeoutMs);
     const onAdd = (eventPath: string): void => {
       if (eventPath === targetPath) {
@@ -155,25 +151,33 @@ describe('[E2E] Watcher dot-root regression — real chokidar on a dot-named roo
     }
   });
 
-  it('emits an add event for a probe file written inside the dot-named root (regression: root must NOT be excluded)', async () => {
-    // Regression proof: WITHOUT the root guard, chokidar never watches the dot
-    // root and this add event never fires. WITH the guard it arrives within ~5s.
-    const probePath = path.join(dotRoot, 'probe.md');
-    const addPromise = waitForAddEvent(watcher, probePath, ADD_EVENT_TIMEOUT_MS);
-    await fs.writeFile(probePath, 'dot-root probe\n', 'utf-8');
-    const eventPath = await addPromise;
-    expect(eventPath).toBe(probePath);
-  }, ADD_EVENT_TIMEOUT_MS + 15000);
+  it(
+    'emits an add event for a probe file written inside the dot-named root (regression: root must NOT be excluded)',
+    async () => {
+      // Regression proof: WITHOUT the root guard, chokidar never watches the dot
+      // root and this add event never fires. WITH the guard it arrives within ~5s.
+      const probePath = path.join(dotRoot, 'probe.md');
+      const addPromise = waitForAddEvent(watcher, probePath, ADD_EVENT_TIMEOUT_MS);
+      await fs.writeFile(probePath, 'dot-root probe\n', 'utf-8');
+      const eventPath = await addPromise;
+      expect(eventPath).toBe(probePath);
+    },
+    ADD_EVENT_TIMEOUT_MS + 15000,
+  );
 
-  it('does NOT emit an add event for a file written inside an excluded descendant (.git/)', async () => {
-    // The root guard must not break descendant exclusion: `'**/.git/**'` (and the
-    // dot-dir matcher) still excludes everything under the `.git/` directory.
-    await fs.mkdir(path.join(dotRoot, '.git'), { recursive: true });
-    const excludedProbePath = path.join(dotRoot, '.git', 'probe.md');
-    await fs.writeFile(excludedProbePath, 'should not be watched\n', 'utf-8');
+  it(
+    'does NOT emit an add event for a file written inside an excluded descendant (.git/)',
+    async () => {
+      // The root guard must not break descendant exclusion: `'**/.git/**'` (and the
+      // dot-dir matcher) still excludes everything under the `.git/` directory.
+      await fs.mkdir(path.join(dotRoot, '.git'), { recursive: true });
+      const excludedProbePath = path.join(dotRoot, '.git', 'probe.md');
+      await fs.writeFile(excludedProbePath, 'should not be watched\n', 'utf-8');
 
-    const fired = await collectAddEventsForMs(watcher, NEGATIVE_EXCLUSION_WINDOW_MS);
-    const excludedEvents = fired.filter(p => p === excludedProbePath);
-    expect(excludedEvents).toHaveLength(0);
-  }, NEGATIVE_EXCLUSION_WINDOW_MS + 10000);
+      const fired = await collectAddEventsForMs(watcher, NEGATIVE_EXCLUSION_WINDOW_MS);
+      const excludedEvents = fired.filter(p => p === excludedProbePath);
+      expect(excludedEvents).toHaveLength(0);
+    },
+    NEGATIVE_EXCLUSION_WINDOW_MS + 10000,
+  );
 });

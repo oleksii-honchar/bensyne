@@ -1,9 +1,9 @@
 import '@/utils/mastra-rag.test-utils';
 
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
 import { aBodyChunk } from '@/domain/content-chunk.entity.test-utils';
 import { FileTracker } from '@/domain/file-tracker.aggregate';
 import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { aLogger } from '@/infrastructure/logging/logger.test-utils';
 import { FileTrackerRepository } from '@/infrastructure/repositories/file-tracker.repository';
@@ -504,9 +504,7 @@ describe('RecoverService', () => {
     it('skips a filtered file before the decision table — getFileChunks never consulted even when it would return FILE_NOT_FOUND', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
-      deps.bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }),
-      );
+      deps.bensyneClient.getFileChunks.mockResolvedValue(Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }));
 
       await service.recoverAll([aSource()]);
 
@@ -517,7 +515,9 @@ describe('RecoverService', () => {
     });
 
     it('skips a filtered file even when the file hash changed — no change re-ingest, no repair', async () => {
-      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker({ fileHash: 'old-hash' })]);
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([
+        aTracker({ fileHash: 'old-hash' }),
+      ]);
       fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
       deps.fileHasherService.compute.mockResolvedValue('current-hash');
 
@@ -532,9 +532,7 @@ describe('RecoverService', () => {
     it('proceeds with the decision table when contentFilter.enabled is false — filtered-looking content is re-ingested', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       fsMock.readFile.mockResolvedValue(FILTERED_DUMP_CONTENT);
-      deps.bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }),
-      );
+      deps.bensyneClient.getFileChunks.mockResolvedValue(Result.ok({ status: 'FILE_NOT_FOUND', chunks: [] }));
 
       await service.recoverAll([
         aSource({ contentFilter: { ...DEFAULT_CONTENT_FILTER_OPTIONS, enabled: false } }),

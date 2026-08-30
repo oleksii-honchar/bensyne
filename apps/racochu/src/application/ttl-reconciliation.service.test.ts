@@ -3,12 +3,12 @@ import { aConfigService, aSourceConfig } from '../infrastructure/config/configur
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { aFileMemoryTracker } from '../infrastructure/repositories/file-memory-tracker.repository.test-utils';
-import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
-import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
+import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
 import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { aFileProcessingQueueService } from '../infrastructure/services/file-processing-queue.test-utils';
+import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
 import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
+import { aFileProcessingQueueService } from '../infrastructure/services/file-processing-queue.test-utils';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
 import { TtlReconciliationService } from './ttl-reconciliation.service';

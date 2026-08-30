@@ -9,11 +9,11 @@ import '@/utils/mastra-rag.test-utils';
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
 import { cleanupTempDir, createTempDir, FIXTURES_DIR } from '../../e2e/e2e-utils';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { SessionMetadataService } from '../../infrastructure/services/session-metadata.service';

@@ -1,6 +1,6 @@
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { ChunkingConfig, Configuration, McpConfig, WatchSourceConfig } from './config-schemas';
 import { ConfigurationService } from './configuration.service';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
 import { SOURCE_TYPES } from './source-types';
 
 const DEFAULT_CHUNKING: ChunkingConfig = {

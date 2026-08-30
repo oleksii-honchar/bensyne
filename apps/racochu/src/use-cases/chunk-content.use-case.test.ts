@@ -1,8 +1,8 @@
 import '@/utils/mastra-rag.test-utils';
 
 import * as crypto from 'crypto';
-import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
+import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from '../application/services/importance-scoring.service';
 import { TagExtractionService } from '../application/services/tag-extraction.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';

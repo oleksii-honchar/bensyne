@@ -117,7 +117,12 @@ describe('buildPersonaDecisionEdges (frontmatter edges[] → decision_next)', ()
       path.join(TREE_ROOT, '00-entry.md'),
     );
 
-    const edges = buildPersonaDecisionEdges(meta, TREE_ROOT, path.join(TREE_ROOT, '00-entry.md'), EXAMPLE_INDEX);
+    const edges = buildPersonaDecisionEdges(
+      meta,
+      TREE_ROOT,
+      path.join(TREE_ROOT, '00-entry.md'),
+      EXAMPLE_INDEX,
+    );
 
     expect(edges).toHaveLength(2);
     expect(edges).toEqual([
@@ -149,7 +154,12 @@ describe('buildPersonaDecisionEdges (frontmatter edges[] → decision_next)', ()
       path.join(TREE_ROOT, '00-entry.md'),
     );
 
-    const edges = buildPersonaDecisionEdges(meta, TREE_ROOT, path.join(TREE_ROOT, '00-entry.md'), EXAMPLE_INDEX);
+    const edges = buildPersonaDecisionEdges(
+      meta,
+      TREE_ROOT,
+      path.join(TREE_ROOT, '00-entry.md'),
+      EXAMPLE_INDEX,
+    );
 
     expect(edges).toHaveLength(1);
     expect(edges[0].target_path).toBe(path.join(TREE_ROOT, '10-understand/10-assess-intent.md'));
@@ -162,7 +172,12 @@ describe('buildPersonaDecisionEdges (frontmatter edges[] → decision_next)', ()
       path.join(TREE_ROOT, '00-entry.md'),
     );
 
-    const edges = buildPersonaDecisionEdges(meta, TREE_ROOT, path.join(TREE_ROOT, '00-entry.md'), EXAMPLE_INDEX);
+    const edges = buildPersonaDecisionEdges(
+      meta,
+      TREE_ROOT,
+      path.join(TREE_ROOT, '00-entry.md'),
+      EXAMPLE_INDEX,
+    );
 
     expect(edges).toHaveLength(0);
   });
@@ -244,7 +259,11 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
   it('returns exactly one chunk: content = title + body, tags, node metadata', async () => {
     const strategy = buildStrategy();
-    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const sourceConfig = aSourceConfig({
+      id: 'persona-architect',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
 
     const result = await strategy.chunkFile(
       fsSync.readFileSync(path.join(tmpRoot, '00-entry.md'), 'utf-8'),
@@ -266,7 +285,11 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
   it('stamps the full metadata set (identity, traversal, temporality)', async () => {
     const strategy = buildStrategy();
-    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const sourceConfig = aSourceConfig({
+      id: 'persona-architect',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
     const content = fsSync.readFileSync(path.join(tmpRoot, '00-entry.md'), 'utf-8');
 
     const result = await strategy.chunkFile(
@@ -291,7 +314,11 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
   it('attaches decision_next + folder_hierarchy edges to the hub node chunk', async () => {
     const strategy = buildStrategy();
-    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const sourceConfig = aSourceConfig({
+      id: 'persona-architect',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
     const content = fsSync.readFileSync(path.join(tmpRoot, '00-entry.md'), 'utf-8');
 
     const result = await strategy.chunkFile(
@@ -326,7 +353,11 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
   it('a child node chunk carries no outgoing folder_hierarchy edges (it is not a hub)', async () => {
     const strategy = buildStrategy();
-    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const sourceConfig = aSourceConfig({
+      id: 'persona-architect',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
     const childPath = path.join(tmpRoot, '10-understand/10-assess-intent.md');
     const content = fsSync.readFileSync(childPath, 'utf-8');
 
@@ -338,7 +369,11 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
 
   it('propagates a Ko result from ContentChunk.of as a Ko chunkFile result (typed Result<ContentChunk[]>, no throw)', async () => {
     const strategy = buildStrategy();
-    const sourceConfig = aSourceConfig({ id: 'persona-architect', path: tmpRoot, sourceType: 'agent-persona' });
+    const sourceConfig = aSourceConfig({
+      id: 'persona-architect',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
     const content = fsSync.readFileSync(path.join(tmpRoot, '00-entry.md'), 'utf-8');
     const koError = new ErrorWithDetails('Invalid chunk data: forced failure', 'InvalidChunk');
 

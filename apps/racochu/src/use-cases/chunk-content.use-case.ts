@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { z } from 'zod';
-import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
+import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
 import { ContentChunk } from '../domain/content-chunk.entity';
@@ -103,19 +103,10 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     // chunkFile — the 4th slot stays `effectiveSourceConfig` (collision warning).
     const skipEnrichment = params.skipEnrichment === true;
     const chunksResult = skipEnrichment
-      ? await chunker.chunkFile(
-          params.content,
-          params.filePath,
-          params.sourceId,
-          effectiveSourceConfig,
-          { skipEnrichment: true },
-        )
-      : await chunker.chunkFile(
-          params.content,
-          params.filePath,
-          params.sourceId,
-          effectiveSourceConfig,
-        );
+      ? await chunker.chunkFile(params.content, params.filePath, params.sourceId, effectiveSourceConfig, {
+          skipEnrichment: true,
+        })
+      : await chunker.chunkFile(params.content, params.filePath, params.sourceId, effectiveSourceConfig);
 
     if (chunksResult.isKo()) {
       this.logger.error(

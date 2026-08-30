@@ -7,7 +7,6 @@ import { validateAppEnv } from './app.env.validation';
 import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/force-reprocess.service';
 import { RecoverService } from './application/recover.service';
-import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
 import { TagExtractionService } from './application/services/tag-extraction.service';
@@ -17,6 +16,7 @@ import { MastraChunkingService } from './application/strategies/mastra-chunking.
 import { ObsidianChunkingStrategy } from './application/strategies/obsidian-chunking.strategy';
 import { StrategyRouter } from './application/strategies/strategy-router.service';
 import { VaultChunkingStrategy } from './application/strategies/vault-chunking.strategy';
+import { TtlReconciliationService } from './application/ttl-reconciliation.service';
 
 import { ConfigurationModule } from './infrastructure/config/configuration.module';
 import { LoggerModule } from './infrastructure/logging/logger.module';
@@ -31,10 +31,10 @@ import { FileWatcherService } from './infrastructure/services/file-watcher.servi
 import { GracefulShutdownService } from './infrastructure/services/graceful-shutdown.service';
 import { HardwareIdDetectorService } from './infrastructure/services/hardware-id-detector.service';
 import { SessionMetadataService } from './infrastructure/services/session-metadata.service';
-import { UserSourceBootstrapService } from './user-source.bootstrap.service';
 import { ChunkContentUseCase } from './use-cases/chunk-content.use-case';
 import { IngestChunkUseCase } from './use-cases/ingest-chunk.use-case';
 import { ProcessFileUseCase } from './use-cases/process-file.use-case';
+import { UserSourceBootstrapService } from './user-source.bootstrap.service';
 
 @Module({
   imports: [

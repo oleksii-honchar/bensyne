@@ -19,9 +19,7 @@ export interface RawStoredChunkResponse {
 /**
  * Builder for a raw snake_case stored-chunk entry (getFileChunks response).
  */
-export function aRawStoredChunk(
-  overrides: Partial<RawStoredChunkResponse> = {},
-): RawStoredChunkResponse {
+export function aRawStoredChunk(overrides: Partial<RawStoredChunkResponse> = {}): RawStoredChunkResponse {
   return {
     chunk_index: 0,
     content_hash: 'a'.repeat(64),
