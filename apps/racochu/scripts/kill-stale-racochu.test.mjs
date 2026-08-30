@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, jest } from '@jest/globals';
 
 /**
@@ -49,6 +53,17 @@ describe('isRacochuRuntime', () => {
     expect(mod.isRacochuRuntime('node -r tsconfig-paths/register /Users/x/apps/racochu/src/main.ts')).toBe(true);
     // src/main.ts without a register shim is NOT a racochu runtime
     expect(mod.isRacochuRuntime('node src/main.ts')).toBe(false);
+  });
+
+  it('matches Windows backslash command lines after separator normalization', () => {
+    expect(mod.isRacochuRuntime('"C:\\Program Files\\nodejs\\node.exe" dist\\src\\main.js --resume')).toBe(true);
+    expect(mod.isRacochuRuntime('node C:\\apps\\racochu\\dist\\src\\main.js --resume')).toBe(true);
+    expect(
+      mod.isRacochuRuntime('node -r ts-node/register -r tsconfig-paths/register src\\main.ts'),
+    ).toBe(true);
+    // source map exclusion still applies with backslashes
+    expect(mod.isRacochuRuntime('node dist\\src\\main.js.map')).toBe(false);
+    expect(mod.isRacochuRuntime('node dist\\src\\worker.js')).toBe(false);
   });
 
   it('rejects unrelated node processes and non-racochu entrypoints', () => {
@@ -177,5 +192,41 @@ describe('killStalePids', () => {
 
     expect(killFn).not.toHaveBeenCalled();
     expect(code).toBe(0);
+  });
+});
+
+describe('removeStaleCurrentLogLink', () => {
+  it('returns false when the link does not exist (no side effects)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'racochu-logs-'));
+    try {
+      expect(mod.removeStaleCurrentLogLink(join(dir, 'current.log'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes an existing current.log file in any state and returns true', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'racochu-logs-'));
+    const linkPath = join(dir, 'current.log');
+    try {
+      writeFileSync(linkPath, '');
+      expect(mod.removeStaleCurrentLogLink(linkPath)).toBe(true);
+      expect(mod.removeStaleCurrentLogLink(linkPath)).toBe(false); // gone now
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns false (never throws) when the path cannot be removed', () => {
+    // A directory in place of the link: lstat succeeds, rmSync without
+    // recursive fails — must be swallowed.
+    const dir = mkdtempSync(join(tmpdir(), 'racochu-logs-'));
+    const linkPath = join(dir, 'current.log');
+    try {
+      mkdirSync(linkPath);
+      expect(mod.removeStaleCurrentLogLink(linkPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

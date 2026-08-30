@@ -8,20 +8,50 @@
  * (e.g. an abandoned --resume) can never linger and interfere with a new one.
  *
  * Behavior:
- *  - Parses `ps -axo pid=,ppid=,command=`.
+ *  - Snapshots processes as `pid ppid command` lines. POSIX/Git-Bash uses
+ *    `ps -axo pid=,ppid=,command=`; Windows falls back to PowerShell
+ *    `Get-CimInstance Win32_Process` (Git Bash `ps` rejects `-axo` and never
+ *    sees native node processes, which would silently disable the killer).
  *  - Matches racochu runtime entrypoints: `dist/src/main.js`, or `src/main.ts`
  *    launched with a ts-node/tsconfig-paths register shim (relative OR absolute
- *    paths).
+ *    paths, forward or backslashes).
  *  - Protects: the killer's own PID, its full ancestor chain (npm/nx/sh/nodemon),
  *    and PID 1. Never touches unrelated node processes.
  *  - SIGTERM each stale PID, wait up to ~8s, then SIGKILL survivors.
+ *  - Removes the stale pino-roll `current.log` link afterwards so the new
+ *    instance's logging worker never crashes with `EEXIST` on symlink creation.
  *  - ALWAYS exits 0 so `&&` chaining never blocks startup.
  */
 import { spawnSync } from 'node:child_process';
+import { lstatSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 export const PS_ARGS = ['-axo', 'pid=,ppid=,command='];
+
+// Windows fallback: enumerate every process (including native node.exe) and
+// emit rows in the same `pid ppid command` shape `parsePsOutput` expects.
+export const WIN32_SNAPSHOT_ARGS = [
+  '-NoProfile',
+  '-Command',
+  'Get-CimInstance Win32_Process | ForEach-Object { "{0} {1} {2}" -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }',
+];
+
+// pino-roll hardcodes a `current.log` symlink next to the active log file and
+// recreates it on every start. Its check-then-create is not atomic and only
+// unlinks pre-existing *symlinks*, so an unexpected state (regular file left
+// behind, link retargeted by a rotation, racing writer) crashes the logging
+// worker with EEXIST. Deleting it before startup gives a clean slate.
+export const CURRENT_LOG_LINK = join(
+  homedir(),
+  '.local',
+  'share',
+  'racochu',
+  'logs',
+  'current.log',
+);
 
 // Entrypoint match rules. Trailing lookahead ensures `dist/src/main.js.map`
 // (a source map, not the runtime) is never treated as the compiled entrypoint.
@@ -44,9 +74,45 @@ export function parsePsOutput(text) {
 
 /** True when a process command looks like a racochu runtime entrypoint. */
 export function isRacochuRuntime(command) {
-  const cmd = String(command ?? '');
+  // Normalize Windows backslash path separators so `dist\src\main.js` matches.
+  const cmd = String(command ?? '').replace(/\\/g, '/');
   if (COMPILED_ENTRYPOINT_RE.test(cmd)) return true;
   return DEV_ENTRYPOINT_RE.test(cmd) && REGISTER_SHIM_RE.test(cmd);
+}
+
+/**
+ * Snapshot all processes as `pid ppid command` text. Returns '' when the
+ * platform snapshot tool is unavailable or fails (never blocks startup).
+ */
+export function snapshotProcesses(spawnFn = spawnSync) {
+  if (process.platform === 'win32') {
+    const result = spawnFn('powershell', WIN32_SNAPSHOT_ARGS, {
+      encoding: 'utf8',
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    return result.status === 0 ? result.stdout : '';
+  }
+  const result = spawnFn('ps', PS_ARGS, { encoding: 'utf8' });
+  return result.status === 0 ? result.stdout : '';
+}
+
+/**
+ * Remove the pino-roll `current.log` link if it exists (any state). pino-roll
+ * recreates it on startup. Never throws.
+ */
+export function removeStaleCurrentLogLink(linkPath = CURRENT_LOG_LINK) {
+  try {
+    lstatSync(linkPath);
+  } catch {
+    return false; // absent or inaccessible — nothing to clean
+  }
+  try {
+    rmSync(linkPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -160,9 +226,13 @@ export async function run({ ownPid, psText, ...killDeps }) {
 
 /** CLI entrypoint: snapshot ps, kill stale racochu processes, always exit 0. */
 export async function main() {
-  const psResult = spawnSync('ps', PS_ARGS, { encoding: 'utf8' });
-  const psText = psResult.status === 0 ? psResult.stdout : '';
+  const psText = snapshotProcesses();
   const code = await run({ ownPid: process.pid, psText });
+  if (removeStaleCurrentLogLink()) {
+    console.error(
+      '[kill-stale-racochu] removed stale current.log link (pino-roll recreates it on startup)',
+    );
+  }
   process.exitCode = code;
 }
 

@@ -64,7 +64,8 @@ export function pinoLoggerConfigFactory(configService: ConfigService): Params {
   } = {
     level: isLocalLogVerbose ? 'debug' : logLevel,
     messageKey: 'msg',
-    timestamp: () => `,"timestamp":"${formatLocalIsoTimestamp(new Date())}"`,
+    // Key MUST be `time`: pino-pretty's translateTime reads record.time.
+    timestamp: () => `,"time":"${formatLocalIsoTimestamp(new Date())}"`,
     base: {
       environment,
       service: serviceName,

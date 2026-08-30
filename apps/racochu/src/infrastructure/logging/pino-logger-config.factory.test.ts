@@ -40,7 +40,7 @@ describe('pino-logger-config.factory', () => {
       const pinoHttp = params.pinoHttp as { timestamp?: () => string };
       const fragment = pinoHttp.timestamp?.() ?? '';
 
-      expect(fragment).toMatch(/^,"timestamp":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}"$/);
+      expect(fragment).toMatch(/^,"time":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}"$/);
       expect(fragment).not.toContain('Z');
     });
 
