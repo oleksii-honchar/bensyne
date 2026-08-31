@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-31T12:40:34Z"
+updatedAt: "2026-08-31T14:57:53Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -20,6 +20,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0091-file-tools-file-id-contract]] — File Tools Take file_id, Never memory_id (DEC-0092)
 - [[0093-load-first-rule-system-prompt]] — Load-First Rule Enforced at the System-Prompt Level (DEC-0094)
 - [[0097-bank-discovery-skill-nudge]] — Bank Discovery Skill Nudge — Centralised Edit + Inline Per-Agent Starter Keywords
+- [[0102-path-handle-portable-relative]] — Portable Relative Path as LLM-Facing Persona Node Handle (DEC-0103)
 
 ### bensyne-mcp
 
@@ -49,6 +50,10 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0098-forgetfile-file-not-found-json-status]] — forgetFile Returns FILE_NOT_FOUND as JSON Status, Not a Raised Error (DEC-0099)
 - [[0100-mcp-tool-descriptions-resolved-user-banks]] — MCP Tool Descriptions Teach the Resolved User-Suffixed Banks (DEC-0101)
 - [[0101-search-memory-bank-user-suffixed-inclusion]] — searchMemoryBank Always Surfaces User-Suffixed Banks (DEC-0102)
+- [[0103-file-ref-resolution-chain]] — file_id-First Resolution Chain with path_handle Fallback (DEC-0104)
+- [[0104-path-handle-in-tool-outputs]] — path_handle Exposed in File-Tool Outputs, Always and Top-Level (DEC-0105)
+- [[0105-file-not-found-conflation-candidates]] — Chimera-ID Candidates in FILE_NOT_FOUND Details (DEC-0106)
+- [[0106-getfilechunks-observability-only]] — getFileChunks: Instrument Missing Rows, Never Change Behavior (DEC-0107)
 
 ### racochu
 

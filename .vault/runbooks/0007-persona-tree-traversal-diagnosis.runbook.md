@@ -3,11 +3,14 @@ type: runbook
 system: shared
 title: "Diagnose Persona Decision-Tree Traversal Failures"
 createdAt: "2026-08-28T10:58:47Z"
-updatedAt: "2026-08-28T10:58:47Z"
+updatedAt: "2026-08-31T14:57:53Z"
 tags: [operations, persona, troubleshooting, racochu, bensyne-mcp]
 supersedes: []
 superseded_by: []
 see_also:
+  - decisions/0103-file-ref-resolution-chain.decision.md
+  - decisions/0105-file-not-found-conflation-candidates.decision.md
+  - memories/0027-llm-chimeric-file-id-conflation.memory.md
   - decisions/0089-persona-tree-walk-tilde-expansion.decision.md
   - decisions/0090-persona-entry-node-tool.decision.md
   - decisions/0091-file-tools-file-id-contract.decision.md
@@ -50,16 +53,24 @@ root-cause checks, based on the 2026-08-28 investigation
 
 ## Symptom 2 — `FILE_NOT_FOUND` from `expandFileRelations` / `fetchFile`
 
-**Likely cause:** a **memory id** was passed where a **file id** is required (DEC-0092).
+**Likely causes (in order):**
 
-1. Check the id shape: memory ids are 16-hex (e.g. `0f2f59982885ec29`); file ids are
-   `file_<32hex>`.
-2. Get the correct file id from: `getPersonaEntryNode` (returns `file_id`), a recall
-   result's `file_enrichment.file.id`, or `searchFiles` result `file.id`.
-3. Verify the memory exists in mnemosyne.db (it does — only the id type is wrong):
-   ```bash
-   sqlite3 <bank>/mnemosyne.db "SELECT content FROM memories WHERE id='<id>';"
-   ```
+1. A **memory id** passed where a **file id** is required (DEC-0092).
+   - Check the id shape: memory ids are 16-hex (e.g. `0f2f59982885ec29`); file ids are
+     `file_<32hex>`.
+   - Get the correct file id from: `getPersonaEntryNode` (returns `file_id`), a recall
+     result's `file_enrichment.file.id`, or `searchFiles` result `file.id`.
+   - Verify the memory exists in mnemosyne.db (it does — only the id type is wrong):
+     ```bash
+     sqlite3 <bank>/mnemosyne.db "SELECT content FROM memories WHERE id='<id>';"
+     ```
+2. A **chimeric file_id** — the LLM conflated two real ids from its context
+   (DEC-0103 / memory 0027). The failed id is a well-formed `file_<32hex>` but
+   exists nowhere; `FILE_NOT_FOUND` details now carry `candidates` (files
+   sharing the id's last 16 hex chars) plus a conflation hint.
+   - **Recovery:** retry with the `path_handle` from the candidates, or from
+     `getPersonaEntryNode`/`expandFileRelations` output — never re-type a hex id
+     from memory.
 
 ## Symptom 3 — `recallMemory` cannot find the entry node / returns empty
 
@@ -92,6 +103,8 @@ root-cause checks, based on the 2026-08-28 investigation
 - `getPersonaEntryNode(persona_<agent>)` returns a node with a valid `file_id`.
 - `expandFileRelations(file_id, persona_<agent>, ["decision_next"])` returns edges with
   `when` descriptions; traversal of 2+ nodes succeeds with zero node-file fs reads.
+- Persona navigation round-trips using `path_handle` (entry → edge → node) with
+  zero `FILE_NOT_FOUND`.
 
 ## Rollback
 

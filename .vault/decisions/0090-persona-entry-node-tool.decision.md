@@ -5,11 +5,12 @@ system: bensyne-mcp
 title: "Dedicated getPersonaEntryNode MCP Tool"
 status: accepted
 createdAt: "2026-08-28T10:58:47Z"
-updatedAt: "2026-08-28T10:58:47Z"
+updatedAt: "2026-08-31T14:57:53Z"
 tags: [bensyne-mcp, persona, traversal, mcp-tool, recall]
 supersedes: []
 superseded_by: []
 see_also:
+  - decisions/0104-path-handle-in-tool-outputs.decision.md
   - decisions/0091-file-tools-file-id-contract.decision.md
   - decisions/0089-persona-tree-walk-tilde-expansion.decision.md
   - runbooks/0007-persona-tree-traversal-diagnosis.runbook.md
@@ -31,8 +32,9 @@ memory. A direct library test confirmed: `recall('entry node')` = 0 results,
 Add a dedicated MCP tool `getPersonaEntryNode(memory_bank)` that returns the node with
 `persona.entry: "true"` directly — no semantic search.
 
-- Response contract (6 keys): `{memory_id, file_id, title, text, metadata, tags}`.
+- Response contract (**8 keys**, extended 2026-08-31): `{memory_id, file_id, path, path_handle, title, text, metadata, tags}`.
 - `file_id` is the id for `expandFileRelations` (per DEC-0092).
+- Navigation guidance (skills) now prefers the returned `path_handle` for persona-node references (DEC-0105).
 - No entry node → `Result.ko` `ENTRY_NODE_NOT_FOUND`; missing/empty bank →
   `MEMORY_BANK_REQUIRED`.
 - **Final implementation:** the use case reads the entry flag from

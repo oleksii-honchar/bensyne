@@ -2,12 +2,12 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-28T17:23:01Z"
+updatedAt: "2026-08-31T14:57:53Z"
 ---
 
 # Memories
 
-Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0026). Grouped by `system` frontmatter.
+Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0027). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -16,6 +16,7 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0026). 
 - [[0021-bensyne-forgetfile-tombstone]] — Bensyne forgetFile Leaves a DELETED Tombstone — Not a Hard Row Delete
 - [[0024-mcp-tool-description-is-canonical-teaching-surface]] — MCP Tool Description Is the Canonical Teaching Surface
 - [[0026-forgetfile-file-not-found-noop]] — forgetFile FILE_NOT_FOUND Is an Idempotent No-Op — Server Returns JSON Status
+- [[0027-llm-chimeric-file-id-conflation]] — LLM Chimeric file_id Conflation Causes FILE_NOT_FOUND
 
 ### bensyne-mcp
 
