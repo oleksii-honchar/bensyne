@@ -8,6 +8,11 @@ Covers (Task 1 / spec §4.5):
 - pure read-only: no mnemosyne save/embed, no file-layer writes
 - snake_case wire contract
 - MCP registration with snake_case params file_path + memory_bank
+Covers (T6 / spec §8, D-6):
+- missing file row -> WARNING log "getFileChunks: file row not found" carrying
+  memory_bank / file_path / derived_file_id, with the FILE_NOT_FOUND response
+  contract byte-identical (machine contract for racochu recover)
+- present file row -> no "file row not found" WARNING (regression)
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from structlog.testing import capture_logs
 
 from src.application.services.file_service import derive_file_id
 from src.domain.exceptions import ValidationError
@@ -186,6 +192,81 @@ class TestGetFileChunksFileNotFound:
 
         with pytest.raises(ValidationError):
             await handle_get_file_chunks(router, {"memory_bank": BANK}, container=container)
+
+
+# ---------------------------------------------------------------------------
+# Handler — D-6 instrumentation: WARNING on missing row (behavior-neutral)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFileChunksWarningLog:
+    async def test_missing_row_emits_warning_with_structured_fields(
+        self,
+        handler_ctx,
+        router,
+        container,
+        file_repository: MagicMock,
+        chunk_repository: MagicMock,
+        mnemosyne_instance: MagicMock,
+    ) -> None:
+        """Missing file row -> WARNING "getFileChunks: file row not found"
+        carrying memory_bank, file_path, derived_file_id (spec §8, D-6)."""
+        file_repository.get_file_by_id.return_value = Result.ok(None)
+
+        with capture_logs() as logs:
+            await handler_ctx({"file_path": PATH, "memory_bank": BANK})
+
+        expected_file_id = derive_file_id(BANK, PATH)
+        matches = [e for e in logs if "getFileChunks: file row not found" in e.get("event", "")]
+        assert len(matches) == 1
+        entry = matches[0]
+        assert "getFileChunks: file row not found" in entry["event"]
+        assert entry["memory_bank"] == BANK
+        assert entry["file_path"] == PATH
+        assert entry["derived_file_id"] == expected_file_id
+
+    async def test_missing_row_response_contract_unchanged(
+        self,
+        handler_ctx,
+        router,
+        container,
+        file_repository: MagicMock,
+        chunk_repository: MagicMock,
+        mnemosyne_instance: MagicMock,
+    ) -> None:
+        """The missing-row response stays exactly {status, file_id, chunks}
+        — no extra keys (DEC-0080 machine contract for racochu recover)."""
+        file_repository.get_file_by_id.return_value = Result.ok(None)
+
+        with capture_logs() as logs:
+            result = await handler_ctx({"file_path": PATH, "memory_bank": BANK})
+
+        expected_file_id = derive_file_id(BANK, PATH)
+        assert result == {"status": "FILE_NOT_FOUND", "file_id": expected_file_id, "chunks": []}
+        assert set(result.keys()) == {"status", "file_id", "chunks"}
+
+    async def test_present_row_emits_no_missing_row_warning(
+        self,
+        handler_ctx,
+        router,
+        container,
+        file_repository: MagicMock,
+        chunk_repository: MagicMock,
+        mnemosyne_instance: MagicMock,
+    ) -> None:
+        """Present file row -> no "file row not found" WARNING; response unchanged."""
+        file_id = derive_file_id(BANK, PATH)
+        file = _a_file(id=file_id, total_chunks=0)
+        file_repository.get_file_by_id.return_value = Result.ok(file)
+        chunk_repository.get_chunks_by_file_id.return_value = Result.ok([])
+
+        with capture_logs() as logs:
+            result = await handler_ctx({"file_path": PATH, "memory_bank": BANK})
+
+        assert not any("file row not found" in e.get("event", "") for e in logs)
+        assert result["status"] == "present"
+        assert result["file_id"] == file_id
+        assert result["chunks"] == []
 
 
 # ---------------------------------------------------------------------------

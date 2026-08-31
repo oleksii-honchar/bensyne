@@ -397,9 +397,10 @@ async def handle_expand_file_relations(
     """
     memory_bank = require_memory_bank(arguments)
     file_id = arguments.get("file_id")
+    path_handle = arguments.get("path_handle")
 
-    if not file_id:
-        raise ValidationError("file_id is required")
+    if not file_id and not path_handle:
+        raise ValidationError("file_id or path_handle is required")
 
     # Get MnemosyneClient from router
     instance = await router.get_instance(memory_bank)
@@ -503,6 +504,12 @@ async def handle_get_file_chunks(
     file = file_result.value
 
     if file is None:
+        logger.warning(
+            "getFileChunks: file row not found",
+            memory_bank=memory_bank,
+            file_path=file_path,
+            derived_file_id=file_id,
+        )
         return {"status": "FILE_NOT_FOUND", "file_id": file_id, "chunks": []}
 
     chunks_result = chunk_repository.get_chunks_by_file_id(file_id)

@@ -27,6 +27,7 @@ from typing import List, Optional
 
 import pytest
 
+from src.application.services.file_service import derive_path_handle
 from src.application.use_cases.get_persona_entry_node_use_case import (
     GetPersonaEntryNodeUseCase,
 )
@@ -184,7 +185,7 @@ class TestEntryNodeFound:
         assert value["text"] == "Start read frame"
 
     def test_returns_full_node_contract_shape(self) -> None:
-        """The response contract is exactly the six documented keys."""
+        """The response contract is exactly the eight documented keys (T5: 6→8)."""
         files = [_file("file_entry_1", _entry_metadata())]
         uc = _use_case(
             files,
@@ -202,7 +203,29 @@ class TestEntryNodeFound:
             "text",
             "metadata",
             "tags",
+            "path",
+            "path_handle",
         }
+
+    def test_preexisting_six_keys_unchanged(self) -> None:
+        """Regression: the original six keys keep their names and values (T5)."""
+        files = [_file("file_entry_1", _entry_metadata(), path="/x/entry.md")]
+        uc = _use_case(
+            files,
+            {"file_entry_1": [_file_chunk("file_entry_1", "mem_entry_1")]},
+            {"mem_entry_1": {"id": "mem_entry_1", "content": "Start read frame"}},
+        )
+
+        value = _execute(uc).value
+
+        # Original six keys — names and values preserved.
+        assert value["file_id"] == "file_entry_1"
+        assert value["memory_id"] == "mem_entry_1"
+        assert value["title"] == "Entry Node"
+        assert value["text"] == "Start read frame"
+        assert value["metadata"]["persona.node_id"] == "00-entry"
+        assert value["metadata"]["persona.entry"] == "true"
+        assert value["tags"] == ["persona-node", "00-entry"]
 
     def test_metadata_is_returned_as_dict(self) -> None:
         """The entry file's metadata is returned as a dict (persona keys intact)."""
@@ -264,6 +287,83 @@ class TestFileIdRobustness:
 
         assert value["file_id"] == "file_rc4"
         assert value["file_id"] != value["memory_id"]
+
+
+# ---------------------------------------------------------------------------
+# path + path_handle keys (T5: additive output, 6 → 8 keys)
+# ---------------------------------------------------------------------------
+
+
+class TestPathAndPathHandle:
+    def test_response_has_eight_keys_including_path_and_path_handle(self) -> None:
+        """T5: the response contains 8 keys; the 2 new ones are path + path_handle."""
+        files = [_file("file_entry_1", _entry_metadata(), path="/x/entry.md")]
+        uc = _use_case(
+            files,
+            {"file_entry_1": [_file_chunk("file_entry_1", "mem_entry_1")]},
+            {"mem_entry_1": {"id": "mem_entry_1", "content": "x"}},
+        )
+
+        value = _execute(uc).value
+
+        assert len(value) == 8
+        assert "path" in value
+        assert "path_handle" in value
+
+    def test_path_equals_entry_file_stored_path(self) -> None:
+        """T5: path is the entry file's stored absolute path."""
+        stored_path = "/Users/x/agent-rules-n-skills/agent-personas/researcher/00-entry.md"
+        files = [_file("file_entry_1", _entry_metadata(), path=stored_path)]
+        uc = _use_case(
+            files,
+            {"file_entry_1": [_file_chunk("file_entry_1", "mem_entry_1")]},
+            {"mem_entry_1": {"id": "mem_entry_1", "content": "x"}},
+        )
+
+        value = _execute(uc).value
+
+        assert value["path"] == stored_path
+
+    def test_path_handle_returns_metadata_handle_for_persona_file(self) -> None:
+        """T5: for a persona file with metadata.path_handle, that handle is returned."""
+        metadata = {
+            **_entry_metadata(),
+            "path_handle": "researcher/phase1_framing/130-proceed-on-waive.md",
+        }
+        files = [_file("file_entry_1", metadata, path="/ignored/marker/path.md")]
+        uc = _use_case(
+            files,
+            {"file_entry_1": [_file_chunk("file_entry_1", "mem_entry_1")]},
+            {"mem_entry_1": {"id": "mem_entry_1", "content": "x"}},
+        )
+
+        value = _execute(uc).value
+
+        # Matches what derive_path_handle returns for the entry file.
+        assert value["path_handle"] == "researcher/phase1_framing/130-proceed-on-waive.md"
+        assert value["path_handle"] == derive_path_handle(files[0])
+
+    def test_path_handle_none_when_not_derivable(self) -> None:
+        """T5: no path_handle in metadata, no /agent-personas/ marker → None, no crash."""
+        # Path deliberately has NO /agent-personas/ marker and metadata has no path_handle.
+        files = [
+            _file(
+                "file_entry_1",
+                _entry_metadata(),
+                path="/Users/x/some/other/dir/00-entry.md",
+            )
+        ]
+        uc = _use_case(
+            files,
+            {"file_entry_1": [_file_chunk("file_entry_1", "mem_entry_1")]},
+            {"mem_entry_1": {"id": "mem_entry_1", "content": "x"}},
+        )
+
+        result = _execute(uc)
+
+        assert result.is_ok, f"use case returned ko: {result.errors}"
+        assert result.value["path_handle"] is None
+        assert result.value["path_handle"] == derive_path_handle(files[0])
 
 
 # ---------------------------------------------------------------------------

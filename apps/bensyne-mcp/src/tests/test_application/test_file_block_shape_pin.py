@@ -230,9 +230,8 @@ def _enrichment_block(file: File) -> dict:
 
 def _expand_source_block(file: File) -> dict:
     """expandFileRelations response.source_file (no relations)."""
-    aggregate = FileMetadata.of(file).value
     file_service = MagicMock()
-    file_service.get_file.return_value = Result.ok(aggregate)
+    file_service.resolve_file_ref.return_value = Result.ok(file)
     relation_repo = MagicMock()
     relation_repo.get_relations_by_file_id.return_value = Result.ok([])
     use_case = ExpandFileRelationsUseCase(

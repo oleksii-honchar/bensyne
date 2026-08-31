@@ -410,8 +410,18 @@ def register_tools(
 
     @mcp.tool(name="expandFileRelations")
     async def expand_file_relations(
-        file_id: Annotated[str, "Required. ID of the file whose relations to expand (from searchFiles)."],
         memory_bank: Annotated[str, _MEMORY_BANK_FILE_DESC],
+        file_id: Annotated[
+            str | None,
+            "Optional. ID of the file whose relations to expand (from searchFiles/expandFileRelations). "
+            "At least one of file_id / path_handle is required.",
+        ] = None,
+        path_handle: Annotated[
+            str | None,
+            "Optional. Preferred stable reference for persona nodes; take it from "
+            "getPersonaEntryNode/fetchFile/expandFileRelations output. "
+            "At least one of file_id / path_handle is required.",
+        ] = None,
         relation_types: Annotated[
             list[str] | None,
             "Optional. Only expand these relation types (e.g. references, depends-on).",
@@ -423,13 +433,16 @@ def register_tools(
     ):
         """Expand file relations for a source-embedded (file) memory.
 
-        When to use: after searchFiles/fetchFile locate a file_id, to discover related files
-        (e.g. references, dependents) in the same bank and navigate the knowledge graph.
+        When to use: after searchFiles/fetchFile locate a file (by file_id or path_handle), to
+        discover related files (e.g. references, dependents) in the same bank and navigate the
+        knowledge graph.
 
-        Use to follow links between ingested files (vault docs, session notes) to reconstruct
-        broader context. Read-only.
+        Use to follow links between ingested files (vault docs, session notes, persona nodes) to
+        reconstruct broader context. Read-only.
         """
         args = {"file_id": file_id, "memory_bank": memory_bank, "summary_only": summary_only}
+        if path_handle is not None:
+            args["path_handle"] = path_handle
         if relation_types is not None:
             args["relation_types"] = relation_types
         return await handlers.handle_expand_file_relations(router, args, container)
@@ -578,7 +591,7 @@ def register_tools(
         this node first, then follow its decision_next edges to continue.
         Read-only.
 
-        Returns six fields:
+        Returns eight fields:
           - memory_id: the entry node's memory id
           - file_id: the FileChunk file_id (what expandFileRelations requires);
                      null if the entry node has not been chunked into a file yet
@@ -586,6 +599,10 @@ def register_tools(
           - text: the node's content (the guidance/instruction to apply)
           - metadata: the parsed persona.* metadata (conditions, veto, etc.)
           - tags: the node's chunk tags (["persona-node", node_id])
+          - path: the entry node's stored absolute path
+          - path_handle: the entry node's portable relative handle
+                         (preferred stable reference for subsequent calls);
+                         null if not derivable
 
         Pass the persona memory_bank to query.
         """

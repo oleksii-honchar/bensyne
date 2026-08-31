@@ -171,17 +171,21 @@ class TestExpandFileRelationsValidation:
     def test_returns_ko_when_file_id_missing(self, use_case: ExpandFileRelationsUseCase) -> None:
         result = use_case.validate_params({})
         assert result.is_ko is True
-        assert result.errors[0].error_code == "FILE_ID_REQUIRED"
+        assert result.errors[0].error_code == "FILE_REF_REQUIRED"
 
     def test_returns_ko_when_file_id_empty(self, use_case: ExpandFileRelationsUseCase) -> None:
         result = use_case.validate_params({"file_id": ""})
         assert result.is_ko is True
-        assert result.errors[0].error_code == "FILE_ID_REQUIRED"
+        assert result.errors[0].error_code == "FILE_REF_REQUIRED"
 
     def test_returns_ok_when_file_id_present(self, use_case: ExpandFileRelationsUseCase) -> None:
         result = use_case.validate_params({"file_id": "f1"})
         assert result.is_ok is True
         assert result.value["file_id"] == "f1"
+
+    def test_returns_ok_when_path_handle_present(self, use_case: ExpandFileRelationsUseCase) -> None:
+        result = use_case.validate_params({"path_handle": "agent-a/00-entry.md"})
+        assert result.is_ok is True
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +199,7 @@ class TestExpandFileRelationsSourceNotFound:
         use_case: ExpandFileRelationsUseCase,
         file_service: MagicMock,
     ) -> None:
-        file_service.get_file.return_value = Result.ok(None)
+        file_service.resolve_file_ref.return_value = Result.ok(None)
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
         assert result.is_ko is True
@@ -215,8 +219,7 @@ class TestExpandFileRelationsNoRelations:
         relation_repo: MagicMock,
     ) -> None:
         source = _a_file(id="f1", path="/tmp/source.txt")
-        source_agg = _a_aggregate(source)
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -244,13 +247,10 @@ class TestExpandFileRelationsBasic:
         related = _a_file(id="f2", path="/tmp/related.txt")
         rel = _a_relation(source_file_id="f1", target_file_id="f2")
 
-        source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -291,13 +291,10 @@ class TestExpandFileRelationsContentComposition:
             _a_chunk(id="c2", file_id="f2", memory_id="mem_2", chunk_index=1),
         ]
 
-        source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         # Aggregate.compose_content calls mnemosyne_client(memory_id) directly
@@ -330,13 +327,10 @@ class TestExpandFileRelationsContentComposition:
             _a_chunk(id="c2", file_id="f2", memory_id="mem_2", chunk_index=1),
         ]
 
-        source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         # First memory found, second not found
@@ -383,13 +377,10 @@ class TestExpandFileRelationsFiltering:
             relation_type=RelationType.PARENT_CHILD,
         )
 
-        source_agg = _a_aggregate(source)
         sibling_agg = _a_aggregate(sibling)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(sibling_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(sibling_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel_sibling, rel_parent])
 
         result = use_case.execute(
@@ -426,12 +417,11 @@ class TestExpandFileRelationsMultiple:
         rel1 = _a_relation(source_file_id="f1", target_file_id="f2", relation_type=RelationType.SIBLING)
         rel2 = _a_relation(source_file_id="f1", target_file_id="f3", relation_type=RelationType.CROSS_REFERENCE)
 
-        source_agg = _a_aggregate(source)
         related1_agg = _a_aggregate(related1)
         related2_agg = _a_aggregate(related2)
 
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         file_service.get_file.side_effect = [
-            Result.ok(source_agg),
             Result.ok(related1_agg),
             Result.ok(related2_agg),
         ]
@@ -463,13 +453,9 @@ class TestExpandFileRelationsErrors:
         source = _a_file(id="f1", path="/tmp/source.txt")
         rel = _a_relation(source_file_id="f1", target_file_id="f_missing")
 
-        source_agg = _a_aggregate(source)
-
-        # First call returns source, second call returns ko (target not found)
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ko([{"error_code": "FILE_NOT_FOUND", "details": {}}]),
-        ]
+        # Source resolves; the related-file fetch returns ko (target not found).
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ko([{"error_code": "FILE_NOT_FOUND", "details": {}}])
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -482,8 +468,8 @@ class TestExpandFileRelationsErrors:
         file_service: MagicMock,
         relation_repo: MagicMock,
     ) -> None:
-        """If source file service fails, return Result.ko."""
-        file_service.get_file.return_value = Result.ok(None)
+        """If source file resolution finds nothing, return Result.ko."""
+        file_service.resolve_file_ref.return_value = Result.ok(None)
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
         assert result.is_ko is True
@@ -512,10 +498,8 @@ class TestExpandFileRelationsSummary:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -538,10 +522,8 @@ class TestExpandFileRelationsSummary:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -574,10 +556,8 @@ class TestExpandFileRelationsSummary:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         mnemosyne_client.side_effect = [
@@ -607,10 +587,8 @@ class TestExpandFileRelationsSummary:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -639,10 +617,8 @@ class TestExpandFileRelationsSummary:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         mnemosyne_client.side_effect = [
@@ -687,10 +663,8 @@ class TestExpandFileRelationsDescription:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -714,10 +688,8 @@ class TestExpandFileRelationsDescription:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -759,10 +731,8 @@ class TestExpandFileRelationsDescription:
         failing_agg.file = related
         failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(failing_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(failing_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -797,10 +767,8 @@ class TestExpandFileRelationsDescription:
         failing_agg.file = related
         failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(failing_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(failing_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -827,10 +795,8 @@ class TestExpandFileRelationsDescription:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -869,10 +835,8 @@ class TestExpandFileRelationsDescription:
         failing_agg.file = related
         failing_agg.to_dict.return_value = Result.ko([{"error_code": "COMPOSE_FAILED", "details": {}}])
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(failing_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(failing_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -909,10 +873,8 @@ class TestExpandFileRelationsDescription:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute(
@@ -964,10 +926,8 @@ class TestExpandFileRelationsSummaryOnly:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute(
@@ -1001,10 +961,8 @@ class TestExpandFileRelationsSummaryOnly:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         result = use_case.execute(
@@ -1043,10 +1001,8 @@ class TestExpandFileRelationsSummaryOnly:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         mnemosyne_client.side_effect = [
@@ -1088,8 +1044,8 @@ class TestExpandFileRelationsSummaryOnly:
         related1_agg = _a_aggregate(related1)
         related2_agg = _a_aggregate(related2)
 
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         file_service.get_file.side_effect = [
-            Result.ok(source_agg),
             Result.ok(related1_agg),
             Result.ok(related2_agg),
         ]
@@ -1142,7 +1098,7 @@ class TestExpandFileRelationsLogging:
         """info log at entry with file_id and relation_types."""
         source = _a_file(id="f1", path="/tmp/source.txt")
         source_agg = _a_aggregate(source)
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         use_case.execute(
@@ -1171,7 +1127,7 @@ class TestExpandFileRelationsLogging:
         """debug log after getting source file."""
         source = _a_file(id="f1", path="/tmp/source.txt")
         source_agg = _a_aggregate(source)
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -1197,10 +1153,8 @@ class TestExpandFileRelationsLogging:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -1229,10 +1183,8 @@ class TestExpandFileRelationsLogging:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         mnemosyne_client.side_effect = [{"content": "Chunk content"}]
@@ -1265,8 +1217,8 @@ class TestExpandFileRelationsLogging:
         related1_agg = _a_aggregate(related1)
         related2_agg = _a_aggregate(related2)
 
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         file_service.get_file.side_effect = [
-            Result.ok(source_agg),
             Result.ok(related1_agg),
             Result.ok(related2_agg),
         ]
@@ -1288,7 +1240,7 @@ class TestExpandFileRelationsLogging:
         """Exit log shows count=0 when no related files."""
         source = _a_file(id="f1", path="/tmp/source.txt")
         source_agg = _a_aggregate(source)
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -1307,7 +1259,7 @@ class TestExpandFileRelationsLogging:
         """Log entries include use_case='expand_file_relations' and method."""
         source = _a_file(id="f1", path="/tmp/source.txt")
         source_agg = _a_aggregate(source)
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -1347,10 +1299,8 @@ class TestExpandFileRelationsAggregateDelegation:
         source_agg = _a_aggregate(source)
         related_agg = _a_aggregate(related, chunks=chunks)
 
-        file_service.get_file.side_effect = [
-            Result.ok(source_agg),
-            Result.ok(related_agg),
-        ]
+        file_service.resolve_file_ref.return_value = Result.ok(source)
+        file_service.get_file.return_value = Result.ok(related_agg)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([rel])
 
         mnemosyne_client.side_effect = [
@@ -1372,18 +1322,17 @@ class TestExpandFileRelationsAggregateDelegation:
         file_service: MagicMock,
         relation_repo: MagicMock,
     ) -> None:
-        """The use case gets the aggregate from FileService.get_file(), not just the file."""
+        """The use case resolves the source via FileService.resolve_file_ref(file_id, path_handle)."""
         source = _a_file(id="f1", path="/tmp/source.txt")
-        source_agg = _a_aggregate(source)
 
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok([])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
         assert result.is_ok is True
 
-        # Verify file_service.get_file was called (not file_repository.get_file_by_id)
-        file_service.get_file.assert_called_once_with("f1")
+        # Verify source resolution goes through the D-2 chain (T4).
+        file_service.resolve_file_ref.assert_called_once_with("f1", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1408,7 +1357,7 @@ class TestExpandFileRelationsDirection:
             chunks=[_a_chunk(id="c0", file_id="f_note", memory_id="m0", chunk_index=0)],
         )
 
-        file_service.get_file.return_value = Result.ok(source_agg)
+        file_service.resolve_file_ref.return_value = Result.ok(source)
         relation_repo.get_relations_by_file_id.return_value = Result.ok(
             [
                 _a_relation(

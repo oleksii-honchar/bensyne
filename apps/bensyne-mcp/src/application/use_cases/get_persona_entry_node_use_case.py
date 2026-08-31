@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 import structlog.stdlib
+from src.application.services.file_service import derive_path_handle
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.infrastructure.storage.sqlite.file_chunk_repository import FileChunkRepository
 from src.infrastructure.storage.sqlite.file_repository import FileRepository
@@ -133,5 +134,7 @@ class GetPersonaEntryNodeUseCase(BaseUseCase[dict, dict]):
                 "text": text,
                 "metadata": meta,
                 "tags": _persona_tags(file_id, meta),
+                "path": entry_file.path,
+                "path_handle": derive_path_handle(entry_file),
             }
         )
