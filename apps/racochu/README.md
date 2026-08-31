@@ -310,6 +310,58 @@ Mnemosyne MCP not reachable. Check:
 - `curl http://localhost:8765/sse` returns `event: endpoint` SSE event
 - Correct URL in config (no trailing `/messages/` or `/mcp`)
 
+**"unable to get local issuer certificate" in logs (MCP init / chunk ingestion):**
+
+Racochu talks to `mcp.url` with Node's built-in `https` (no custom CA configuration in
+`BensyneClient`). When the endpoint is fronted by a gateway with a self-signed local CA — e.g.
+`https://lite-llm.lan/mcp/bensyne`, which is served by **Caddy with its local CA** — Node does
+not trust that CA by default and every MCP call fails with `unable to get local issuer
+certificate` (check `~/.local/share/racochu/logs/`).
+
+> The e2e stack has the same requirement: `docker-compose.bensyne.yml` mounts a
+> `litellm-ca.pem` into the bensyne container because Python/urllib also refuses the Caddy
+> self-signed cert without it.
+
+**Fix (Windows):**
+
+1. Export the Caddy local CA root from the Windows cert store to a PEM file:
+
+   ```powershell
+   $cert = Get-ChildItem -Path "Cert:\CurrentUser\Root" |
+     Where-Object { $_.Subject -eq "CN=Caddy Local Authority - 2025 ECC Root" } |
+     Select-Object -First 1
+   $bytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+   $b64 = [Convert]::ToBase64String($bytes, [System.Base64FormattingOptions]::InsertLineBreaks)
+   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\share\racochu\certs" | Out-Null
+   Set-Content -LiteralPath "$env:USERPROFILE\.local\share\racochu\certs\litellm-caddy-root.pem" `
+     -Value "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----" -Encoding ascii
+   ```
+
+   (Exact cert subject may differ if Caddy has been re-keyed — search `Cert:\CurrentUser\Root`
+   for `Subject -match "Caddy"`.)
+
+2. Point Node at it (user-level, applies to all future terminals):
+
+   ```powershell
+   setx NODE_EXTRA_CA_CERTS "$env:USERPROFILE\.local\share\racochu\certs\litellm-caddy-root.pem"
+   ```
+
+3. **Restart racochu in a fresh terminal** — the env var is read at process start.
+
+**Verify** (Node built-in https, same as `BensyneClient`):
+
+```bash
+node -e "const https=require('https');const r=https.request('https://lite-llm.lan/mcp/bensyne',{method:'POST',headers:{'Content-Type':'application/json'}},res=>{console.log('STATUS',res.statusCode);process.exit(0)});r.on('error',e=>{console.error('ERR',e.message);process.exit(1)});r.end())"
+```
+
+- TLS failure (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY` / `ERR_TLS_CERT_ALTNAME_INVALID`) → Node still
+  doesn't trust the CA.
+- `HTTP 401/500` or a valid MCP `ping` response → TLS OK; any non-TLS error is expected without
+  an auth header/api key.
+
+**If the Caddy CA is ever re-keyed:** re-export the root from the store over the same PEM —
+no code change needed. Do **not** commit the CA PEM to the repo (machine-local trust).
+
 **Duplicate chunk processing:**
 Normal on restart — in-memory dedup is reset. Mnemosyne handles dedup at storage level.
 
