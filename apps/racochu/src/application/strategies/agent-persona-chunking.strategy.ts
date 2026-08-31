@@ -312,6 +312,7 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
   ): Promise<Result<ContentChunk[]>> {
     const treeRoot = path.resolve(expandHome(sourceConfig.path));
     const selfPath = path.resolve(filePath);
+    const pathHandle = path.relative(path.dirname(treeRoot), selfPath).split(path.sep).join('/');
     const { frontmatter, body } = splitFrontmatter(content);
     const meta = extractPersonaNodeMetadata(frontmatter, filePath);
 
@@ -335,6 +336,7 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
       metadata: {
         filePath,
         sourceId,
+        path_handle: pathHandle,
         ...formatPersonaNodeMetadata(meta),
       },
       importance: 0.9,

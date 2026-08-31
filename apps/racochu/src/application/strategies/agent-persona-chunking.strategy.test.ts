@@ -7,6 +7,7 @@ import { aSourceConfig } from '../../infrastructure/config/configuration.service
 import { aLogger } from '../../infrastructure/logging/logger.test-utils';
 import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
+import { BensyneRememberDto } from '../../infrastructure/dto/bensyne-remember.dto';
 import {
   AgentPersonaChunkingStrategy,
   buildFolderHierarchyEdges,
@@ -447,5 +448,109 @@ describe('AgentPersonaChunkingStrategy.chunkFile — tilde-prefixed tree roots (
         description: 'folder branch 10-investigate from 00-entry.md',
       },
     ]);
+  });
+});
+
+describe('AgentPersonaChunkingStrategy.chunkFile — path_handle (D-1 canonical producer)', () => {
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    // Simulate a realistic persona tree layout: .../agent-personas/<agent-name>/...
+    const parentDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'persona-handle-'));
+    tmpRoot = path.join(parentDir, 'developer');
+    fsSync.mkdirSync(path.join(tmpRoot, '10-understand'), { recursive: true });
+    fsSync.writeFileSync(
+      path.join(tmpRoot, '00-entry.md'),
+      '---\nid: 00-entry\ntitle: Entry\nentry: true\n---\nGreet and assess.',
+    );
+    fsSync.writeFileSync(
+      path.join(tmpRoot, '10-understand/10-assess-intent.md'),
+      '---\nid: 10-assess-intent\ntitle: Assess intent\n---\nRead the ask.',
+    );
+  });
+
+  afterEach(async () => {
+    const parentDir = path.dirname(tmpRoot);
+    await fsp.rm(parentDir, { recursive: true, force: true });
+  });
+
+  const buildStrategy = () => new AgentPersonaChunkingStrategy(aLogger());
+
+  const buildSourceConfig = () =>
+    aSourceConfig({
+      id: 'persona-developer',
+      path: tmpRoot,
+      sourceType: 'agent-persona',
+    });
+
+  it('emits path_handle as POSIX relative path from tree root parent for a file at the root', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildSourceConfig();
+    const entryPath = path.join(tmpRoot, '00-entry.md');
+    const content = fsSync.readFileSync(entryPath, 'utf-8');
+
+    const result = await strategy.chunkFile(content, entryPath, 'persona-developer', sourceConfig);
+
+    expect(result.isOk()).toBe(true);
+    const metadata = result.getValue()[0].metadata ?? {};
+    const agentName = path.basename(tmpRoot); // "developer"
+    expect(metadata['path_handle']).toBe(`${agentName}/00-entry.md`);
+    // No backslashes
+    expect(metadata['path_handle']).not.toContain('\\');
+  });
+
+  it('emits path_handle with nested segments for a file in a subfolder', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildSourceConfig();
+    const childPath = path.join(tmpRoot, '10-understand/10-assess-intent.md');
+    const content = fsSync.readFileSync(childPath, 'utf-8');
+
+    const result = await strategy.chunkFile(content, childPath, 'persona-developer', sourceConfig);
+
+    expect(result.isOk()).toBe(true);
+    const metadata = result.getValue()[0].metadata ?? {};
+    const agentName = path.basename(tmpRoot); // "developer"
+    expect(metadata['path_handle']).toBe(`${agentName}/10-understand/10-assess-intent.md`);
+  });
+
+  it('preserves existing metadata keys alongside path_handle (regression)', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildSourceConfig();
+    const entryPath = path.join(tmpRoot, '00-entry.md');
+    const content = fsSync.readFileSync(entryPath, 'utf-8');
+
+    const result = await strategy.chunkFile(content, entryPath, 'persona-developer', sourceConfig);
+
+    expect(result.isOk()).toBe(true);
+    const metadata = result.getValue()[0].metadata ?? {};
+    // filePath and sourceId still present
+    expect(metadata['filePath']).toBe(entryPath);
+    expect(metadata['sourceId']).toBe('persona-developer');
+    // Persona keys still present
+    expect(metadata['persona.node_id']).toBe('00-entry');
+    expect(metadata['persona.title']).toBe('Entry');
+    expect(metadata['persona.entry']).toBe('true');
+    expect(metadata['persona.conditions']).toBe('[]');
+    expect(metadata['persona.veto']).toBe('[]');
+    // path_handle is the new key
+    expect(metadata['path_handle']).toBeDefined();
+  });
+
+  it('path_handle flows into the DTO extra map (wire payload passthrough)', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildSourceConfig();
+    const entryPath = path.join(tmpRoot, '00-entry.md');
+    const content = fsSync.readFileSync(entryPath, 'utf-8');
+
+    const result = await strategy.chunkFile(content, entryPath, 'persona-developer', sourceConfig);
+    expect(result.isOk()).toBe(true);
+    const chunk = result.getValue()[0];
+
+    // Build the wire payload via the DTO and check the extra map
+    const payload = BensyneRememberDto.fromChunk(chunk);
+    const extra = payload.metadata.extra;
+    expect(extra).toBeDefined();
+    const agentName = path.basename(tmpRoot);
+    expect(extra!['path_handle']).toBe(`${agentName}/00-entry.md`);
   });
 });
