@@ -40,6 +40,7 @@ def _a_file(
     summary: Optional[str] = None,
     keywords: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
+    metadata: Optional[dict] = None,
 ) -> File:
     return File(
         id=id,
@@ -56,7 +57,7 @@ def _a_file(
         summary=summary,
         total_chunks=0,
         average_importance=0.5,
-        metadata={},
+        metadata=metadata or {},
         created_at=NOW,
         updated_at=NOW,
     )
@@ -139,7 +140,7 @@ def relation_repo() -> MagicMock:
 # Import the service — will fail until implemented
 # ---------------------------------------------------------------------------
 
-from src.application.services.file_service import FileService  # noqa: E402
+from src.application.services.file_service import FileService, derive_path_handle  # noqa: E402
 
 
 @pytest.fixture
@@ -1147,3 +1148,339 @@ class TestServicePathContract:
         chunk_repo.delete_chunks_by_file_id.assert_called_once_with("f1", {"mem_b"})
         # The surviving chunk is re-persisted so its row survives the prune.
         chunk_repo.save_chunk.assert_called_once_with(chunk_b)
+
+
+# ===================================================================
+# T2 — derive_path_handle (module-level, pure string handling)
+# ===================================================================
+
+
+class TestDerivePathHandle:
+    """derive_path_handle — precedence: metadata.path_handle > marker derivation > None."""
+
+    def test_metadata_path_handle_takes_precedence_over_marker(self) -> None:
+        """When metadata.path_handle exists, it wins over marker derivation."""
+        file = File(
+            id="f1",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1_framing/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            file_role=None,
+            hash=VALID_HASH,
+            file_type=None,
+            size=None,
+            language=None,
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={"path_handle": "researcher/phase1_framing/130-x.md"},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        # Metadata value is already the correct handle — it should be returned as-is.
+        assert derive_path_handle(file) == "researcher/phase1_framing/130-x.md"
+
+    def test_marker_derivation_for_persona_source_type(self) -> None:
+        """Marker derivation: /agent-personas/ segment → substring after it."""
+        file = File(
+            id="f1",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1_framing/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            file_role=None,
+            hash=VALID_HASH,
+            file_type=None,
+            size=None,
+            language=None,
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={},  # no path_handle in metadata
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        assert derive_path_handle(file) == "researcher/phase1_framing/130-x.md"
+
+    def test_non_persona_source_type_returns_none(self) -> None:
+        """Non-persona source type: no derivation even with /agent-personas/ in path."""
+        file = File(
+            id="f1",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1_framing/130-x.md",
+            source_type=SourceType.AGENT_SESSIONS,  # NOT AGENT_PERSONA
+            file_role=None,
+            hash=VALID_HASH,
+            file_type=None,
+            size=None,
+            language=None,
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        assert derive_path_handle(file) is None
+
+    def test_persona_source_type_without_marker_returns_none(self) -> None:
+        """Persona source type but path lacks /agent-personas/ → None."""
+        file = File(
+            id="f1",
+            path="/Users/x/some-other-path/researcher/phase1_framing/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            file_role=None,
+            hash=VALID_HASH,
+            file_type=None,
+            size=None,
+            language=None,
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        assert derive_path_handle(file) is None
+
+    def test_metadata_path_handle_wins_even_if_marker_would_differ(self) -> None:
+        """Metadata value is canonical even if marker derivation would give something else."""
+        # Path suggests handle would be 'researcher/...' but metadata says 'custom-handle'
+        file = File(
+            id="f1",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1_framing/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            file_role=None,
+            hash=VALID_HASH,
+            file_type=None,
+            size=None,
+            language=None,
+            aggregated_keywords=[],
+            aggregated_tags=[],
+            status=FileStatus.INDEXED,
+            summary=None,
+            total_chunks=1,
+            average_importance=0.5,
+            metadata={"path_handle": "custom-handle.md"},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        # Metadata value takes precedence
+        assert derive_path_handle(file) == "custom-handle.md"
+
+
+# ===================================================================
+# T2 — resolve_file_ref (D-2 resolution chain)
+# ===================================================================
+
+
+class TestResolveFileRef:
+    """resolve_file_ref — the 4-step resolution chain (D-2)."""
+
+    # ------------------------------------------------------------------
+    # Step 1: file_id wins
+    # ------------------------------------------------------------------
+
+    def test_step1_file_id_wins_when_both_supplied(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """A valid file_id resolves even when a different (also valid) path_handle is passed."""
+        file_by_id = _a_file(id="f1", path="/some/path/a.md")
+        file_by_handle = _a_file(id="f2", path="/some/path/b.md")
+
+        file_repo.get_file_by_id.return_value = Result.ok(file_by_id)
+
+        result = service.resolve_file_ref("f1", "some/other-handle.md")
+
+        assert result.is_ok is True
+        assert result.value is file_by_id
+        # Step 2 should NOT have been reached
+        file_repo.get_file_by_path_handle.assert_not_called()
+
+    def test_step1_no_file_id_falls_through_to_step2(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """When file_id is None/empty, step 2 is attempted."""
+        file_by_handle = _a_file(id="f2", metadata={"path_handle": "researcher/x.md"})
+
+        file_repo.get_file_by_path_handle.return_value = Result.ok(file_by_handle)
+
+        result = service.resolve_file_ref(None, "researcher/x.md")
+
+        assert result.is_ok is True
+        assert result.value is file_by_handle
+
+    # ------------------------------------------------------------------
+    # Step 2: path_handle exact match via metadata
+    # ------------------------------------------------------------------
+
+    def test_step2_resolves_by_metadata_path_handle(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """A file stored with metadata.path_handle resolves from the handle alone."""
+        file_with_handle = _a_file(id="f2", metadata={"path_handle": "researcher/phase1/130-x.md"})
+
+        file_repo.get_file_by_path_handle.return_value = Result.ok(file_with_handle)
+
+        result = service.resolve_file_ref(None, "researcher/phase1/130-x.md")
+
+        assert result.is_ok is True
+        assert result.value is file_with_handle
+
+    def test_step2_not_found_falls_through_to_step3(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """When step 2 finds nothing, step 3 (suffix search) is attempted."""
+        legacy_file = _a_file(
+            id="f3",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+        )
+
+        # Step 2 finds nothing
+        file_repo.get_file_by_path_handle.return_value = Result.ok(None)
+        # Step 3 finds the legacy file
+        file_repo.find_files_by_path_suffix.return_value = Result.ok([legacy_file])
+
+        result = service.resolve_file_ref(None, "researcher/phase1/130-x.md")
+
+        assert result.is_ok is True
+        assert result.value is legacy_file
+
+    # ------------------------------------------------------------------
+    # Step 3: path suffix (legacy rows) + tie-break
+    # ------------------------------------------------------------------
+
+    def test_step3_legacy_file_resolves_from_path_suffix(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """A file WITHOUT path_handle in metadata but with matching stored file_path resolves."""
+        legacy_file = _a_file(
+            id="f3",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            metadata={},  # no path_handle
+        )
+
+        file_repo.get_file_by_path_handle.return_value = Result.ok(None)
+        file_repo.find_files_by_path_suffix.return_value = Result.ok([legacy_file])
+
+        result = service.resolve_file_ref(None, "researcher/phase1/130-x.md")
+
+        assert result.is_ok is True
+        assert result.value is legacy_file
+
+    def test_step3_tie_break_prefers_derived_handle_match(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """With two suffix matches, the one whose derived handle equals the requested one wins."""
+        handle = "researcher/phase1/130-x.md"
+
+        # File whose derived handle matches exactly
+        file_with_derived = _a_file(
+            id="f1",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            metadata={},  # derivation from path gives the handle
+        )
+
+        # File with a different suffix (would NOT derive to the same handle)
+        file_other_suffix = _a_file(
+            id="f2",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/other/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            metadata={},
+        )
+
+        file_repo.get_file_by_path_handle.return_value = Result.ok(None)
+        # Both returned as suffix matches (simulating the DB result)
+        file_repo.find_files_by_path_suffix.return_value = Result.ok(
+            [file_with_derived, file_other_suffix]
+        )
+
+        result = service.resolve_file_ref(None, handle)
+
+        assert result.is_ok is True
+        # The file whose derive_path_handle == requested handle should win
+        winner = result.value
+        assert derive_path_handle(winner) == handle
+
+    def test_step3_tie_break_most_recent_updated_at_when_no_derived_match(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """If no suffix match derives to the requested handle, most recent updated_at wins."""
+        handle = "researcher/phase1/130-x.md"
+
+        # Both files have different derived handles (neither matches the requested handle)
+        file_a = _a_file(
+            id="fa",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/diff-a/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            metadata={},
+        )
+        file_b = _a_file(
+            id="fb",
+            path="/Users/x/agent-rules-n-skills/agent-personas/researcher/diff-b/130-x.md",
+            source_type=SourceType.AGENT_PERSONA,
+            metadata={},
+        )
+
+        # The repo orders by updated_at desc — file_a is most recent (first in list)
+        file_repo.get_file_by_path_handle.return_value = Result.ok(None)
+        file_repo.find_files_by_path_suffix.return_value = Result.ok([file_a, file_b])
+
+        result = service.resolve_file_ref(None, handle)
+
+        assert result.is_ok is True
+        # Most recent (first in the repo-ordered list) wins when no derived handle matches
+        assert result.value is file_a
+
+    # ------------------------------------------------------------------
+    # Step 4: nothing matched → Ok(None)
+    # ------------------------------------------------------------------
+
+    def test_step4_chimeric_file_id_and_no_matching_handle_returns_ok_none(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """Chimeric file_id + no matching handle → Ok(None), no error."""
+        # Step 1: chimeric file_id → None
+        file_repo.get_file_by_id.return_value = Result.ok(None)
+        # Step 2: handle not found in metadata
+        file_repo.get_file_by_path_handle.return_value = Result.ok(None)
+        # Step 3: no suffix matches
+        file_repo.find_files_by_path_suffix.return_value = Result.ok([])
+
+        result = service.resolve_file_ref("file_chimeric1234567890abcdef", "nonexistent/handle.md")
+
+        assert result.is_ok is True
+        assert result.value is None
+
+    def test_step4_both_none_returns_ok_none(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """Both file_id and path_handle are None/empty → Ok(None)."""
+        result = service.resolve_file_ref(None, None)
+
+        assert result.is_ok is True
+        assert result.value is None
+        file_repo.get_file_by_id.assert_not_called()
+        file_repo.get_file_by_path_handle.assert_not_called()
+        file_repo.find_files_by_path_suffix.assert_not_called()
+
+    def test_step4_empty_string_inputs_treated_as_absent(
+        self, service: FileService, file_repo: MagicMock
+    ) -> None:
+        """Empty string inputs are treated the same as None."""
+        result = service.resolve_file_ref("", "")
+
+        assert result.is_ok is True
+        assert result.value is None
+        file_repo.get_file_by_id.assert_not_called()

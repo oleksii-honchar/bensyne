@@ -57,6 +57,33 @@ def mcp_call_tool(
 
 
 # ---------------------------------------------------------------------------
+# Fixtures — seed the isolated e2e server's bank registry with the banks under
+# test (conftest boots the server with a fresh tmp data dir; registerMemoryBank
+# creates the registry rows that searchMemoryBank surfaces — the same activation
+# pattern test_list_banks.py uses (rememberMemory → list).
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_banks(mcp_client: httpx.Client) -> None:
+    """Register the user-suffixed banks (plus the worker persona) that the
+    searchMemoryBank surfacing tests assert against. Fresh pytest sessions
+    boot a fresh isolated server, so this runs once per session."""
+    registrations: list[tuple[str, str]] = [
+        ("user_oleksii", "User profile memory for user id=oleksii"),
+        ("agent-sessions_oleksii", "Prior agent session history for user id=oleksii"),
+        ("agent-persona_worker", "Worker persona — codebase test implementation TDD red green refactor"),
+    ]
+    for idx, (name, description) in enumerate(registrations, start=200):
+        mcp_call_tool(
+            mcp_client,
+            "registerMemoryBank",
+            {"name": name, "description": description},
+            request_id=idx,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -65,37 +92,85 @@ class TestSearchMemoryBank:
     """searchMemoryBank ranks banks by relevance and respects limit/agent_id."""
 
     def test_happy_path_returns_relevant_bank(self, mcp_client: httpx.Client) -> None:
-        """A query that matches 'default' returns it in matches with score >= 1."""
+        """A query that matches 'user' returns user_oleksii in matches with score >= 1;
+        the seeded 'default' bank remains checkable via a separate regression query."""
         result = mcp_call_tool(
             mcp_client,
             "searchMemoryBank",
-            {"query": "default"},
+            {"query": "user"},
             request_id=10,
         )
         assert "matches" in result
         assert "total" in result
         assert isinstance(result["matches"], list)
         names = {m["name"] for m in result["matches"]}
-        assert "default" in names, "Query 'default' should match the default bank"
-        # Each match carries a score, name, description, memory_count, status.
+        user_scores = [m["score"] for m in result["matches"] if m["name"] == "user_oleksii"]
+        assert user_scores, "Query 'user' should surface the user profile bank user_oleksii"
+        assert min(user_scores) >= 1, (
+            f"user_oleksii must carry score >= 1; got {user_scores}"
+        )
+
+        # Regression:the legacy seeded 'default' bank remains discoverable via its
+        # own query — the 'user' query should not have removed it from the registry.
+        result_default = mcp_call_tool(
+            mcp_client,
+            "searchMemoryBank",
+            {"query": "default"},
+            request_id=11,
+        )
+        assert "default" in {m["name"] for m in result_default["matches"]}, (
+            "Query 'default' should match the seeded default bank"
+        )
+
+        # Each match carries a score, name,, description,, memory_count,, status..
         for match in result["matches"]:
             assert "name" in match
             assert "score" in match
             assert "memory_count" in match
             assert "status" in match
 
-    def test_empty_result_for_nonsense_query(self, mcp_client: httpx.Client) -> None:
-        """A query with no token overlap returns matches=[], total=0."""
+    def test_task_shaped_query_surfaces_user_banks(self, mcp_client: httpx.Client) -> None:
+        """A task-shaped query with no user-bank vocabulary must still surface both
+        user-suffixed banks (spec §10 success criterion) with score >= 1."""
         result = mcp_call_tool(
             mcp_client,
             "searchMemoryBank",
-            {"query": "xyzzy-no-such-thing-plover-cipher"},
-            request_id=11,
+            {"query": "specification decision architecture ADR"},
+            request_id=20,
         )
-        assert result["matches"] == [], (
-            f"Non-matching query must return empty matches, got {result}"
+        matches_by_name = {m["name"]: m for m in result["matches"]}
+        for bank_name in ("user_oleksii", "agent-sessions_oleksii"):
+            assert bank_name in matches_by_name, (
+                f"Task-shaped query must surface {bank_name}; got {sorted(matches_by_name)}"
+            )
+            assert matches_by_name[bank_name]["score"] >= 1, (
+                f"{bank_name} score must be >= 1; got {matches_by_name[bank_name]['score']}"
+            )
+
+    def test_empty_result_for_nonsense_query(self, mcp_client: httpx.Client) -> None:
+        """The user-bank surfacing fix means a nonsense query no longer yields a bare
+        empty list — the always-surfaced user banks still appear.. It still confirms the
+        engine does not fabricate non-user matches: cap ``limit`` below the number of
+        user-suffixed banks and assert only user-suffixed banks surface."""
+        result = mcp_call_tool(
+            mcp_client,
+            "searchMemoryBank",
+            {"query": "xyzzy-no-such-thing-plover-cipher", "limit": 1},
+            request_id=21,
         )
-        assert result["total"] == 0
+        names = {m["name"] for m in result["matches"]}
+        # limit=1 caps below the 2 always-surfaced user banks..
+        assert len(names) == 1, f"limit=1 must return exactly one user bank; got {result}"
+        # No fabricated matches: everything returned for a nonsense query is
+        # user-suffixed (floor-scored) — no persona/vault/other bank is invented..
+        for name in names:
+            assert name.startswith(("user_", "agent-sessions_")), (
+                f"Nonsense query must only surface user-suffixed banks; got {name}"
+            )
+        # total reflects the always-surfaced user banks (the two registered ones) — not 0..
+        assert result["total"] >= 2, (
+            f"total must include floor-scored user banks; got {result['total']}"
+        )
 
     def test_agent_id_bonus_surfaces_persona(self, mcp_client: httpx.Client) -> None:
         """Passing agent_id='worker' must include agent-persona_worker in results for a

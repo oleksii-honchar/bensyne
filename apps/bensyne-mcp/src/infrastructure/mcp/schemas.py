@@ -5,7 +5,12 @@ from src.app import _MEMORY_BANK_READ_DESC
 MEMORY_BANK_PARAM = {
     "memory_bank": {
         "type": "string",
-        "description": "Memory bank for isolation. This parameter is required.",
+        "description": (
+            "Memory bank for isolation. This parameter is required. "
+            "User profile: 'user_<id>'; prior context: 'agent-sessions_{user_id}'; "
+            "source banks 'vault'/'obsidian' recall-only. "
+            "'default'/'agent-sessions' are legacy shells."
+        ),
     }
 }
 

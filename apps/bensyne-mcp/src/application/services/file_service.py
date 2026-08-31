@@ -42,6 +42,44 @@ def derive_file_id(bank: str, path: str) -> str:
     return f"file_{digest}"
 
 
+# Marker segment used by the consumer-side derivation fallback for legacy
+# persona rows that predate the producer emitting path_handle (D-1, spec §3).
+_PERSONA_PATH_MARKER = "/agent-personas/"
+
+
+def derive_path_handle(file: File) -> str | None:
+    """Derive a stable, human-readable path handle for a file (D-1, spec §3).
+
+    Precedence order:
+    1. ``file.metadata['path_handle']`` when present — the canonical
+       producer-emitted value (racochu AgentPersonaChunkingStrategy).
+    2. If ``file.source_type == SourceType.AGENT_PERSONA`` and the stored
+       ``file.path`` contains the marker segment ``/agent-personas/``, return
+       the substring after that marker (e.g.
+       ``/Users/x/…/agent-personas/researcher/phase1_framing/130-x.md`` →
+       ``researcher/phase1_framing/130-x.md``).
+    3. Otherwise → ``None`` (not derivable).
+
+    Pure string manipulation — no filesystem access (works on puma.lan where
+    persona files are not hosted).
+    """
+    # Step 1: canonical producer-emitted handle.
+    handle_from_metadata = file.metadata.get("path_handle")
+    if handle_from_metadata:
+        return handle_from_metadata
+
+    # Step 2: consumer-side fallback for legacy agent-persona rows.
+    if file.source_type == SourceType.AGENT_PERSONA:
+        marker_idx = file.path.find(_PERSONA_PATH_MARKER)
+        if marker_idx != -1:
+            after_marker = file.path[marker_idx + len(_PERSONA_PATH_MARKER):]
+            if after_marker:
+                return after_marker
+
+    # Step 3: not derivable.
+    return None
+
+
 class FileService:
     """Application service for file metadata operations — the file layer's sole write root.
 
@@ -652,6 +690,67 @@ class FileService:
         """Passthrough resolving a relation's other end (enrichment consumer)."""
         self._log_info("Getting related file by id", method="get_related_file_by_id", file_id=file_id)
         return self.file_repository.get_file_by_id(file_id)
+
+    # ------------------------------------------------------------------
+    # T2 — resolve_file_ref (D-2 resolution chain, spec §4)
+    # ------------------------------------------------------------------
+
+    def resolve_file_ref(
+        self,
+        file_id: str | None,
+        path_handle: str | None,
+    ) -> Result[File | None]:
+        """Resolve a file by file_id and/or path_handle (D-2, spec §4).
+
+        4-step chain (additive; zero behavior change when file_id resolves):
+        1. ``file_id`` non-empty → ``repo.get_file_by_id(file_id)`` → found:
+           ``Ok(file)``.
+        2. ``path_handle`` non-empty → ``repo.get_file_by_path_handle(handle)``
+           (exact metadata match) → found: ``Ok(file)``.
+        3. ``path_handle`` non-empty → ``repo.find_files_by_path_suffix(handle)``
+           (covers legacy rows) → found: ``Ok(best)``.  Tie-break: prefer the
+           candidate whose ``derive_path_handle(f)`` equals ``path_handle``;
+           else the most recent ``updated_at`` (first in the repo-ordered list).
+        4. Nothing matched → ``Ok(None)``.  Callers (use cases) turn this into
+           ``FILE_NOT_FOUND`` + conflation candidates — this method never
+           raises FILE_NOT_FOUND itself.
+        """
+        self._log_info(
+            "Resolving file ref",
+            method="resolve_file_ref",
+            file_id=file_id,
+            path_handle=path_handle,
+        )
+
+        # Step 1: file_id exact match.
+        if file_id:
+            by_id = self.get_file_by_id(file_id)
+            if by_id.is_ok and by_id.value is not None:
+                return by_id
+
+        # Step 2: path_handle exact metadata match.
+        if path_handle:
+            by_handle = self.file_repository.get_file_by_path_handle(path_handle)
+            if by_handle.is_ok and by_handle.value is not None:
+                return by_handle
+
+        # Step 3: path_handle suffix match (legacy rows).
+        if path_handle:
+            by_suffix = self.file_repository.find_files_by_path_suffix(path_handle)
+            if by_suffix.is_ok and by_suffix.value:
+                candidates = by_suffix.value
+                # Tie-break: prefer a candidate whose derived handle equals
+                # the requested handle; else the most recent updated_at wins
+                # (the repo already orders by updated_at desc).
+                best = candidates[0]
+                for candidate in candidates:
+                    if derive_path_handle(candidate) == path_handle:
+                        best = candidate
+                        break
+                return Result.ok(best)
+
+        # Step 4: nothing matched.
+        return Result.ok(None)
 
     # ------------------------------------------------------------------
     # Persistence contract (spec §3.2 / §6.1 / §6.2)

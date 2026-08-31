@@ -311,6 +311,315 @@ class TestGetFileByPath:
 
 
 # ---------------------------------------------------------------------------
+# get_file_by_path_handle
+# ---------------------------------------------------------------------------
+
+
+class TestGetFileByPathHandle:
+    """get_file_by_path_handle retrieves a File by its metadata path_handle."""
+
+    def test_returns_file_with_matching_path_handle(self, repo: FileRepository) -> None:
+        repo.save_file(
+            _a_file(
+                id="ph1",
+                path="/tmp/130-proceed-on-waive.md",
+                metadata={"path_handle": "researcher/phase1_framing/130-proceed-on-waive.md"},
+            )
+        )
+
+        result = repo.get_file_by_path_handle("researcher/phase1_framing/130-proceed-on-waive.md")
+        assert result.is_ok
+        assert result.value is not None
+        assert result.value.id == "ph1"
+
+    def test_returns_none_when_no_file_matches(self, repo: FileRepository) -> None:
+        repo.save_file(
+            _a_file(id="ph2", metadata={"path_handle": "researcher/other/200-node.md"})
+        )
+
+        result = repo.get_file_by_path_handle("researcher/missing/300-node.md")
+        assert result.is_ok
+        assert result.value is None
+
+    def test_returns_none_when_metadata_json_is_null(self, repo: FileRepository) -> None:
+        # A file with no metadata -> metadata_json is NULL in the DB.
+        repo.save_file(_a_file(id="ph3", path="/tmp/null_meta.txt"))
+
+        result = repo.get_file_by_path_handle("researcher/any/130-node.md")
+        assert result.is_ok
+        assert result.value is None
+
+    def test_extracts_handle_from_json_metadata_among_other_keys(
+        self, repo: FileRepository
+    ) -> None:
+        repo.save_file(
+            _a_file(
+                id="ph4",
+                metadata={
+                    "path_handle": "developer/00-entry.md",
+                    "session_id": "s-1",
+                    "note": "extra keys must be ignored",
+                },
+            )
+        )
+
+        result = repo.get_file_by_path_handle("developer/00-entry.md")
+        assert result.is_ok
+        assert result.value is not None
+        assert result.value.id == "ph4"
+
+    def test_returns_correct_file_among_many(self, repo: FileRepository) -> None:
+        repo.save_file(_a_file(id="ph5a", metadata={"path_handle": "researcher/00-entry.md"}))
+        repo.save_file(_a_file(id="ph5b", metadata={"path_handle": "developer/00-entry.md"}))
+        repo.save_file(_a_file(id="ph5c", metadata={"path_handle": "architect/00-entry.md"}))
+
+        result = repo.get_file_by_path_handle("developer/00-entry.md")
+        assert result.is_ok
+        assert result.value is not None
+        assert result.value.id == "ph5b"
+
+    def test_returns_none_for_blank_and_whitespace_handle(self, repo: FileRepository) -> None:
+        repo.save_file(_a_file(id="ph6", metadata={"path_handle": "x/1.md"}))
+
+        blank = repo.get_file_by_path_handle("")
+        assert blank.is_ok
+        assert blank.value is None
+
+        whitespace = repo.get_file_by_path_handle("   ")
+        assert whitespace.is_ok
+        assert whitespace.value is None
+
+    def test_is_bank_scoped(self, repo: FileRepository, tmp_bank_dir: Path) -> None:
+        # Save a file with a path_handle in the primary bank.
+        repo.save_file(
+            _a_file(id="ph7", metadata={"path_handle": "researcher/bs/130-node.md"})
+        )
+
+        # A separate bank must not see it.
+        other_dir = tmp_bank_dir / "other_bank"
+        other_mgr = FileMetadataConnectionManager(bank_dir=other_dir)
+        other_mgr.create_tables()
+        other_repo = FileRepository(other_mgr)
+        try:
+            result = other_repo.get_file_by_path_handle("researcher/bs/130-node.md")
+            assert result.is_ok
+            assert result.value is None
+        finally:
+            other_mgr.close()
+
+
+# ---------------------------------------------------------------------------
+# find_files_by_path_suffix
+# ---------------------------------------------------------------------------
+
+
+class TestFindFilesByPathSuffix:
+    """find_files_by_path_suffix retrieves Files by stored-path suffix (LIKE-escaped)."""
+
+    def test_returns_only_files_with_matching_suffix(self, repo: FileRepository) -> None:
+        repo.save_file(
+            _a_file(
+                id="ps1",
+                path="/Users/x/agent-rules-n-skills/agent-personas/researcher/phase1_framing/130-proceed-on-waive.md",
+            )
+        )
+        repo.save_file(
+            _a_file(
+                id="ps2",
+                path="/Users/y/agent-rules-n-skills/agent-personas/developer/00-entry.md",
+            )
+        )
+
+        result = repo.find_files_by_path_suffix(
+            "researcher/phase1_framing/130-proceed-on-waive.md"
+        )
+        assert result.is_ok
+        assert result.value is not None
+        ids = {f.id for f in result.value}
+        assert ids == {"ps1"}
+
+    def test_returns_empty_when_no_match(self, repo: FileRepository) -> None:
+        repo.save_file(
+            _a_file(id="ps3", path="/Users/x/agent-personas/researcher/a.md")
+        )
+
+        result = repo.find_files_by_path_suffix("developer/00-entry.md")
+        assert result.is_ok
+        assert result.value == []
+
+    def test_underscore_matches_literally_not_as_wildcard(self, repo: FileRepository) -> None:
+        # Literal underscore in the path.
+        repo.save_file(
+            _a_file(id="ps4", path="/Users/x/agent-personas/researcher/phase1_framing/130.md")
+        )
+        # 'X' sits where the underscore is — a non-escaped LIKE would match this.
+        repo.save_file(
+            _a_file(id="ps5", path="/Users/x/agent-personas/researcher/phase1Xframing/130.md")
+        )
+
+        result = repo.find_files_by_path_suffix("researcher/phase1_framing/130.md")
+        assert result.is_ok
+        ids = {f.id for f in result.value}
+        # Only the literal-underscore path matches; underscore must not act as a wildcard.
+        assert ids == {"ps4"}
+
+    def test_percent_matches_literally_not_as_wildcard(self, repo: FileRepository) -> None:
+        # Literal percent in the path.
+        repo.save_file(
+            _a_file(id="ps6", path="/Users/x/agent-personas/researcher/100%off/130.md")
+        )
+        # 'XX' where the percent is — a non-escaped LIKE would match this.
+        repo.save_file(
+            _a_file(id="ps7", path="/Users/x/agent-personas/researcher/100XXoff/130.md")
+        )
+
+        result = repo.find_files_by_path_suffix("researcher/100%off/130.md")
+        assert result.is_ok
+        ids = {f.id for f in result.value}
+        assert ids == {"ps6"}
+
+    def test_backslash_matches_literally_not_as_escape(self, repo: FileRepository) -> None:
+        # Literal backslash in the path.
+        repo.save_file(
+            _a_file(id="ps8", path="/Users/x/agent-personas/researcher/100\\back/130.md")
+        )
+        # A path without the backslash must not match the backslash query.
+        repo.save_file(
+            _a_file(id="ps9", path="/Users/x/agent-personas/researcher/100back/130.md")
+        )
+
+        result = repo.find_files_by_path_suffix("researcher/100\\back/130.md")
+        assert result.is_ok
+        ids = {f.id for f in result.value}
+        assert ids == {"ps8"}
+
+    def test_returns_empty_for_blank_handle(self, repo: FileRepository) -> None:
+        repo.save_file(_a_file(id="ps10", path="/Users/x/agent-personas/researcher/a.md"))
+
+        blank = repo.find_files_by_path_suffix("")
+        assert blank.is_ok
+        assert blank.value == []
+
+        whitespace = repo.find_files_by_path_suffix("   ")
+        assert whitespace.is_ok
+        assert whitespace.value == []
+
+    def test_orders_by_updated_at_desc(
+        self, repo: FileRepository, manager: FileMetadataConnectionManager
+    ) -> None:
+        repo.save_file(_a_file(id="psord1", path="/Users/x/bank/a/130.md"))
+        repo.save_file(_a_file(id="psord2", path="/Users/x/bank/b/130.md"))
+        repo.save_file(_a_file(id="psord3", path="/Users/x/bank/c/130.md"))
+
+        # Explicitly set distinct updated_at values (oldest -> newest: 1, 3, 2).
+        session = manager.get_session()
+        try:
+            session.query(FileORM).filter(FileORM.id == "psord1").update(
+                {"updated_at": datetime(2026, 1, 1, 11, 0, 0)}
+            )
+            session.query(FileORM).filter(FileORM.id == "psord2").update(
+                {"updated_at": datetime(2026, 1, 3, 11, 0, 0)}
+            )
+            session.query(FileORM).filter(FileORM.id == "psord3").update(
+                {"updated_at": datetime(2026, 1, 2, 11, 0, 0)}
+            )
+            session.commit()
+        finally:
+            manager.close_session(session)
+
+        result = repo.find_files_by_path_suffix("130.md")
+        assert result.is_ok
+        ids = [f.id for f in result.value]
+        assert ids == ["psord2", "psord3", "psord1"]
+
+    def test_limits_results_to_ten(self, repo: FileRepository) -> None:
+        for i in range(15):
+            repo.save_file(_a_file(id=f"pslim{i}", path=f"/Users/x/bank{i}/130-final.md"))
+
+        result = repo.find_files_by_path_suffix("130-final.md")
+        assert result.is_ok
+        assert len(result.value) == 10
+
+    def test_is_bank_scoped(self, repo: FileRepository, tmp_bank_dir: Path) -> None:
+        repo.save_file(
+            _a_file(id="ps11", path="/Users/x/agent-personas/researcher/bs/130.md")
+        )
+
+        other_dir = tmp_bank_dir / "other_bank"
+        other_mgr = FileMetadataConnectionManager(bank_dir=other_dir)
+        other_mgr.create_tables()
+        other_repo = FileRepository(other_mgr)
+        try:
+            result = other_repo.find_files_by_path_suffix("researcher/bs/130.md")
+            assert result.is_ok
+            assert result.value == []
+        finally:
+            other_mgr.close()
+
+
+# ---------------------------------------------------------------------------
+# find_files_by_id_suffix
+# ---------------------------------------------------------------------------
+
+
+class TestFindFilesByIdSuffix:
+    """find_files_by_id_suffix retrieves Files by id suffix (conflation candidates)."""
+
+    def test_returns_files_with_matching_id_suffix(self, repo: FileRepository) -> None:
+        # Two files sharing the same id tail (both end with the queried 16-hex suffix).
+        repo.save_file(_a_file(id="0123abcd1234ef567890"))
+        repo.save_file(_a_file(id="ffff0000abcd1234ef567890"))
+        # A file with a different tail.
+        repo.save_file(_a_file(id="000011112222333344445555"))
+
+        result = repo.find_files_by_id_suffix("abcd1234ef567890")
+        assert result.is_ok
+        assert result.value is not None
+        ids = {f.id for f in result.value}
+        assert ids == {"0123abcd1234ef567890", "ffff0000abcd1234ef567890"}
+
+    def test_returns_empty_when_no_match(self, repo: FileRepository) -> None:
+        repo.save_file(_a_file(id="abcdef1234567890"))
+
+        result = repo.find_files_by_id_suffix("ffffffffffffffffffffffff")
+        assert result.is_ok
+        assert result.value == []
+
+    def test_returns_empty_for_blank_hex_tail(self, repo: FileRepository) -> None:
+        repo.save_file(_a_file(id="abcdef1234567890"))
+
+        blank = repo.find_files_by_id_suffix("")
+        assert blank.is_ok
+        assert blank.value == []
+
+        whitespace = repo.find_files_by_id_suffix("   ")
+        assert whitespace.is_ok
+        assert whitespace.value == []
+
+    def test_limits_results_to_five(self, repo: FileRepository) -> None:
+        for i in range(8):
+            repo.save_file(_a_file(id=f"prefix{i}abcdef0123456789"))
+
+        result = repo.find_files_by_id_suffix("abcdef0123456789")
+        assert result.is_ok
+        assert len(result.value) == 5
+
+    def test_is_bank_scoped(self, repo: FileRepository, tmp_bank_dir: Path) -> None:
+        repo.save_file(_a_file(id="abcdef1234567890"))
+
+        other_dir = tmp_bank_dir / "other_bank"
+        other_mgr = FileMetadataConnectionManager(bank_dir=other_dir)
+        other_mgr.create_tables()
+        other_repo = FileRepository(other_mgr)
+        try:
+            result = other_repo.find_files_by_id_suffix("abcdef1234567890")
+            assert result.is_ok
+            assert result.value == []
+        finally:
+            other_mgr.close()
+
+
+# ---------------------------------------------------------------------------
 # list_files
 # ---------------------------------------------------------------------------
 

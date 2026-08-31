@@ -15,7 +15,7 @@ from src.utils.result import ErrorWithDetails, Result
 from src.infrastructure.storage.sqlite.file_metadata_connection import (
     FileMetadataConnectionManager,
 )
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from src.infrastructure.storage.sqlite.models import FileORM
 
@@ -166,6 +166,106 @@ class FileRepository:
             return Result.ok(_orm_to_file(orm))
         except Exception as e:
             return Result.ko([ErrorWithDetails("FILE_GET_BY_PATH_ERROR", {"error": str(e)})])
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
+    # get_file_by_path_handle
+    # ------------------------------------------------------------------
+
+    def get_file_by_path_handle(self, handle: str) -> Result[File | None]:
+        """Find a file whose ``metadata.path_handle`` exactly matches ``handle``.
+
+        Uses SQLite ``json_extract`` over the flexible ``metadata_json`` channel,
+        so no schema migration is required. A NULL ``metadata_json`` never
+        matches (``json_extract`` yields NULL). Blank handles short-circuit to
+        ``Ok(None)`` without touching the DB.
+        """
+        if not handle or not handle.strip():
+            return Result.ok(None)
+        if not self._db_exists():
+            return Result.ok(None)
+        session = self._conn_manager.get_session()
+        try:
+            orm = (
+                session.query(FileORM)
+                .filter(
+                    func.json_extract(FileORM.metadata_json, "$.path_handle") == handle
+                )
+                .first()
+            )
+            if orm is None:
+                return Result.ok(None)
+            return Result.ok(_orm_to_file(orm))
+        except Exception as e:
+            return Result.ko(
+                [ErrorWithDetails("FILE_GET_BY_PATH_HANDLE_ERROR", {"error": str(e)})]
+            )
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
+    # find_files_by_path_suffix
+    # ------------------------------------------------------------------
+
+    def find_files_by_path_suffix(self, handle: str) -> Result[list[File]]:
+        """Find files whose stored ``path`` ends with the ``handle`` segment.
+
+        LIKE wildcards (``_``, ``%``, ``\\``) in ``handle`` are escaped so the
+        match is literal. Results are ordered by ``updated_at`` desc and capped
+        at 10. Blank handles short-circuit to ``Ok([])``.
+        """
+        if not handle or not handle.strip():
+            return Result.ok([])
+        if not self._db_exists():
+            return Result.ok([])
+        escaped = handle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%/{escaped}"
+        session = self._conn_manager.get_session()
+        try:
+            orms = (
+                session.query(FileORM)
+                .filter(FileORM.path.like(pattern, escape="\\"))
+                .order_by(FileORM.updated_at.desc())
+                .limit(10)
+                .all()
+            )
+            return Result.ok([_orm_to_file(orm) for orm in orms])
+        except Exception as e:
+            return Result.ko(
+                [ErrorWithDetails("FILE_FIND_BY_PATH_SUFFIX_ERROR", {"error": str(e)})]
+            )
+        finally:
+            self._conn_manager.close_session(session)
+
+    # ------------------------------------------------------------------
+    # find_files_by_id_suffix
+    # ------------------------------------------------------------------
+
+    def find_files_by_id_suffix(self, hex_tail: str) -> Result[list[File]]:
+        """Find files whose ``id`` ends with ``hex_tail`` (conflation candidates).
+
+        Used by the FILE_NOT_FOUND recovery path: a chimeric id ends with the
+        suffix of a real (parent) file, so the true source surfaces here.
+        Capped at 5. Blank tails short-circuit to ``Ok([])``.
+        """
+        if not hex_tail or not hex_tail.strip():
+            return Result.ok([])
+        if not self._db_exists():
+            return Result.ok([])
+        session = self._conn_manager.get_session()
+        try:
+            orms = (
+                session.query(FileORM)
+                .filter(FileORM.id.like(f"%{hex_tail}"))
+                .limit(5)
+                .all()
+            )
+            return Result.ok([_orm_to_file(orm) for orm in orms])
+        except Exception as e:
+            return Result.ko(
+                [ErrorWithDetails("FILE_FIND_BY_ID_SUFFIX_ERROR", {"error": str(e)})]
+            )
         finally:
             self._conn_manager.close_session(session)
 

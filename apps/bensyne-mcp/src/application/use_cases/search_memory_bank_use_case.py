@@ -50,6 +50,15 @@ DEFAULT_LIMIT: int = 10
 MIN_LIMIT: int = 1
 MAX_LIMIT: int = 50
 
+# User-suffixed banks (spec §3.2, decisions D2/D6): the user profile
+# (``user_<id>``) and prior-session context (``agent-sessions_{user_id}``)
+# banks carry task-relevant vocabularies that rarely overlap task-shaped
+# queries, so they are always included with a floor score of 1 instead of
+# being dropped at score 0. Non-user zero-score banks remain dropped
+# (ADR-S12 preserved).
+USER_SUFFIXED_PREFIXES: tuple[str, ...] = ("user_", "agent-sessions_")
+USER_SUFFIXED_FLOOR_SCORE: int = 1
+
 # Tokenisation: split on any non-alphanumeric, lowercase, drop empties.
 _TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 
@@ -282,6 +291,14 @@ class SearchMemoryBankUseCase(BaseUseCase[dict, dict]):
 
             if score > 0:
                 scored.append((score, {**bank, "score": score}))
+            elif name.startswith(USER_SUFFIXED_PREFIXES):
+                # User-suffixed banks (user_<id>, agent-sessions_{user_id})
+                # are always surfaced with a floor score of 1 (D2/D6) so
+                # recall-first discovery never hides them behind a query
+                # vocabulary mismatch. They still sort after real matches.
+                scored.append(
+                    (USER_SUFFIXED_FLOOR_SCORE, {**bank, "score": USER_SUFFIXED_FLOOR_SCORE})
+                )
 
         # 4. Sort by (-score, name) for deterministic ordering.
         scored.sort(key=lambda pair: (-pair[0], pair[1]["name"]))

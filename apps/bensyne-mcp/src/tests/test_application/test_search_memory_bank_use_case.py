@@ -647,6 +647,148 @@ class TestEmptyResult:
         assert result.value["total"] == 0
 
 
+# -- User-suffixed bank inclusion ---------------------------------------
+
+
+class TestUserSuffixedBankInclusion:
+    """Per spec §3.2 + decisions D2/D6: banks whose ``name`` starts with a
+    user-suffixed prefix (``user_*``, ``agent-sessions_*``) are always
+    included in search results even when they score 0 — floored to a
+    score of ``1`` so they stay visible in the default ``limit=10`` window,
+    while non-user zero-score banks remain dropped."""
+
+    def test_user_bank_included_when_score_zero(self, logger) -> None:
+        """A ``user_oleksii`` bank with no token overlap for query
+        "architecture" must still appear in matches with score >= 1."""
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        user_bank = _bank(
+            "user_oleksii",
+            description="User profile memory for user id=oleksii",
+            status="registered",
+            memory_count=5,
+        )
+        service = _service([user_bank])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "architecture"})
+
+        assert result.is_ok is True
+        match = next(
+            (m for m in result.value["matches"] if m["name"] == "user_oleksii"),
+            None,
+        )
+        assert match is not None, (
+            "user_oleksii must be included even when its raw score is 0"
+        )
+        assert match["score"] >= 1
+        # Response shape unchanged; total includes the user bank.
+        required = {"bank", "name", "description", "memory_count", "status", "score"}
+        assert set(match.keys()) >= required
+        assert match["bank"] == match["name"] == "user_oleksii"
+        assert result.value["total"] == 1
+
+    def test_agent_sessions_bank_included_when_score_zero(self, logger) -> None:
+        """An ``agent-sessions_oleksii`` bank with no token overlap must
+        likewise appear in matches with score >= 1."""
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        session_bank = _bank(
+            "agent-sessions_oleksii",
+            description="Agent session history for user id=oleksii",
+            status="registered",
+            memory_count=3,
+        )
+        service = _service([session_bank])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "architecture"})
+
+        assert result.is_ok is True
+        match = next(
+            (m for m in result.value["matches"] if m["name"] == "agent-sessions_oleksii"),
+            None,
+        )
+        assert match is not None, (
+            "agent-sessions_oleksii must be included even when its raw score is 0"
+        )
+        assert match["score"] >= 1
+        assert match["bank"] == match["name"] == "agent-sessions_oleksii"
+        assert result.value["total"] == 1
+
+    def test_non_user_bank_still_dropped_when_score_zero(self, logger) -> None:
+        """A ``vault`` bank with no token overlap is still dropped
+        (regression guard — only user-suffixed banks are floored)."""
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        vault_bank = _bank(
+            "vault",
+            description="Racochu-ingested vault knowledge from project .vault/ dirs",
+            status="registered",
+            memory_count=42,
+        )
+        service = _service([vault_bank])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "architecture"})
+
+        assert result.is_ok is True
+        assert result.value["matches"] == []
+        assert result.value["total"] == 0
+
+    def test_user_banks_sort_after_scored_matches(self, logger) -> None:
+        """A positively-scored ``agent-persona_architect`` (score 4 via query
+        overlap) outranks a floor-scored ``user_oleksii`` (score 1) so user
+        banks stay visible without displacing real matches."""
+        from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
+
+        architect = _bank(
+            "agent-persona_architect",
+            description="Architect agent decision tree (persona)",
+            status="registered",
+            memory_count=7,
+        )
+        user_bank = _bank(
+            "user_oleksii",
+            description="User profile memory for user id=oleksii",
+            status="registered",
+            memory_count=5,
+        )
+        service = _service([architect, user_bank])
+        router = _router()
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=service,
+            router=router,
+            logger=logger,
+        )
+
+        result = use_case.execute({"query": "architect"})
+
+        assert result.is_ok is True
+        matches = result.value["matches"]
+        # Pre-truncation total counts both the scored match and the user bank.
+        assert result.value["total"] == 2
+        assert matches[0]["name"] == "agent-persona_architect"
+        assert matches[0]["score"] == 4  # name +1, description +2, derived +1
+        assert matches[1]["name"] == "user_oleksii"
+        assert matches[1]["score"] == 1  # floor score
+
+
 # -- Result shape -------------------------------------------------------
 
 

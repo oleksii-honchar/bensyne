@@ -29,17 +29,20 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 _MEMORY_BANK_WRITE_DESC = (
     "Required. The memory bank (namespace) to write to. "
-    "USE ONLY THE DEFAULT non-file bank ('default' or a newly user-created bank). "
-    "Source-type banks ('agent-sessions', 'vault', 'obsidian') are Racochu-managed and "
-    "RECALL-ONLY - writing to them via this tool is wrong. "
+    "USE ONLY the resolved user bank 'user_<id>' (from ~/.config/racochu.yaml: "
+    "user.bank else user_<id>) or a newly user-created bank. "
+    "Source-type banks ('agent-sessions_{user_id}', 'vault', 'obsidian') are "
+    "Racochu-managed and RECALL-ONLY - writing to them via this tool is wrong. "
     "Use searchMemoryBank (preferred) or listMemoryBanks (diagnostic) to confirm banks."
 )
 _MEMORY_BANK_READ_DESC = (
     "Required. The memory bank (namespace) to read from. "
-    "Read/recall is allowed in EVERY bank. Typical banks: 'default' (the user profile "
-    "bank) plus Racochu-managed source banks 'agent-sessions', 'vault', 'obsidian' "
-    "(recall-only). Use searchMemoryBank (preferred) or listMemoryBanks (diagnostic) to "
-    "confirm banks. At task start, recall 'agent-sessions' and 'default' first to build "
+    "Read/recall is allowed in EVERY bank. Typical banks: 'user_<id>' (the user profile "
+    "bank, resolved from ~/.config/racochu.yaml) plus Racochu-managed source banks "
+    "'agent-sessions_{user_id}', 'vault', 'obsidian' (recall-only). "
+    "'default'/'agent-sessions' are legacy shells (deleted 2026-08-29) - do not use them. "
+    "Use searchMemoryBank (preferred) or listMemoryBanks (diagnostic) to confirm banks. "
+    "At task start, recall 'user_<id>' and 'agent-sessions_{user_id}' first to build "
     "awareness."
 )
 _MEMORY_BANK_FILE_DESC = (
@@ -153,7 +156,7 @@ def register_tools(
             "drop the stale hash-index/file-chunk rows and re-embed under a new memory id.",
         ] = None,
     ):
-        """Store a new memory in the DEFAULT (non-file) bank.
+        """Store a new memory in the resolved user bank (`user_<id>`).
 
         When to use: capturing USER-SPECIFIC knowledge that should persist:
           - The user's profile/image: preferences, habits, communication style,
@@ -162,12 +165,12 @@ def register_tools(
             (e.g. a homelab's hosts/services at a narrative level).
 
         When NOT to use / HARD RULE:
-          - The default bank is NOT the canonical source of truth for technical
+          - The resolved user bank is NOT the canonical source of truth for technical
             details. Canonical technical truth lives in the source-type banks
-            (agent-sessions, vault) and in the codebase itself.
-          - Source-type banks ('agent-sessions', 'vault', 'obsidian') are
+            (agent-sessions_{user_id}, vault) and in the codebase itself.
+          - Source-type banks ('agent-sessions_{user_id}', 'vault', 'obsidian') are
             Racochu-managed and RECALL-ONLY. Writing to them via this tool is wrong.
-          Use 'default' (or an explicitly new user-created bank) for memory_bank.
+          Use 'user_<id>' (or an explicitly new user-created bank) for memory_bank.
 
         Prefer this over re-asking the user something already knowable from prior context.
         """
@@ -197,13 +200,15 @@ def register_tools(
         """Recall relevant memories by semantic search over a bank.
 
         When to use: ALWAYS, at the start of a task, to build awareness. Before working,
-        recall the 'agent-sessions' bank (prior decisions/context) and the 'default' bank
-        (user profile/environment). You cannot know if a task relates to prior memories
-        without recalling first.
+        recall the 'agent-sessions_{user_id}' bank (prior decisions/context) and the
+        'user_<id>' bank (user profile/environment). You cannot know if a task relates
+        to prior memories without recalling first.
 
         Recall is allowed in EVERY bank, including the Racochu-managed source banks
-        ('agent-sessions', 'vault', 'obsidian') - use them to consult prior session
-        history, architecture/ADRs, and personal notes.
+        ('agent-sessions_{user_id}', 'vault', 'obsidian') - use them to consult prior
+        session history, architecture/ADRs, and personal notes.
+
+        'default'/'agent-sessions' are legacy shells (deleted 2026-08-29) - do not use them.
 
         Use recallMemory (not rememberMemory) to READ anything that already exists in memory.
         Pass the right memory_bank.
@@ -219,16 +224,16 @@ def register_tools(
         memory_id: Annotated[str, "Required. ID of the memory to delete (from recallMemory results)."],
         memory_bank: Annotated[str, _MEMORY_BANK_WRITE_DESC],
     ):
-        """Permanently delete a memory by ID from a bank.
+        """Permanently delete a memory by ID from the resolved user bank (`user_<id>`).
 
         When to use: removing stale, wrong, or unwanted USER-SPECIFIC memories from the
-        DEFAULT bank (e.g. an outdated preference or fact about the user).
+        resolved user bank (e.g. an outdated preference or fact about the user).
 
         When NOT to use / HARD RULE:
-          - Write discipline: only the DEFAULT non-file bank should be written to.
-          - Source-type banks ('agent-sessions', 'vault', 'obsidian') are Racochu-managed
+          - Write discipline: only the resolved user bank (`user_<id>`) should be written to.
+          - Source-type banks ('agent-sessions_{user_id}', 'vault', 'obsidian') are Racochu-managed
             and RECALL-ONLY - do not delete from them.
-          - The default bank holds user profile/environment context, never the canonical
+          - The resolved user bank holds user profile/environment context, never the canonical
             source of truth for technical details.
 
         Find the memory_id via recallMemory first.
@@ -247,16 +252,16 @@ def register_tools(
             "Optional. New relative importance 0.0-1.0 for the memory.",
         ] = None,
     ):
-        """Update an existing memory's content and/or importance by ID.
+        """Update an existing memory's content and/or importance by ID in the resolved user bank.
 
         When to use: correcting or refining an existing USER-SPECIFIC memory in the
-        DEFAULT bank (e.g. an updated preference or environment fact).
+        resolved user bank (e.g. an updated preference or environment fact).
 
         When NOT to use / HARD RULE:
-          - Write discipline: only the DEFAULT non-file bank may be written to.
-          - Source-type banks ('agent-sessions', 'vault', 'obsidian') are Racochu-managed
+          - Write discipline: only the resolved user bank (`user_<id>`) may be written to.
+          - Source-type banks ('agent-sessions_{user_id}', 'vault', 'obsidian') are Racochu-managed
             and RECALL-ONLY - do not update them.
-          - The default bank stores user profile/environment, never technical canonical
+          - The resolved user bank stores user profile/environment, never technical canonical
             truth.
 
         Find the memory_id via recallMemory first.
@@ -276,7 +281,7 @@ def register_tools(
         memory system consolidate, deduplicate, and rank memories. It is optional
         housekeeping - not required for read-only workflows.
 
-        Use 'default' (the user profile bank) for memory_bank when consolidating user memories.
+        Use 'user_<id>' (the user profile bank) for memory_bank when consolidating user memories.
         """
         return await handlers.handle_sleep(router, {"memory_bank": memory_bank})
 
@@ -287,7 +292,8 @@ def register_tools(
         When to use: inspecting how many memories a bank holds, its size, or health.
         Useful for observability and capacity checks. Read-only.
 
-        Pass the memory_bank to inspect (e.g. 'default').
+        Pass the memory_bank to inspect (e.g. 'user_<id>').
+        An empty bank means 'no context yet' — do not treat empty results as authoritative.
         """
         return await handlers.handle_stats(router, {"memory_bank": memory_bank})
 
@@ -300,8 +306,10 @@ def register_tools(
         with a short task query — it ranks banks by relevance and is faster than
         scanning this list manually.
 
-        Banks typically include 'default' (the user profile bank, writable) plus
-        Racochu-managed source banks 'agent-sessions', 'vault', 'obsidian' (recall-only).
+        Banks typically include 'user_<id>' (the user profile bank, writable) plus
+        Racochu-managed source banks 'agent-sessions_{user_id}', 'vault', 'obsidian' (recall-only).
+        An empty bank means 'no context yet' — confirm with searchMemoryBank before
+        concluding nothing exists.
         """
         return await handlers.handle_list_banks(router, memory_bank_service, {})  # type: ignore[arg-type]
 
@@ -330,6 +338,9 @@ def register_tools(
         can jump straight to the right bank.
 
         When NOT to use: for full enumeration or diagnostics, use listMemoryBanks.
+
+        User-suffixed banks (`user_<id>`, `agent-sessions_{user_id}`) are always
+        included in results so the user profile and prior-session context are never hidden.
 
         Provide a short query (1-5 keywords is usually enough). The optional
         agent_id gives the matching agent-persona_<agent_id> bank a small relevance
