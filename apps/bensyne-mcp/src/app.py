@@ -436,11 +436,17 @@ def register_tools(
 
     @mcp.tool(name="fetchFile")
     async def fetch_file(
-        file_id: Annotated[
-            str,
-            "Required. ID of the file to fetch (from searchFiles/expandFileRelations/recallMemory).",
-        ],
         memory_bank: Annotated[str, _MEMORY_BANK_FILE_DESC],
+        file_id: Annotated[
+            str | None,
+            "Optional. ID of the file to fetch (from searchFiles/expandFileRelations/recallMemory). "
+            "At least one of file_id / path_handle is required.",
+        ] = None,
+        path_handle: Annotated[
+            str | None,
+            "Preferred stable reference for persona nodes; take it from "
+            "getPersonaEntryNode/expandFileRelations output.",
+        ] = None,
         include_metadata: Annotated[
             bool,
             "Optional. Include file metadata in the response. Default False.",
@@ -471,6 +477,8 @@ def register_tools(
         Read-only over ingested source files.
         """
         args = {"file_id": file_id, "memory_bank": memory_bank, "include_metadata": include_metadata}
+        if path_handle is not None:
+            args["path_handle"] = path_handle
         if center_chunk_index is not None:
             args["center_chunk_index"] = center_chunk_index
             args["adjacent_chunks"] = adjacent_chunks

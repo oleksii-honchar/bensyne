@@ -85,25 +85,25 @@ def _a_chunk(
 
 
 
-@pyest.fixture
+@pytest.fixture
 def mnemosyne_client() -> MagicMock:
     return MagicMock()
 
 
 
-@pyest.fixture
+@pytest.fixture
 def file_service() -> MagicMock:
     return MagicMock()
 
 
 
-@pyest.fixture
+@pytest.fixture
 def logger() -> MagicMock:
     return MagicMock()
 
 
 
-@pyest.fixture
+@pytest.fixture
 def use_case(
     mnemosyne_client: MagicMock,
     file_service: MagicMock,
@@ -133,7 +133,7 @@ class TestFetchFileResolveByPathHandle:
         """fetchFile with only path_handle (no file_id) returns matching content."""
         file = _a_file(metadata={"path_handle": PATH_HANDLE})
         chunks = [_a_chunk()]
-        file_service.reselve_file_ref.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.return_value = {"content": "Persona node content"}
 
@@ -287,7 +287,7 @@ class TestFetchFileRefRequiredValidation:
         self,
         use_case: FetchFileUseCase,
     ) -> None:
-        result = use_case.validate_arams({})
+        result = use_case.validate_params({})
         assert result.is_ko is True
         assert result.errors[0].error_code == "FILE_REF_REQUIRED"
         details = result.errors[0].details
@@ -300,7 +300,7 @@ class TestFetchFileRefRequiredValidation:
         self,
         use_case: FetchFileUseCase,
     ) -> None:
-        result = use_case.validate_arams({"file_id": "", "path_handle": ""})
+        result = use_case.validate_params({"file_id": "", "path_handle": ""})
         assert result.is_ko is True
         assert result.errors[0].error_code == "FILE_REF_REQUIRED"
         assert result.errors[0].details == {"file_id": "", "path_handle": ""}
@@ -320,7 +320,7 @@ class TestFetchFileRefRequiredValidation:
         result = use_case.validate_params({"path_handle": "agent-a/00-entry.md"})
         assert result.is_ok is True
 
-    def test_file_id_requred_no_longer_in_validation_path(
+    def test_file_id_required_no_longer_in_validation_path(
         self,
         use_case: FetchFileUseCase,
     ) -> None:

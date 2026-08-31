@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-28T17:23:01Z"
+updatedAt: "2026-08-31T12:40:34Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -47,6 +47,8 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0095-channel-weighted-keyword-ranking]] — Channel-Weighted Keyword Ranking — v1 Substring/Token Scoring Without Embeddings
 - [[0096-bank-description-backfill-via-operator-script]] — Bank Description Backfill via Explicit Operator Script — Not Auto-Seed
 - [[0098-forgetfile-file-not-found-json-status]] — forgetFile Returns FILE_NOT_FOUND as JSON Status, Not a Raised Error (DEC-0099)
+- [[0100-mcp-tool-descriptions-resolved-user-banks]] — MCP Tool Descriptions Teach the Resolved User-Suffixed Banks (DEC-0101)
+- [[0101-search-memory-bank-user-suffixed-inclusion]] — searchMemoryBank Always Surfaces User-Suffixed Banks (DEC-0102)
 
 ### racochu
 

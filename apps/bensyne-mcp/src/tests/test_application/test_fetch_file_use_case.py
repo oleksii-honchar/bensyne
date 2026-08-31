@@ -128,12 +128,12 @@ class TestFetchFileValidation:
     def test_returns_ko_when_file_id_missing(self, use_case: FetchFileUseCase) -> None:
         result = use_case.validate_params({})
         assert result.is_ko is True
-        assert result.errors[0].error_code == "FILE_ID_REQUIRED"
+        assert result.errors[0].error_code == "FILE_REF_REQUIRED"
 
     def test_returns_ko_when_file_id_empty(self, use_case: FetchFileUseCase) -> None:
         result = use_case.validate_params({"file_id": ""})
         assert result.is_ko is True
-        assert result.errors[0].error_code == "FILE_ID_REQUIRED"
+        assert result.errors[0].error_code == "FILE_REF_REQUIRED"
 
     def test_returns_ok_when_file_id_present(self, use_case: FetchFileUseCase) -> None:
         result = use_case.validate_params({"file_id": "f1"})
@@ -152,7 +152,7 @@ class TestFetchFileNotFound:
         use_case: FetchFileUseCase,
         file_service: MagicMock,
     ) -> None:
-        file_service.get_file_by_id.return_value = Result.ok(None)
+        file_service.resolve_file_ref.return_value = Result.ok(None)
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
         assert result.is_ko is True
@@ -171,7 +171,7 @@ class TestFetchFileNoChunks:
         file_service: MagicMock,
     ) -> None:
         file = _a_file(id="f1", path="/tmp/empty.txt")
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -201,7 +201,7 @@ class TestFetchFileBasicReconstruction:
             _a_chunk(id="c2", file_id="f1", memory_id="mem_2", chunk_index=1, start_line=11, end_line=20),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         mnemosyne_client.get.side_effect = [
@@ -226,7 +226,7 @@ class TestFetchFileBasicReconstruction:
         file = _a_file(id="f1", path="/tmp/test.txt")
         chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0, start_line=1, end_line=10)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "Some content"}
 
@@ -264,7 +264,7 @@ class TestFetchFileChunkOrdering:
             _a_chunk(id="c2", file_id="f1", memory_id="mem_2", chunk_index=1, start_line=11, end_line=20),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         mnemosyne_client.get.side_effect = [
@@ -297,7 +297,7 @@ class TestFetchFileChunkOrdering:
             _a_chunk(id="c_a", file_id="f1", memory_id="mem_a", chunk_index=0, start_line=1, end_line=10),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         mnemosyne_client.get.side_effect = [
@@ -334,7 +334,7 @@ class TestFetchFileMissingChunks:
             _a_chunk(id="c3", file_id="f1", memory_id="mem_3", chunk_index=2),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         # mem_2 is missing
@@ -368,7 +368,7 @@ class TestFetchFileMissingChunks:
             _a_chunk(id="c3", file_id="f1", memory_id="mem_9", chunk_index=2),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         # All memories missing
@@ -401,7 +401,7 @@ class TestFetchFileDuplicateChunks:
             _a_chunk(id="c2", file_id="f1", memory_id="mem_1", chunk_index=1),  # duplicate memory_id
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.return_value = {"content": "Deduplicated content"}
 
@@ -438,7 +438,7 @@ class TestFetchFileMetadata:
         )
         chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "Hello world"}
 
@@ -475,7 +475,7 @@ class TestFetchFileMetadata:
             _a_chunk(id="c3", file_id="f1", memory_id="mem_3", chunk_index=2),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.return_value = {"content": "x"}
 
@@ -514,7 +514,7 @@ class TestFetchFileHashSurfacing:
             _a_chunk(id="c2", memory_id="mem_2", chunk_index=1, content_hash=hash_2),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.return_value = {"content": "x"}
 
@@ -534,7 +534,7 @@ class TestFetchFileHashSurfacing:
         file = _a_file(id="f1")
         chunk = _a_chunk(id="c1", memory_id="mem_1", chunk_index=0, content_hash=None)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "x"}
 
@@ -556,7 +556,7 @@ class TestFetchFileHashSurfacing:
             _a_chunk(id="c2", memory_id="mem_2", chunk_index=2, content_hash=hash_2),
         ]
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne = _mnemosyne_for(chunks)
 
@@ -581,7 +581,7 @@ class TestFetchFileHashSurfacing:
         file = _a_file(id="f1", path="/tmp/test.py", hash=file_hash)
         chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "Hello world"}
 
@@ -603,7 +603,7 @@ class TestFetchFileHashSurfacing:
         file = _a_file(id="f1", hash=None)
         chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"content": "Hello world"}
 
@@ -626,7 +626,7 @@ class TestFetchFileHashSurfacing:
         hash_1 = "1" * 64
         chunk = _a_chunk(id="c1", memory_id="mem_1", chunk_index=0, content_hash=hash_1)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = None
 
@@ -651,7 +651,7 @@ class TestFetchFileErrors:
     ) -> None:
         """If chunk repo fails, return partial with empty content."""
         file = _a_file(id="f1", path="/tmp/test.txt")
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ko([ErrorWithDetails("DB_ERROR", {})])
 
         result = use_case.execute({"file_id": "f1", "memory_bank": "bank"})
@@ -672,7 +672,7 @@ class TestFetchFileErrors:
         file = _a_file(id="f1", path="/tmp/test.txt")
         chunk = _a_chunk(id="c1", file_id="f1", memory_id="mem_1", chunk_index=0)
 
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok([chunk])
         mnemosyne_client.get.return_value = {"id": "mem_1"}  # no content key
 
@@ -723,7 +723,7 @@ class TestFetchFileNeighborMode:
         """center=2, N=1 on 5-chunk file ⇒ exactly chunks [1,2,3] with full per-chunk shape."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
 
@@ -765,7 +765,7 @@ class TestFetchFileNeighborMode:
         """center=0, N=2 ⇒ chunks [0,1,2] (clamped at 0)."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne = _mnemosyne_for(chunks)
 
@@ -783,7 +783,7 @@ class TestFetchFileNeighborMode:
         """center=4, N=2 ⇒ chunks [2,3,4] (clamped at total-1)."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne = _mnemosyne_for(chunks)
 
@@ -801,7 +801,7 @@ class TestFetchFileNeighborMode:
         """center=2, N=0 ⇒ exactly chunk [2]."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne = _mnemosyne_for(chunks)
 
@@ -822,7 +822,7 @@ class TestFetchFileNeighborMode:
         """Neighbor mode returns the window instead of whole-file reconstruction."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
 
@@ -845,7 +845,7 @@ class TestFetchFileNeighborModeValidation:
         """adjacent_chunks=6 ⇒ error result, no exception."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         result = use_case.execute(
@@ -862,7 +862,7 @@ class TestFetchFileNeighborModeValidation:
         """adjacent_chunks=-1 ⇒ error result, no exception."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         result = use_case.execute(
@@ -879,7 +879,7 @@ class TestFetchFileNeighborModeValidation:
         """center_chunk_index=-1 ⇒ error result (documented decision: error over clamp)."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         result = use_case.execute(
@@ -896,7 +896,7 @@ class TestFetchFileNeighborModeValidation:
         """center_chunk_index=5 on 5-chunk file ⇒ error result (documented decision)."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         result = use_case.execute(
@@ -914,7 +914,7 @@ class TestFetchFileNeighborModeValidation:
         """Out-of-range center ⇒ no partial output — mnemosyne never queried."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
 
         result = use_case.execute(
@@ -934,7 +934,7 @@ class TestFetchFileDefaultModeUnchanged:
         """Without center_chunk_index the response shape is identical to whole-file reconstruction."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
 
@@ -942,7 +942,7 @@ class TestFetchFileDefaultModeUnchanged:
         assert result.is_ok is True
 
         val = result.value
-        assert set(val.keys()) == {"file", "content", "chunks", "reconstruction_status", "missing_chunks"}
+        assert set(val.keys()) == {"file", "content", "chunks", "reconstruction_status", "missing_chunks", "file_id", "path_handle"}
         # Whole-file reconstruction: all 5 chunks, full content joined
         assert [c["chunk_index"] for c in val["chunks"]] == [0, 1, 2, 3, 4]
         for c in val["chunks"]:
@@ -966,7 +966,7 @@ class TestFetchFileDefaultModeUnchanged:
         """adjacent_chunks without center_chunk_index ⇒ default whole-file behavior."""
         file = _a_file(id="f1")
         chunks = _five_chunks()
-        file_service.get_file_by_id.return_value = Result.ok(file)
+        file_service.resolve_file_ref.return_value = Result.ok(file)
         file_service.get_chunks_by_file_id.return_value = Result.ok(chunks)
         mnemosyne_client.get.side_effect = lambda mid: {"content": f"content of {mid}"}
 

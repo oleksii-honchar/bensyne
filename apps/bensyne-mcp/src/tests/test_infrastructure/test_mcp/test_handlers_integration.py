@@ -780,3 +780,24 @@ class TestBankDirResolution:
         )
 
         self._assert_bundle_bank_dir(container, tmp_path)
+
+    async def test_handle_fetch_file_passes_path_handle_through(self, router, tmp_path) -> None:
+        from src.infrastructure.mcp.handlers import handle_fetch_file
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute.return_value = Result.ok({"file_id": "file-1"})
+        container = MagicMock()
+        container.fetch_file_use_case.return_value = mock_use_case
+
+        await handle_fetch_file(
+            router,
+            {"memory_bank": "default", "path_handle": "agent-a/00-entry.md"},
+            container=container,
+        )
+        mock_use_case.execute.assert_called_once()
+        executed_params = mock_use_case.execute.call_args[0][0]
+        assert executed_params["path_handle"] == "agent-a/00-entry.md"
+        assert "file_id" not in executed_params
+        # Handler-level gate is gone: no file_id but a path_handle passes
+        # straight to the use case (which owns FILE_REF_REQUIRED validation).
+        self._assert_bundle_bank_dir(container, tmp_path)

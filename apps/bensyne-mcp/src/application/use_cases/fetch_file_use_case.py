@@ -16,6 +16,7 @@ from src.infrastructure.mnemosyne.mnemosyne_client import MnemosyneClient
 from src.application.use_cases.base_use_case import BaseUseCase
 from src.domain.file_chunk_entity import FileChunk
 from src.domain.file_metadata_aggregate import FileMetadata
+from src.application.services.file_service import derive_path_handle
 from src.utils.result import ErrorWithDetails, Result
 
 if TYPE_CHECKING:
@@ -39,10 +40,21 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
     ADJACENT_CHUNKS_MAX = 5
 
     def validate_params(self, parameters: dict) -> Result[dict]:
-        """Validate that file_id is present and non-empty."""
+        """Validate that at least one of file_id / path_handle is present (D-2, spec §4)."""
         file_id = parameters.get("file_id")
-        if not file_id:
-            return Result.ko([ErrorWithDetails("FILE_ID_REQUIRED", {})])
+        path_handle = parameters.get("path_handle")
+        if not file_id and not path_handle:
+            return Result.ko(
+                [
+                    ErrorWithDetails(
+                        "FILE_REF_REQUIRED",
+                        {
+                            "file_id": file_id,
+                            "path_handle": path_handle,
+                        },
+                    )
+                ]
+            )
         return Result.ok(parameters)
 
     def execute_internal(self, parameters: dict) -> Result[dict]:
@@ -53,6 +65,12 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         [center - N .. center + N] clamped to 0..total_chunks-1, each chunk
         with content + position + section_header.
 
+        File resolution follows the D-2 chain (spec §4) via
+        ``file_service.resolve_file_ref(file_id, path_handle)``:
+        ``file_id`` exact match wins; otherwise path_handle metadata exact,
+        then stored-path suffix; ``Ok(None)`` means not found (caller builds
+        FILE_NOT_FOUND with conflation candidates, D-5).
+
         Validation decisions (Result pattern, no exceptions):
         - adjacent_chunks outside 0..5 ⇒ ADJACENT_CHUNKS_OUT_OF_RANGE
           (input validation, before any load)
@@ -61,7 +79,8 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
           available_chunk_indexes in details; error over clamp: signals bad
           agent input rather than silently shifting the window)
         """
-        file_id = parameters["file_id"]
+        file_id: str | None = parameters.get("file_id")
+        path_handle: str | None = parameters.get("path_handle")
         include_metadata = parameters.get("include_metadata", False)
         center_chunk_index: int | None = parameters.get("center_chunk_index")
         adjacent_chunks: int = parameters.get("adjacent_chunks", 1)
@@ -86,20 +105,21 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
             use_case="fetch_file",
             method="execute_internal",
             file_id=file_id,
+            path_handle=path_handle,
             include_metadata=include_metadata,
             center_chunk_index=center_chunk_index,
             adjacent_chunks=adjacent_chunks if center_chunk_index is not None else None,
         )
 
-        # Step 1: Get file
-        file_result = self.file_service.get_file_by_id(file_id)
+        # Step 1: Resolve file (D-2 chain: file_id exact, then path_handle).
+        file_result = self.file_service.resolve_file_ref(file_id, path_handle)
         if not file_result.is_ok or file_result.value is None:
-            return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", {"file_id": file_id})])
+            return self._file_not_found(file_id, path_handle)
         file = file_result.value
 
         # Step 2: Get chunks (a fetch failure degrades to an empty aggregate,
         # whose composition yields the partial body — no local composition here).
-        chunks_result = self.file_service.get_chunks_by_file_id(file_id)
+        chunks_result = self.file_service.get_chunks_by_file_id(file.id)
         chunks: list[FileChunk] = chunks_result.value if chunks_result.is_ok else []
 
         # Step 3: Delegate composition to the aggregate, then wrap the body
@@ -126,6 +146,42 @@ class FetchFileUseCase(BaseUseCase[dict, dict]):
         return Result.ok(
             {
                 "file": file.to_dict() if include_metadata else None,
+                "file_id": file.id,
+                "path_handle": derive_path_handle(file),
                 **body,
             }
         )
+
+    def _file_not_found(self, file_id: str | None, path_handle: str | None) -> Result[dict]:
+        """Build a FILE_NOT_FOUND error with conflation candidates (D-5, spec §7).
+
+        When a ``file_id`` was supplied but did not resolve, surface up to 5
+        files whose id ends with the supplied id's trailing 16 hex chars, each
+        with ``file_id`` / ``path`` / ``path_handle``, plus a conflation hint.
+        A chimeric id ends with the suffix of a real (parent) file, so its true
+        source appears here. Candidates are only built from a supplied file_id
+        (they are meaningless for a path_handle-only miss).
+        """
+        details: dict = {"file_id": file_id}
+        if path_handle is not None:
+            details["path_handle"] = path_handle
+
+        if file_id:
+            hex_tail = file_id[-16:]
+            candidates_result = self.file_service.file_repository.find_files_by_id_suffix(hex_tail)
+            details["candidates"] = []
+            if candidates_result.is_ok and candidates_result.value:
+                details["candidates"] = [
+                    {
+                        "file_id": candidate.id,
+                        "path": candidate.path,
+                        "path_handle": derive_path_handle(candidate),
+                    }
+                    for candidate in candidates_result.value
+                ]
+            details["hint"] = (
+                "file_id not found — possible id conflation; pick from candidates "
+                "or retry with path_handle"
+            )
+
+        return Result.ko([ErrorWithDetails("FILE_NOT_FOUND", details)])

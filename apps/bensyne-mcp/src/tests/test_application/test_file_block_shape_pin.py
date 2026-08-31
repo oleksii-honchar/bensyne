@@ -187,7 +187,7 @@ def _search_block(file: File) -> dict:
 def _fetch_block(file: File, mode: str = "default") -> dict:
     """fetchFile response.file (include_metadata=True) in the given mode."""
     file_service = MagicMock()
-    file_service.get_file_by_id.return_value = Result.ok(file)
+    file_service.resolve_file_ref.return_value = Result.ok(file)
     mnemosyne = MagicMock()
     mnemosyne.get.return_value = {"content": "Hello"}
 
