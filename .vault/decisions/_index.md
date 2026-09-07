@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-31T14:57:53Z"
+updatedAt: "2026-09-07T13:05:59Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -54,6 +54,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0104-path-handle-in-tool-outputs]] — path_handle Exposed in File-Tool Outputs, Always and Top-Level (DEC-0105)
 - [[0105-file-not-found-conflation-candidates]] — Chimera-ID Candidates in FILE_NOT_FOUND Details (DEC-0106)
 - [[0106-getfilechunks-observability-only]] — getFileChunks: Instrument Missing Rows, Never Change Behavior (DEC-0107)
+- [[0107-dedup-content-sync-fix]] — Content-Sync Fix for Hash Deduplication on Dedup Hits (DEC-0108)
 
 ### racochu
 

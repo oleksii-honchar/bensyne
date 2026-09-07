@@ -1,9 +1,18 @@
 ---
-id: DEC-0107
+type: decision
+id: DEC-0108
+system: bensyne-mcp
 title: "ADR-11: Content-sync fix for hash deduplication"
 status: accepted
-created: "2026-09-07"
-system: bensyne-mcp
+createdAt: "2026-09-07T13:05:59Z"
+updatedAt: "2026-09-07T13:05:59Z"
+tags: [deduplication, content-sync, mcp-tool, bensyne-mcp]
+supersedes: []
+superseded_by: []
+see_also:
+  - decisions/0086-recover-force-reembed.decision.md
+  - decisions/0090-persona-entry-node-tool.decision.md
+  - concepts/0020-file-hash-deduplication.concept.md
 ---
 
 # ADR-11: Content-sync fix for hash deduplication
