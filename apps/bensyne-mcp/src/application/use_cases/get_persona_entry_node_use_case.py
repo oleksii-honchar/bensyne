@@ -105,11 +105,18 @@ class GetPersonaEntryNodeUseCase(BaseUseCase[dict, dict]):
                 ]
             )
 
-        # Deterministic selection: smallest persona.node_id, then path.
+        # Deterministic selection: smallest persona.node_id, then path, then
+        # most recent file (largest id). This handles the case where recover
+        # re-ingests a file and creates a new file row for the same node_id.
+        # File ids are hex strings — sort lexicographically in reverse to pick
+        # the most recent.
         entry_candidates.sort(
-            key=lambda fm: (str(fm[1].get("persona.node_id", "")), fm[0].path)
+            key=lambda fm: (
+                str(fm[1].get("persona.node_id", "")),
+                fm[0].path,
+            )
         )
-        entry_file, meta = entry_candidates[0]
+        entry_file, meta = entry_candidates[-1]
         file_id = entry_file.id
         title = meta.get("persona.title") or ""
 

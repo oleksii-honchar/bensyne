@@ -609,7 +609,7 @@ class TestRememberMemoryForceReembed:
         assert result.value["status"] == "deduplicated"
         assert result.value["memory_id"] == stale_id
         memory_repository.save.assert_not_called()
-        memory_repository.get.assert_not_called()
+        memory_repository.get.assert_called_once_with(stale_id)
         hash_index_service.remove.assert_not_called()
         file_service.get_chunks_by_memory_id.assert_not_called()
 

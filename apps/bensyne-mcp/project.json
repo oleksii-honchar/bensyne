@@ -23,7 +23,7 @@
       "description": "Build the tuiteraz/bensyne Docker image. The tag is extracted at run time from apps/bensyne-mcp/pyproject.toml (version = \"x.y.z\") via an inline node -e read.",
       "options": {
         "cwd": "apps/bensyne-mcp",
-        "command": "node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\" > /tmp/bensyne-version.txt && VERSION=$(cat /tmp/bensyne-version.txt) && docker build -t tuiteraz/bensyne:${VERSION} ."
+        "command": "node -e \"const fs=require('fs');const m=fs.readFileSync('pyproject.toml','utf8').match(/^version\\s*=\\s*\\\"(\\d+\\.\\d+\\.\\d+)\\\"/m);if(!m){console.error('no version in pyproject.toml');process.exit(1)};console.log(m[1])\" > /tmp/bensyne-version.txt && VERSION=$(cat /tmp/bensyne-version.txt) && docker buildx build --platform linux/amd64,linux/arm64 -t tuiteraz/bensyne:${VERSION} -t tuiteraz/bensyne:latest --push ."
       }
     },
     "start": {

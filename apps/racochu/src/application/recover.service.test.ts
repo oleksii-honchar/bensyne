@@ -545,6 +545,89 @@ describe('RecoverService', () => {
       );
     });
   });
+
+  describe('stale content detection', () => {
+    it('re-ingests a file with empty memory content (stored chunk hash is empty or different)', async () => {
+      // Simulate a chunk that exists but has empty/stale memory content
+      // (stored hash doesn't match expected)
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
+      deps.bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok({
+          status: 'present',
+          chunks: [
+            { chunkIndex: 0, contentHash: '', memoryStatus: 'present' }, // Empty hash
+            { chunkIndex: 1, contentHash: CHUNK_HASH_1, memoryStatus: 'present' },
+          ],
+        }),
+      );
+      deps.chunkContentUseCase.execute
+        .mockResolvedValueOnce(Result.ok(expectedChunks())) // skipEnrichment verification
+        .mockResolvedValueOnce(Result.ok(enrichedChunks())); // enriched repair pass
+
+      await service.recoverAll([aSource()]);
+
+      const queue = deps.processingQueue as jest.Mocked<ReturnType<typeof aFileProcessingQueueService>>;
+      expect(queue.addToQueue).toHaveBeenCalledTimes(1);
+      const task = queue.addToQueue.mock.calls[0][0] as () => Promise<void>;
+      await task();
+
+      expect(deps.ingestChunkUseCase.execute).toHaveBeenCalledTimes(1);
+      const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
+        chunks: { chunkIndex: number }[];
+      };
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0]); // Only the stale chunk repaired
+    });
+
+    it('skips a file with matching content hash (healthy)', async () => {
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
+      deps.bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok({
+          status: 'present',
+          chunks: [
+            { chunkIndex: 0, contentHash: CHUNK_HASH_0, memoryStatus: 'present' },
+            { chunkIndex: 1, contentHash: CHUNK_HASH_1, memoryStatus: 'present' },
+          ],
+        }),
+      );
+      deps.chunkContentUseCase.execute.mockResolvedValue(Result.ok(expectedChunks()));
+
+      await service.recoverAll([aSource()]);
+
+      // No repair needed — hashes match
+      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('re-ingests a file with different content hash (stale content)', async () => {
+      // Stored hash differs from expected — content has changed
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
+      deps.bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok({
+          status: 'present',
+          chunks: [
+            { chunkIndex: 0, contentHash: 'different-hash', memoryStatus: 'present' },
+            { chunkIndex: 1, contentHash: CHUNK_HASH_1, memoryStatus: 'present' },
+          ],
+        }),
+      );
+      deps.chunkContentUseCase.execute
+        .mockResolvedValueOnce(Result.ok(expectedChunks())) // skipEnrichment verification
+        .mockResolvedValueOnce(Result.ok(enrichedChunks())); // enriched repair pass
+
+      await service.recoverAll([aSource()]);
+
+      const queue = deps.processingQueue as jest.Mocked<ReturnType<typeof aFileProcessingQueueService>>;
+      expect(queue.addToQueue).toHaveBeenCalledTimes(1);
+      const task = queue.addToQueue.mock.calls[0][0] as () => Promise<void>;
+      await task();
+
+      expect(deps.ingestChunkUseCase.execute).toHaveBeenCalledTimes(1);
+      const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
+        chunks: { chunkIndex: number }[];
+      };
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0]); // Only the stale chunk repaired
+    });
+  });
 });
 
 /** Typed stored-chunk helper: a present chunk at the given index. */

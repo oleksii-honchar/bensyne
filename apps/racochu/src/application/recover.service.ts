@@ -221,10 +221,11 @@ export class RecoverService {
     const storedByIndex = new Map<number, StoredChunkInfo>(
       fileChunks.chunks.map(chunk => [chunk.chunkIndex, chunk]),
     );
-    const repairSet = expectedChunks.filter(chunk => {
-      const stored = storedByIndex.get(chunk.chunkIndex);
-      return stored === undefined || stored.memoryStatus === 'missing';
-    });
+    // Always re-ingest files on recover — the hash dedup prevents duplicate
+    // embeddings, and the ADR-11 content sync fix in bensyne-mcp updates stale
+    // or empty memory text. This handles the edge case where FileChunk content
+    // is correct but the memory's text field is empty (the original bug).
+    const repairSet = expectedChunks;
 
     if (repairSet.length === 0) {
       this.logger.debug(`File healthy, skipping: path="${filePath}"`);

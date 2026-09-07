@@ -9,7 +9,7 @@
     "build:docker": "nx run bensyne-mcp:build:docker",
     "start": "nx run bensyne-mcp:start",
     "start:docker": "nx run bensyne-mcp:start:docker",
-    "bump-version": "node scripts/bump-version.mjs --app apps/bensyne-mcp",
+    "bump-version": "node ../../scripts/bump-version.mjs --app apps/bensyne-mcp",
     "lint": "nx run bensyne-mcp:lint",
     "type-check": "nx run bensyne-mcp:type-check",
     "format": "nx run bensyne-mcp:format"
