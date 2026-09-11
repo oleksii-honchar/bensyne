@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# reprocess-personas.sh — Re-ingest ONLY the agent-persona sources (the persona
-# decision-tree banks) against the running Mnemosyne MCP server.
+# reprocess-personas.sh — Re-ingest agent-persona sources (the persona decision-tree
+# banks) against the running Mnemosyne MCP server.
 #
 # Why this exists: after the AgentPersonaChunkingStrategy edge fix (expandHome
 # resolving the `~` tree root), persona banks must be re-chunked so their
 # decision_next / folder_hierarchy edges are materialized into file_relations.
-# This targets ONLY persona sources and leaves non-persona sources (e.g.
-# agent-sessions) untouched.
 #
 # How it works:
 #   1. Optionally rebuilds dist and/or kills a running racochu (to avoid DB
 #      lock contention) — both opt-in via flags.
-#   2. Writes a temporary persona-only config (yq-filtered from the live config).
+#   2. Single source (--source): uses global config directly with --source flag.
+#      All sources: builds temporary persona-only config via yq filter.
 #   3. Runs a one-shot force-reprocess via `dotenvx run` (so LLM_API_KEY for
 #      enrichment is loaded from the local .env) with --process-only.
 #   4. Prints the resulting file_relations count per persona bank.
@@ -34,8 +33,6 @@ cd "$PROJECT_DIR"
 
 SRC_CONFIG="${RACOCHU_CONFIG:-$HOME/.config/racochu.yaml}"
 BANKS_DIR="${BANKS_DIR:-$PROJECT_DIR/../bensyne-mcp/data/banks}"
-TMP_CONFIG="$(mktemp /tmp/racochu-personas.XXXXXX.yaml)"
-trap 'rm -f "$TMP_CONFIG"' EXIT
 
 DO_BUILD=0
 KILL_RUNNING=0
@@ -82,29 +79,26 @@ if [ "$KILL_RUNNING" -eq 1 ]; then
   node scripts/kill-stale-racochu.mjs
 fi
 
-# ── 3. build persona-only config ────────────────────────────────────────────
+# ── 3. validate source config exists ────────────────────────────────────────
 if [ ! -f "$SRC_CONFIG" ]; then
   echo "ERROR: source config not found at $SRC_CONFIG (set RACOCHU_CONFIG to override)." >&2
   exit 1
 fi
 
-if [ -n "$SOURCE_ID" ]; then
-  # Keep only the requested source.
-  yq eval "del(.watchSources[] | select(.id != \"$SOURCE_ID\"))" "$SRC_CONFIG" > "$TMP_CONFIG"
-else
-  # Keep only persona sources (id prefix "agent-persona-").
-  yq eval 'del(.watchSources[] | select(.id | test("^agent-persona-") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
-fi
-
-KEPT="$(yq eval '.watchSources[].id' "$TMP_CONFIG" | tr '\n' ' ')"
-echo "==> Persona-only config written to: $TMP_CONFIG"
-echo "    sources: ${KEPT}"
-
 # ── 4. run one-shot force-reprocess (dotenvx loads LLM_API_KEY from .env) ───
 echo "==> Running one-shot force-reprocess (--process-only)..."
 if [ -n "$SOURCE_ID" ]; then
-  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$TMP_CONFIG" --source "$SOURCE_ID"
+  # Single source: use global config directly with --source flag (no filtering needed)
+  echo "    source: $SOURCE_ID"
+  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$SRC_CONFIG" --source "$SOURCE_ID"
 else
+  # All personas: build temporary persona-only config (requires yq)
+  echo "    sources: all persona sources (agent-persona-*)"
+  TMP_CONFIG="$(mktemp /tmp/racochu-personas.XXXXXX.yaml)"
+  trap 'rm -f "$TMP_CONFIG"' EXIT
+  yq eval 'del(.watchSources[] | select(.id | test("^agent-persona-") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
+  KEPT="$(yq eval '.watchSources[].id' "$TMP_CONFIG" | tr '\n' ' ')"
+  echo "    filtered sources: ${KEPT}"
   npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$TMP_CONFIG"
 fi
 
