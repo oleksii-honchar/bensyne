@@ -96,7 +96,7 @@ else
   echo "    sources: all persona sources (agent-persona-*)"
   TMP_CONFIG="$(mktemp /tmp/racochu-personas.XXXXXX.yaml)"
   trap 'rm -f "$TMP_CONFIG"' EXIT
-  yq eval 'del(.watchSources[] | select(.id | test("^agent-persona-") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
+  yq eval 'del(.watchSources[] | select(.id | test("^agent-persona_") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
   KEPT="$(yq eval '.watchSources[].id' "$TMP_CONFIG" | tr '\n' ' ')"
   echo "    filtered sources: ${KEPT}"
   npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$TMP_CONFIG"
