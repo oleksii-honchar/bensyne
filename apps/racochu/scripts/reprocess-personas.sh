@@ -94,8 +94,11 @@ if [ -n "$SOURCE_ID" ]; then
 else
   # All personas: build temporary persona-only config (requires yq)
   echo "    sources: all persona sources (agent-persona-*)"
-  TMP_CONFIG="$(mktemp /tmp/racochu-personas.XXXXXX.yaml)"
-  trap 'rm -f "$TMP_CONFIG"' EXIT
+  # macOS mktemp does not support XXXXXX mid-template, so create a temp dir
+  # (template ends in XXXXXX — portable) and place the config inside it.
+  TMP_DIR="$(mktemp -d /tmp/racochu-personas.XXXXXX)"
+  TMP_CONFIG="$TMP_DIR/personas.yaml"
+  trap 'rm -rf "$TMP_DIR"' EXIT
   yq eval 'del(.watchSources[] | select(.id | test("^agent-persona_") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
   KEPT="$(yq eval '.watchSources[].id' "$TMP_CONFIG" | tr '\n' ' ')"
   echo "    filtered sources: ${KEPT}"
