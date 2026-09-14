@@ -19,7 +19,8 @@ IMAGE_FULL="${REPO}/${IMAGE_NAME}:${VERSION}"
 
 # Buildx platforms (multi-arch; default: linux/amd64 + linux/arm64)
 PLATFORMS="${DOCKER_PLATFORMS:-linux/amd64,linux/arm64}"
-BUILDER="${DOCKER_BUILDER:-default}"
+# Optional explicit builder; default is to use the current buildx builder
+BUILDER="${DOCKER_BUILDER:-}"
 
 # Build + push image (buildx multi-platform so amd64 and arm64 both get a manifest)
 PUSH="${PUSH_TO_REGISTRY:-${1:-false}}"
@@ -29,12 +30,21 @@ if [ "$PUSH" = "true" ] || [ "$PUSH" = "--push" ]; then
     for tag in "${TAGS[@]}"; do
         TAGS_ARGS+=("-t" "${REPO}/${IMAGE_NAME}:${tag}")
     done
-    docker buildx build \
-        --builder "$BUILDER" \
-        --platform "$PLATFORMS" \
-        "${TAGS_ARGS[@]}" \
-        --push \
-        .
+    BUILDER_ARGS=()
+    if [ -n "$BUILDER" ]; then
+        docker buildx build \
+            --builder "$BUILDER" \
+            --platform "$PLATFORMS" \
+            "${TAGS_ARGS[@]}" \
+            --push \
+            .
+    else
+        docker buildx build \
+            --platform "$PLATFORMS" \
+            "${TAGS_ARGS[@]}" \
+            --push \
+            .
+    fi
     echo "Push complete! (platforms: $PLATFORMS, tags: ${TAGS[*]})"
 else
     echo "Building Docker image (host platform): $IMAGE_FULL"
