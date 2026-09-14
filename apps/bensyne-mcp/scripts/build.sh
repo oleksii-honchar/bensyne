@@ -17,25 +17,27 @@ TAGS=("${VERSION}" "latest")
 
 IMAGE_FULL="${REPO}/${IMAGE_NAME}:${VERSION}"
 
-# Build image
-echo "Building Docker image: $IMAGE_FULL"
-docker build -t "$IMAGE_FULL" .
+# Buildx platforms (multi-arch; default: linux/amd64 + linux/arm64)
+PLATFORMS="${DOCKER_PLATFORMS:-linux/amd64,linux/arm64}"
+BUILDER="${DOCKER_BUILDER:-default}"
 
-# Tag image
-for tag in "${TAGS[@]}"; do
-    docker tag "$IMAGE_FULL" "${REPO}/${IMAGE_NAME}:${tag}"
-done
-echo "Tagged: ${REPO}/${IMAGE_NAME} with ${TAGS[*]}"
-
-# Push to DockerHub (use PUSH_TO_REGISTRY=true or pass --push flag)
+# Build + push image (buildx multi-platform so amd64 and arm64 both get a manifest)
 PUSH="${PUSH_TO_REGISTRY:-${1:-false}}"
 if [ "$PUSH" = "true" ] || [ "$PUSH" = "--push" ]; then
-    echo "Pushing to DockerHub..."
-    docker push "$IMAGE_FULL"
+    echo "Building + pushing multi-platform image: $PLATFORMS"
+    TAGS_ARGS=()
     for tag in "${TAGS[@]}"; do
-        docker push "${REPO}/${IMAGE_NAME}:${tag}"
+        TAGS_ARGS+=("-t" "${REPO}/${IMAGE_NAME}:${tag}")
     done
-    echo "Push complete!"
+    docker buildx build \
+        --builder "$BUILDER" \
+        --platform "$PLATFORMS" \
+        "${TAGS_ARGS[@]}" \
+        --push \
+        .
+    echo "Push complete! (platforms: $PLATFORMS, tags: ${TAGS[*]})"
 else
+    echo "Building Docker image (host platform): $IMAGE_FULL"
+    docker build -t "$IMAGE_FULL" .
     echo "Build complete! (use PUSH_TO_REGISTRY=true ./scripts/build.sh or ./scripts/build.sh --push)"
 fi
