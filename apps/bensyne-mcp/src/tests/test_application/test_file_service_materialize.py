@@ -447,6 +447,8 @@ class TestMaterializeHashChangeRebuild:
         new_context = _context(
             file_hash=OTHER_HASH,
             edges=[{"target_path": "/edge_new.md", "relation_type": "backlink"}],
+            chunk_index=4,
+            total_chunks=5,
         )
         result = service.materialize_file_context(BANK, new_context, "m1")
         assert result.is_ok is True

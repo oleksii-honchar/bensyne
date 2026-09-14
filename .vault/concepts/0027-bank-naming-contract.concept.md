@@ -2,13 +2,14 @@
 type: concept
 title: "Bank Naming Contract — User-Suffixed vs Legacy"
 createdAt: "2026-08-31T12:40:34Z"
-updatedAt: "2026-08-31T12:40:34Z"
+updatedAt: "2026-09-14T16:36:00Z"
 system: bensyne-mcp
-tags: [mcp, bank-discovery, naming, racochu]
+tags: [mcp, bank-discovery, naming, racochu, session-banks]
 see_also:
   - decisions/0100-mcp-tool-descriptions-resolved-user-banks.decision.md
   - decisions/0101-search-memory-bank-user-suffixed-inclusion.decision.md
   - decisions/0094-bank-discovery-search-tool.decision.md
+  - decisions/0108-per-session-memory-banks.decision.md
 deprecated:
   date: null
   reason: null
@@ -30,6 +31,7 @@ The canonical memory-bank naming contract for Bensyne MCP + Racochu:
 | `vault` | Project knowledge (recall-only) | Racochu watchSource |
 | `obsidian` | Personal notes (recall-only) | Racochu watchSource |
 | `agent-persona_<agent>` | Persona decision tree + occasional memories | Racochu node files + agent writes |
+| `agent-session-{session_id}` | Per-session traversal history (read + write, write-budget exempt) | OpenCode session ID (`ses_<hex>`) — hyphen prefix, distinct from `agent-sessions_` user-suffixed banks |
 
 ## Why
 
@@ -54,6 +56,12 @@ four surfaces: the MCP tool schema, `skills/bensyne/SKILL.md`,
   user banks off this pattern breaks discovery.
 - **Raw id, no sanitization.** Hyphens and underscores are both
   allowed in `<id>` (e.g. `agent-sessions_oleksii`).
+- **Per-session prefix is distinct by design.** `agent-session-`
+  (hyphen, singular) never collides with `agent-sessions_`
+  (underscore, plural, user-suffixed) or the DEC-0102 floor-score
+  prefixes (`user_` / `agent-sessions_`). Banks are created
+  implicitly on first write — no pre-registration (see
+  [[decisions/0108-per-session-memory-banks]]).
 - **Typos create banks.** A mistyped bank name (e.g. the stray
   `user_oleksiil` observed 2026-08-31) registers as a distinct
   namespace — there is no correction mechanism short of operator

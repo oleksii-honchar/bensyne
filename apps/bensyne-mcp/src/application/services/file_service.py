@@ -398,8 +398,15 @@ class FileService:
         # 2. Rebuild the projection when the whole-file hash changed (D5).
         #    Runs BEFORE loading the aggregate so stale chunks of this file
         #    and its outbound relations are pruned first.
+        #    CRITICAL: Only on the final chunk — if we rebuild on chunk 0 of 2,
+        #    the edge created on chunk 0 is deleted by rebuild on chunk 1.
         rebuilt = False
-        if stored_file is not None and stored_file.hash is not None and context.file_hash != stored_file.hash:
+        if (
+            stored_file is not None
+            and stored_file.hash is not None
+            and context.file_hash != stored_file.hash
+            and context.chunk_index == context.total_chunks - 1
+        ):
             rebuild_result = self.rebuild_projection(file_id, {memory_id})
             if rebuild_result.is_ko:
                 errors.extend(rebuild_result.errors)
