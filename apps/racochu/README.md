@@ -322,6 +322,27 @@ certificate` (check `~/.local/share/racochu/logs/`).
 > `litellm-ca.pem` into the bensyne container because Python/urllib also refuses the Caddy
 > self-signed cert without it.
 
+**Fix (macOS / Linux):**
+
+Racochu runtime scripts automatically use the first existing PEM below when
+`NODE_EXTRA_CA_CERTS` is unset:
+
+1. `~/.config/racochu/extra-ca.pem`
+2. `~/.config/better-opencode/extra-ca.pem` (shared with `start-dev.sh`)
+3. `~/.local/share/racochu/certs/litellm-caddy-root.pem`
+
+To make the choice explicit, or to use another CA bundle, export the variable
+before starting Racochu:
+
+```bash
+export NODE_EXTRA_CA_CERTS="$HOME/.config/racochu/extra-ca.pem"
+npm run start:dev
+```
+
+The PEM is machine-local trust material: do not commit it. Restart Racochu in
+a fresh terminal after changing it, because Node reads the variable at process
+startup.
+
 **Fix (Windows):**
 
 1. Export the Caddy local CA root from the Windows cert store to a PEM file:
