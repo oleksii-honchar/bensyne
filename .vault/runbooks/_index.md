@@ -2,7 +2,7 @@
 type: index
 title: "Runbooks"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-28"
+updatedAt: "2026-09-16"
 tags: []
 ---
 
@@ -26,3 +26,4 @@ Operational runbooks. Grouped by `system` frontmatter.
 ### bensyne-mcp
 
 - [[0008-bank-description-backfill]] — Bank Description Backfill
+- [[0009-delete-redundant-memory-bank]] — Delete a Redundant Memory Bank
