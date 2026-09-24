@@ -176,6 +176,18 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       return ContentChunk.of(updatedProps).getValue();
     });
 
+    // Safety check: warn if any chunk exceeds 4000 bytes (close to Mnemosyne's 4096-byte split limit)
+    // to help catch configuration issues that could trigger the UTF-8 byte-splitting bug.
+    for (const chunk of finalChunks) {
+      const byteLength = Buffer.byteLength(chunk.text, 'utf8');
+      if (byteLength > 4000) {
+        this.logger.warn(
+          `Chunk exceeds 4000 bytes (close to Mnemosyne's 4096-byte split limit); path="${params.filePath}", chunkIndex=${chunk.chunkIndex}, byteLength=${byteLength}. ` +
+          `Consider reducing enhancement.maxCharacters to prevent the UTF-8 byte-splitting bug.`,
+        );
+      }
+    }
+
     return Result.ok(finalChunks);
   }
 

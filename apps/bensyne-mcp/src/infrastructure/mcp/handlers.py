@@ -95,16 +95,34 @@ async def handle_remember(
     if not content:
         raise ValidationError("content is required")
 
-    # Fix: ensure content is valid UTF-8 (workaround for Mnemosyne byte-splitting bug).
-    # Mnemosyne library may split content at 4096 bytes, in the middle of a multi-byte
-    # UTF-8 character (e.g. Cyrillic 0xd0/0xd1). Round-trip encode/decode fixes any
-    # invalid sequences by replacing them with the Unicode replacement character.
-    try:
-        content = content.encode("utf-8").decode("utf-8", errors="replace")
-    except Exception:
-        # If encoding fails (e.g. content has non-Unicode chars), force-replace all
-        # unencodable chars with replacement character.
-        content = content.encode("utf-8", errors="replace").decode("utf-8")
+    # Fix: split content into chunks smaller than 4096 bytes to avoid
+    # Mnemosyne's internal byte-splitting bug that breaks multi-byte UTF-8
+    # characters (e.g. Cyrillic 0xd0/0xd1). Use 3900 bytes to leave room
+    # for the separator.
+    CHUNK_SIZE = 3900
+    if len(content) > CHUNK_SIZE:
+        chunks = []
+        start = 0
+        while start < len(content):
+            end = start + CHUNK_SIZE
+            # Ensure we don't split in the middle of a UTF-8 character
+            chunk = content[start:end]
+            # If chunk is too long, it might have been split mid-character.
+            # Find the nearest whitespace or punctuation to break at.
+            if len(chunk.encode("utf-8")) > CHUNK_SIZE:
+                # Split at last whitespace within the first 3800 bytes
+                safe_chunk = content[start:start + 3800]
+                last_space = safe_chunk.rfind(" ")
+                if last_space > start + 100:  # Don't break too early
+                    chunk = content[start:start + last_space]
+                    end = start + last_space
+                else:
+                    chunk = content[start:start + 3500]
+                    end = start + 3500
+            chunks.append(chunk)
+            start = end
+        # Join chunks with a newline separator (safe for UTF-8)
+        content = "\n".join(chunks)
 
     # Get MnemosyneClient from router to use as memory_repository
     instance = await router.get_instance(memory_bank)
