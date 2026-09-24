@@ -92,6 +92,17 @@ async def handle_remember(
     if not content:
         raise ValidationError("content is required")
 
+    # Fix: ensure content is valid UTF-8 (workaround for Mnemosyne byte-splitting bug).
+    # Mnemosyne library may split content at 4096 bytes, in the middle of a multi-byte
+    # UTF-8 character (e.g. Cyrillic 0xd0/0xd1). Round-trip encode/decode fixes any
+    # invalid sequences by replacing them with the Unicode replacement character.
+    try:
+        content = content.encode("utf-8").decode("utf-8", errors="replace")
+    except Exception:
+        # If encoding fails (e.g. content has non-Unicode chars), force-replace all
+        # unencodable chars with replacement character.
+        content = content.encode("utf-8", errors="replace").decode("utf-8")
+
     # Get MnemosyneClient from router to use as memory_repository
     instance = await router.get_instance(memory_bank)
     logger.debug("[rememberMemory] Got instance", memory_bank=instance.memory_bank)
