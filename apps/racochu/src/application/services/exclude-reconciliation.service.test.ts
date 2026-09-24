@@ -1,13 +1,13 @@
 import fs from 'fs';
-import { ConfigurationService } from '../infrastructure/config/configuration.service';
-import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { aLogger } from '../infrastructure/logging/logger.test-utils';
-import { aFileMemoryTracker } from '../infrastructure/repositories/file-memory-tracker.repository.test-utils';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { ErrorWithDetails } from '../utils/error-with-details';
-import { Result } from '../utils/result';
+import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { aSourceConfig } from '../../infrastructure/config/configuration.service.test-utils';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { aLogger } from '../../infrastructure/logging/logger.test-utils';
+import { aFileMemoryTracker } from '../../infrastructure/repositories/file-memory-tracker.repository.test-utils';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { ErrorWithDetails } from '../../utils/error-with-details';
+import { Result } from '../../utils/result';
 import { ExcludeReconciliationService } from './exclude-reconciliation.service';
 
 describe('ExcludeReconciliationService', () => {

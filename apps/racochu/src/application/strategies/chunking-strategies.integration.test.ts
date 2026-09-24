@@ -9,7 +9,7 @@ import '@/utils/mastra-rag.test-utils';
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
 import { ContentChunk, FILE_ROLES } from '../../domain/content-chunk.entity';
 import { SessionMetadata } from '../../domain/session-metadata.type';
 import { cleanupTempDir, createTempDir, FIXTURES_DIR } from '../../e2e/e2e-utils';
@@ -99,6 +99,7 @@ const createObsidianSourceConfig = (): WatchSourceConfig => ({
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.OBSIDIAN,
   contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+  autoPopulate: true,
 });
 
 const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
@@ -109,6 +110,7 @@ const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.AGENT_SESSIONS,
   contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+  autoPopulate: true,
 });
 
 const createContentAwareSourceConfig = (): WatchSourceConfig => ({
@@ -119,6 +121,7 @@ const createContentAwareSourceConfig = (): WatchSourceConfig => ({
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.VAULT,
   contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+  autoPopulate: true,
 });
 
 // --- Tests ---
@@ -690,6 +693,7 @@ describe('VaultChunkingStrategy with a real tmp/vault fixture', () => {
     debounceMs: 3000,
     sourceType: SOURCE_TYPES.VAULT,
     contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+    autoPopulate: true,
   });
 
   const readFile = async (relPath: string): Promise<string> =>
@@ -981,6 +985,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.VAULT,
       contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+      autoPopulate: true,
     };
     const sut = new VaultChunkingStrategy(mockMastra, mockLogger);
 
@@ -1027,6 +1032,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.OBSIDIAN,
       contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+      autoPopulate: true,
     };
     const sut = new ObsidianChunkingStrategy(mockMastra, mockLogger);
 

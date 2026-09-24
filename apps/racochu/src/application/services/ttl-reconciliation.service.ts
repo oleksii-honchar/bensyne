@@ -1,11 +1,11 @@
 import { Injectable, OnApplicationShutdown } from '@nestjs/common';
-import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
-import { ConfigurationService } from '../infrastructure/config/configuration.service';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
-import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from './mass-forget-guard';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
+import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from '../mass-forget-guard';
 
 const MS_PER_DAY = 86_400_000;
 // One day (24h) expressed as the daily sweep interval.

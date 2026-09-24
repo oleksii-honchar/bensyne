@@ -3,7 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import * as path from 'path';
-import { TtlReconciliationService } from '../../application/ttl-reconciliation.service';
+import { TtlReconciliationService } from '../../application/services/ttl-reconciliation.service';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { FileMemoryTrackerRepository } from '../../infrastructure/repositories/file-memory-tracker.repository';

@@ -10,10 +10,10 @@ import { Logger } from 'nestjs-pino';
 import pino from 'pino';
 import 'reflect-metadata';
 import { AppModule } from './app.module';
-import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
-import { ForceReprocessService } from './application/force-reprocess.service';
-import { RecoverService } from './application/recover.service';
-import { TtlReconciliationService } from './application/ttl-reconciliation.service';
+import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
+import { ForceReprocessService } from './application/services/force-reprocess.service';
+import { RecoverService } from './application/services/recover.service';
+import { TtlReconciliationService } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { NestjsPinoLogger } from './infrastructure/logging/nestjs-pino-logger';
@@ -198,6 +198,21 @@ export async function bootstrap(): Promise<void> {
 
   // Start file watcher (default watch mode)
   if (args.watch) {
+    // Startup auto-population (default true per source). Guard: run only in
+    // plain watch mode — --resume / --force-reprocess without --process-only
+    // fall through here and must not re-run the same pass.
+    if (!args.resume && !args.forceReprocess) {
+      logger.info('Auto-populating sources before watch');
+      // Non-blocking: start the watcher immediately; the serialized queue drains
+      // the pass in the background. resumeSourceInternal already catches per-file
+      // and per-source errors; .catch guards the outer promise.
+      forceReprocessService
+        .autoPopulateSources(sources)
+        .catch((error) =>
+          logger.error(`Auto-population failed: ${error instanceof Error ? error.message : String(error)}`),
+        );
+    }
+
     logger.info('Starting file watcher');
     const startResult = await fileWatcherService.start();
     if (startResult.isOk()) {

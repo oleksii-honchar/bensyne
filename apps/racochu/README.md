@@ -123,6 +123,7 @@ telemetry:
 |                    | exclude      | string[] | `['.git/**', '**/node_modules/**']` | Chokidar ignore patterns                                        |
 |                    | debounceMs   | number   | 3000                                | ms to wait after last file modification before processing       |
 |                    | ttlDays      | number   | — (no TTL)                          | Optional per-source retention in days; see [Source TTL](#source-ttl-ttldays) |
+|                    | autoPopulate | boolean  | true                                | Auto-populate existing files on startup; set `false` to only watch for new/changed files |
 | **chunking**       | strategy     | string   | `content-aware`                     | Chunking strategy (content-aware, recursive, config)            |
 |                    | maxSizes     | object   | —                                   | Max token sizes per file role                                   |
 |                    | overlap      | number   | 50                                  | Token overlap between chunks                                    |
@@ -175,7 +176,7 @@ Pass the flag to select the mode (help: `racochu --help`):
 
 | Flag | Mode |
 | ---- | ---- |
-| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously |
+| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup, processing existing files to seed the Mnemosyne database. |
 | `--process-only` | Process existing files once, then exit (no watching) |
 | `-f, --force-reprocess` | Force re-process all sources (sequential reprocess of every file) |
 | `-r, --resume` | Resume missing chunks: re-process only files with missing stored chunks |
@@ -191,6 +192,11 @@ database: it computes the expected chunk set locally (without LLM enrichment),
 compares it against the stored chunk set via bensyne's read-only `getFileChunks`
 tool, and re-ingests only the missing chunks (with enrichment when enabled).
 Untracked files are never touched, and the process exits after the pass.
+
+`--resume` now includes verification that detects and repairs stub rows
+(incomplete file tracker entries). Files with missing or partial chunk records
+are automatically re-processed, eliminating the need for manual intervention
+to fix stub row issues.
 
 ## Scripts
 

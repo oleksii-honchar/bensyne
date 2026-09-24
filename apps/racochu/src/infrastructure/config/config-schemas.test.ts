@@ -206,6 +206,41 @@ describe('config-schemas', () => {
       }
     });
 
+    it('autoPopulate defaults to true when omitted', () => {
+      const input = { id: 'test-source', path: '/path' };
+      const result = watchSourceConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.autoPopulate).toBe(true);
+      }
+    });
+
+    it('autoPopulate: false is respected when explicitly set', () => {
+      const input = { id: 'test-source', path: '/path', autoPopulate: false };
+      const result = watchSourceConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.autoPopulate).toBe(false);
+      }
+    });
+
+    it('autoPopulate defaults with existing defaulted fields (backward compatibility)', () => {
+      const input = { id: 'test-source', path: '/path' };
+      const result = watchSourceConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.autoPopulate).toBe(true);
+        expect(result.data.sourceType).toBe('vault');
+        expect(result.data.debounceMs).toBe(3000);
+        expect(result.data.exclude).toEqual([
+          '.git/**',
+          '**/.git/**',
+          'node_modules/**',
+          '**/node_modules/**',
+        ]);
+      }
+    });
+
     describe('contentFilter', () => {
       it('accepts a full contentFilter config and preserves every field', () => {
         const input = {

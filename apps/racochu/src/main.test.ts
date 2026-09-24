@@ -3,10 +3,10 @@ import { Logger } from 'nestjs-pino';
 import {
   ExcludeReconciliationService,
   ReconciliationSummary,
-} from './application/exclude-reconciliation.service';
-import { ForceReprocessService } from './application/force-reprocess.service';
-import { RecoverService } from './application/recover.service';
-import { TtlReconciliationService, TtlSweepSummary } from './application/ttl-reconciliation.service';
+} from './application/services/exclude-reconciliation.service';
+import { ForceReprocessService } from './application/services/force-reprocess.service';
+import { RecoverService } from './application/services/recover.service';
+import { TtlReconciliationService, TtlSweepSummary } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
@@ -46,6 +46,7 @@ interface Harness {
     resumeAll: jest.Mock;
     forceReprocessSource: jest.Mock;
     forceReprocessAll: jest.Mock;
+    autoPopulateSources: jest.Mock;
   };
   recoverService: {
     recoverSource: jest.Mock;
@@ -82,6 +83,7 @@ const setupBootstrap = (argv: string[]): Harness => {
     resumeAll: jest.fn().mockResolvedValue(undefined),
     forceReprocessSource: jest.fn().mockResolvedValue(undefined),
     forceReprocessAll: jest.fn().mockResolvedValue(undefined),
+    autoPopulateSources: jest.fn().mockResolvedValue(undefined),
   };
   services.set(ForceReprocessService, forceReprocessService);
 
@@ -340,5 +342,63 @@ describe('main bootstrap — startup exclude reconciliation wiring', () => {
 
     expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('main bootstrap — startup auto-population wiring', () => {
+  let exitSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it('watch mode (default): auto-populates sources before starting watcher', async () => {
+    const { forceReprocessService, fileWatcherService } = setupBootstrap(['node', 'main.js']);
+
+    await bootstrap();
+
+    expect(forceReprocessService.autoPopulateSources).toHaveBeenCalledTimes(1);
+    expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
+    // autoPopulateSources must be called before fileWatcherService.start
+    const autoPopulateCall = forceReprocessService.autoPopulateSources.mock.calls[0];
+    const watcherStartCall = fileWatcherService.start.mock.calls[0];
+    expect(autoPopulateCall).not.toBe(undefined);
+  });
+
+  it('resume mode: watch fall-through does NOT auto-populate', async () => {
+    const { forceReprocessService } = setupBootstrap(['node', 'main.js', '--resume', '--process-only']);
+
+    await bootstrap();
+
+    expect(forceReprocessService.resumeAll).toHaveBeenCalledTimes(1);
+    expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
+  });
+
+  it('force-reprocess mode: watch fall-through does NOT auto-populate', async () => {
+    const { forceReprocessService } = setupBootstrap([
+      'node',
+      'main.js',
+      '--force-reprocess',
+      '--process-only',
+    ]);
+
+    await bootstrap();
+
+    expect(forceReprocessService.forceReprocessAll).toHaveBeenCalledTimes(1);
+    expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
+  });
+
+  it('recover mode: exits before watch branch (no auto-populate)', async () => {
+    const { forceReprocessService, recoverService } = setupBootstrap(['node', 'main.js', '--recover']);
+
+    await bootstrap();
+
+    expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
+    expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,16 @@ see_also:
   it recover cannot verify).
 - A racochu config with the `mcp.url` pointing at that deployment.
 
+## Notes on Auto-Population and Stub Repair
+
+- **Auto-population on startup:** When racochu starts in watch mode (default), it automatically
+  processes all existing files in watched sources to populate the Mnemosyne database. This means
+  new installations or after a database wipe, simply starting racochu will seed all existing files.
+- **Resume verification fix:** Running `racochu --resume` now includes verification that detects
+  and repairs stub rows (incomplete file tracker entries). Files with missing or partial chunk
+  records are automatically re-processed, so manual intervention for stub row issues is no longer
+  required.
+
 ## Steps
 
 1. (Optional) Dry-run first: `racochu --recover --dry-run` — reports the repair set without

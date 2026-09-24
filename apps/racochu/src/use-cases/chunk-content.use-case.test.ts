@@ -1,7 +1,7 @@
 import '@/utils/mastra-rag.test-utils';
 
 import * as crypto from 'crypto';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/services/content-classifier.service';
 import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from '../application/services/importance-scoring.service';
 import { TagExtractionService } from '../application/services/tag-extraction.service';
@@ -52,6 +52,7 @@ const defaultSourceConfig: WatchSourceConfig = {
   debounceMs: 3000,
   sourceType: SOURCE_TYPES.VAULT,
   contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+  autoPopulate: true,
 };
 
 describe('ChunkContentUseCase', () => {

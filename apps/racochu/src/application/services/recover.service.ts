@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
-import { FileTracker } from '../domain/file-tracker.aggregate';
-import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { FileTrackerRepository } from '../infrastructure/repositories/file-tracker.repository';
-import { BensyneClient, StoredChunkInfo } from '../infrastructure/services/bensyne-client.service';
-import { FileHasherService } from '../infrastructure/services/file-hasher.service';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
-import { HardwareIdDetectorService } from '../infrastructure/services/hardware-id-detector.service';
-import { ChunkContentUseCase } from '../use-cases/chunk-content.use-case';
-import { IngestChunkUseCase } from '../use-cases/ingest-chunk.use-case';
-import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
+import { FileTracker } from '../../domain/file-tracker.aggregate';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { FileTrackerRepository } from '../../infrastructure/repositories/file-tracker.repository';
+import { BensyneClient, StoredChunkInfo } from '../../infrastructure/services/bensyne-client.service';
+import { FileHasherService } from '../../infrastructure/services/file-hasher.service';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
+import { HardwareIdDetectorService } from '../../infrastructure/services/hardware-id-detector.service';
+import { ChunkContentUseCase } from '../../use-cases/chunk-content.use-case';
+import { IngestChunkUseCase } from '../../use-cases/ingest-chunk.use-case';
+import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
 import { classifyContent } from './content-classifier.service';
 
 /**

@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 
 import '@/utils/mastra-rag.test-utils';
 
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/services/content-classifier.service';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { FileAddedEvent, FileChangedEvent, FileDeletedEvent } from '../domain/events/file-events';
 import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';

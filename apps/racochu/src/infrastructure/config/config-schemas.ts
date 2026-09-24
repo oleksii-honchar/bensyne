@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
 import { SOURCE_TYPES } from './source-types';
 
 export const contentFilterConfigSchema = z.object({
@@ -32,6 +32,7 @@ export const watchSourceConfigSchema = z
       .enum(Object.values(SOURCE_TYPES) as [string, ...string[]])
       .optional()
       .default(SOURCE_TYPES.VAULT),
+    autoPopulate: z.boolean().default(true),
   })
   .transform(data => ({
     ...data,

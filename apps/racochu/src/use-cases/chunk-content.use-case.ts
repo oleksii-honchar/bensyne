@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { z } from 'zod';
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/services/content-classifier.service';
 import { EnhancementPipelineService } from '../application/services/enhancement-pipeline.service';
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
@@ -71,6 +71,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
           debounceMs: 3000,
           sourceType: SOURCE_TYPES.VAULT,
           contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+          autoPopulate: true,
         });
 
     // Guard: chunker must not be undefined (a router that degraded with no
@@ -95,6 +96,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.VAULT,
       contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+      autoPopulate: true,
     };
 
     // skipEnrichment (spec §4.3, ADR-2): force the enrichment-free path so

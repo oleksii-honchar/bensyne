@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import * as fs from 'fs/promises';
 import { z } from 'zod';
-import { DEFAULT_CONTENT_FILTER_OPTIONS, classifyContent } from '../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS, classifyContent } from '../application/services/content-classifier.service';
 import {
   FILE_EVENTS,
   FILE_OPERATIONS,
@@ -48,6 +48,7 @@ const defaultSourceConfig = (): WatchSourceConfig => ({
   exclude: [],
   debounceMs: 3000,
   contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+  autoPopulate: true,
 });
 
 @Injectable()

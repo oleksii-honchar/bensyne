@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import fs from 'fs';
-import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
-import { ConfigurationService } from '../infrastructure/config/configuration.service';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { isPathExcluded } from './glob-matcher';
-import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from './mass-forget-guard';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { isPathExcluded } from '../glob-matcher';
+import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from '../mass-forget-guard';
 
 /**
  * Outcome of a single reconciliation run.

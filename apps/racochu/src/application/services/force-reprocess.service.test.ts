@@ -4,22 +4,22 @@ import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { aLogger } from '../infrastructure/logging/logger.test-utils';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { aLogger } from '../../infrastructure/logging/logger.test-utils';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import {
   aBensyneClientService,
   aFileChunksInfo,
   aStoredChunkInfo,
-} from '../infrastructure/services/bensyne-client.test-utils';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { aFileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service.test-utils';
-import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
-import { aFileProcessingQueueService } from '../infrastructure/services/file-processing-queue.test-utils';
-import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
-import { aProcessFileUseCase } from '../use-cases/process-file.use-case.test-utils';
-import { Result } from '../utils/result';
-import { mockDirStats, mockDirent, mockFileStats } from '../utils/test-utils';
+} from '../../infrastructure/services/bensyne-client.test-utils';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { aFileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service.test-utils';
+import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
+import { aFileProcessingQueueService } from '../../infrastructure/services/file-processing-queue.test-utils';
+import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
+import { aProcessFileUseCase } from '../../use-cases/process-file.use-case.test-utils';
+import { Result } from '../../utils/result';
+import { mockDirStats, mockDirent, mockFileStats } from '../../utils/test-utils';
 import { ForceReprocessService } from './force-reprocess.service';
 
 jest.mock('fs/promises');
@@ -555,6 +555,163 @@ describe('ForceReprocessService', () => {
         memoryBank: 'test',
         sourceConfig: source,
       });
+    });
+
+    it('should re-ingest a tracked file with all chunks memoryStatus: missing (stub rows)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('stub.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(
+          aFileChunksInfo({
+            chunks: [
+              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'missing' }),
+              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'missing' }),
+            ],
+          }),
+        ),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith({
+        filePath: '/tmp/test/stub.md',
+        eventType: 'add',
+        sourceId: 'test',
+        memoryBank: 'test',
+        sourceConfig: source,
+      });
+    });
+
+    it('should skip a tracked file with mixed chunks (at least one present)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('mixed.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(
+          aFileChunksInfo({
+            chunks: [
+              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' }),
+              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'missing' }),
+              aStoredChunkInfo({ chunkIndex: 2, memoryStatus: 'missing' }),
+            ],
+          }),
+        ),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should skip a tracked file with all chunks present', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('healthy.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(
+          aFileChunksInfo({
+            chunks: [
+              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' }),
+              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'present' }),
+            ],
+          }),
+        ),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('autoPopulateSources', () => {
+    it('should run resume for sources without autoPopulate: false', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
+        aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
+      ];
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.autoPopulateSources(sources);
+
+      // Both sources should be processed (no autoPopulate: false set)
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Auto-populating source: id="source-1"'),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Auto-populating source: id="source-2"'),
+      );
+    });
+
+    it('should skip sources with autoPopulate: false', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1', autoPopulate: true }),
+        aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2', autoPopulate: false }),
+      ];
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.autoPopulateSources(sources);
+
+      // Only source-1 should be processed (source-2 has autoPopulate: false)
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceId: 'source-1' }),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Auto-populating source: id="source-1"'),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Auto-populating source: id="source-2"'),
+      );
+    });
+
+    it('should catch per-source errors without stopping other sources', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
+        aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
+      ];
+
+      fsMock.stat
+        .mockRejectedValueOnce(new Error('stat failed')) // source-1 fails
+        .mockResolvedValueOnce(mockDirStats()); // source-2 succeeds
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.autoPopulateSources(sources);
+
+      // source-2 should still be processed despite source-1 failing
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceId: 'source-2' }),
+      );
+    });
+
+    it('should not await queue drain (non-blocking)', async () => {
+      const sources = [aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' })];
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      // autoPopulateSources should complete after enqueuing, not after queue drains
+      await service.autoPopulateSources(sources);
+
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
     });
   });
 

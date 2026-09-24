@@ -1,4 +1,4 @@
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/services/content-classifier.service';
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { SOURCE_TYPES, SourceType } from '@/infrastructure/config/source-types';
 import { generateId } from '../utils/big-endian-id';
@@ -28,6 +28,7 @@ export interface WatchSourceConfigOverrides {
   debounceMs?: number;
   sourceType?: SourceType;
   contentFilter?: WatchSourceConfig['contentFilter'];
+  autoPopulate?: boolean;
 }
 
 export function aWatchSourceConfig(overrides?: WatchSourceConfigOverrides): WatchSourceConfig {
@@ -42,5 +43,6 @@ export function aWatchSourceConfig(overrides?: WatchSourceConfigOverrides): Watc
     debounceMs: overrides?.debounceMs ?? 3000,
     sourceType: overrides?.sourceType ?? SOURCE_TYPES.VAULT,
     contentFilter: overrides?.contentFilter ?? DEFAULT_CONTENT_FILTER_OPTIONS,
+    autoPopulate: overrides?.autoPopulate ?? true,
   };
 }

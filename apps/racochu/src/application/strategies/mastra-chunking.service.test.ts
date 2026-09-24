@@ -1,6 +1,6 @@
 import '@/utils/mastra-rag.test-utils';
 
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
 import { LlmClientFactory } from '../../application/services/llm-client-factory';
 import { FILE_ROLES } from '../../domain/content-chunk.entity';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
@@ -2585,6 +2585,7 @@ Do not include any other text, explanations, or markdown formatting.`,
       debounceMs: 3000,
       sourceType: SOURCE_TYPES.VAULT,
       contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+      autoPopulate: true,
     };
 
     const setupEnabledEnrichmentDoc = () => {

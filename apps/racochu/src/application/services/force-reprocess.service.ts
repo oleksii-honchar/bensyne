@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { WatchSourceConfig } from '../infrastructure/config/config-schemas';
-import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
-import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
-import { FileMemoryTrackerService } from '../infrastructure/services/file-memory-tracker.service';
-import { FileProcessingQueue } from '../infrastructure/services/file-processing-queue.service';
-import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
-import { isPathExcluded } from './glob-matcher';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { isFileHealthy } from '../utils/file-health';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
+import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
+import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
+import { isPathExcluded } from '../glob-matcher';
 
 @Injectable()
 export class ForceReprocessService {
@@ -64,6 +65,15 @@ export class ForceReprocessService {
     await this.resumeSourceInternal(source);
   }
 
+  /** Startup population: resume only sources that have not opted out. */
+  async autoPopulateSources(sources: WatchSourceConfig[]): Promise<void> {
+    const targets = sources.filter(s => s.autoPopulate !== false);
+    for (const source of targets) {
+      this.logger.info(`Auto-populating source: id="${source.id}", path="${source.path}"`);
+      await this.resumeSourceInternal(source);
+    }
+  }
+
   private async resumeSourceInternal(source: WatchSourceConfig): Promise<void> {
     try {
       const files = await this.getFiles(source);
@@ -104,7 +114,7 @@ export class ForceReprocessService {
 
           const fileChunks = chunksResult.getValue();
 
-          if (fileChunks.status !== 'FILE_NOT_FOUND' && fileChunks.chunks.length > 0) {
+          if (isFileHealthy(fileChunks)) {
             this.logger.debug(
               `Skipping verified file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
             );

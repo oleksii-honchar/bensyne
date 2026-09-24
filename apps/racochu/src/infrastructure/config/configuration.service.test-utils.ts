@@ -1,4 +1,4 @@
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
 import { ChunkingConfig, Configuration, McpConfig, WatchSourceConfig } from './config-schemas';
 import { ConfigurationService } from './configuration.service';
 import { SOURCE_TYPES } from './source-types';
@@ -25,6 +25,7 @@ export function aSourceConfig(overrides?: Partial<WatchSourceConfig>): WatchSour
     exclude: [],
     debounceMs: 3000,
     contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
+    autoPopulate: true,
     ...overrides,
   };
 }

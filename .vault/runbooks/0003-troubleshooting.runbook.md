@@ -90,6 +90,24 @@ rows are broadly missing for `agent-sessions` after the 2026-08-24
 mass-forget recovery backfill, so this symptom is expected on legacy paths.
 See [[memories/0026-forgetfile-file-not-found-noop]].
 
+## Auto-Population Opt-Out
+
+By default, racochu auto-populates all sources on startup (watch mode). To disable this
+behavior, set `autoPopulate: false` in your config:
+
+```yaml
+watchSources:
+  - id: my-docs
+    path: /Users/me/docs
+    autoPopulate: false   # skip auto-population on startup
+```
+
+**When to use:**
+- Large source directories where initial population is expensive
+- Sources that are manually managed or periodically re-synced
+- Performance-sensitive environments where startup time matters
+- When you only want to watch for new/changed files, not process existing ones
+
 ## Logs
 
 - **Location:** `~/.local/share/rag-content-chunker/logs/`

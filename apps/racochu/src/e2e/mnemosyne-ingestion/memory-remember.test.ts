@@ -1,4 +1,4 @@
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/services/content-classifier.service';
 import { WatchSourceConfig } from '@/infrastructure/config/config-schemas';
 import { SOURCE_TYPES } from '@/infrastructure/config/source-types';
 import { BensyneClient } from '@/infrastructure/services/bensyne-client.service';

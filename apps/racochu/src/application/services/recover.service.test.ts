@@ -1,6 +1,6 @@
 import '@/utils/mastra-rag.test-utils';
 
-import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/content-classifier.service';
+import { DEFAULT_CONTENT_FILTER_OPTIONS } from '@/application/services/content-classifier.service';
 import { aBodyChunk } from '@/domain/content-chunk.entity.test-utils';
 import { FileTracker } from '@/domain/file-tracker.aggregate';
 import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
@@ -17,13 +17,13 @@ import { aFileProcessingQueueService } from '@/infrastructure/services/file-proc
 import { HardwareIdDetectorService } from '@/infrastructure/services/hardware-id-detector.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as fsPromises from 'fs/promises';
-import { ChunkContentUseCase } from '../use-cases/chunk-content.use-case';
-import { aChunkContentUseCase } from '../use-cases/chunk-content.use-case.test-utils';
-import { IngestChunkUseCase } from '../use-cases/ingest-chunk.use-case';
-import { aIngestChunkUseCase } from '../use-cases/ingest-chunk.use-case.test-utils';
-import { ProcessFileUseCase } from '../use-cases/process-file.use-case';
-import { aProcessFileUseCase } from '../use-cases/process-file.use-case.test-utils';
-import { Result } from '../utils/result';
+import { ChunkContentUseCase } from '../../use-cases/chunk-content.use-case';
+import { aChunkContentUseCase } from '../../use-cases/chunk-content.use-case.test-utils';
+import { IngestChunkUseCase } from '../../use-cases/ingest-chunk.use-case';
+import { aIngestChunkUseCase } from '../../use-cases/ingest-chunk.use-case.test-utils';
+import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
+import { aProcessFileUseCase } from '../../use-cases/process-file.use-case.test-utils';
+import { Result } from '../../utils/result';
 import { RecoverService } from './recover.service';
 
 jest.mock('fs/promises');

@@ -4,9 +4,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppBootstrapService } from './app-bootstrap.service';
 import { AppConfig } from './app.config';
 import { validateAppEnv } from './app.env.validation';
-import { ExcludeReconciliationService } from './application/exclude-reconciliation.service';
-import { ForceReprocessService } from './application/force-reprocess.service';
-import { RecoverService } from './application/recover.service';
+import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
+import { ForceReprocessService } from './application/services/force-reprocess.service';
+import { RecoverService } from './application/services/recover.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
 import { TagExtractionService } from './application/services/tag-extraction.service';
@@ -16,7 +16,7 @@ import { MastraChunkingService } from './application/strategies/mastra-chunking.
 import { ObsidianChunkingStrategy } from './application/strategies/obsidian-chunking.strategy';
 import { StrategyRouter } from './application/strategies/strategy-router.service';
 import { VaultChunkingStrategy } from './application/strategies/vault-chunking.strategy';
-import { TtlReconciliationService } from './application/ttl-reconciliation.service';
+import { TtlReconciliationService } from './application/services/ttl-reconciliation.service';
 
 import { ConfigurationModule } from './infrastructure/config/configuration.module';
 import { LoggerModule } from './infrastructure/logging/logger.module';
