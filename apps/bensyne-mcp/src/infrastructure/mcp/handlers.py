@@ -20,8 +20,11 @@ import json
 import os
 from typing import TYPE_CHECKING, Callable
 
+from src.application.use_cases.forget_memory_use_case import ForgetMemoryUseCase
 from src.application.use_cases.list_banks_use_case import ListBanksUseCase
+from src.application.use_cases.recall_memory_use_case import RecallMemoryUseCase
 from src.application.use_cases.register_bank_use_case import RegisterBankUseCase
+from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
 from src.application.use_cases.search_memory_bank_use_case import SearchMemoryBankUseCase
 from src.application.use_cases.sleep_use_case import SleepUseCase
 from src.application.use_cases.update_memory_use_case import UpdateMemoryUseCase
