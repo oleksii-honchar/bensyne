@@ -267,7 +267,7 @@ describe('RecoverService', () => {
       );
     });
 
-    it('skips a healthy file (chunk sets match, all memoryStatus present) — zero ingest calls, expected set computed with skipEnrichment only', async () => {
+    it('re-ingests a healthy file (always re-ingest to sync memory content — D7 + ADR-11)', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       deps.bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok({
@@ -278,20 +278,31 @@ describe('RecoverService', () => {
           ],
         }),
       );
-      deps.chunkContentUseCase.execute.mockResolvedValue(Result.ok(expectedChunks()));
+      deps.chunkContentUseCase.execute
+        .mockResolvedValueOnce(Result.ok(expectedChunks()))
+        .mockResolvedValueOnce(Result.ok(enrichedChunks()));
 
       await service.recoverAll([aSource()]);
 
-      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
+      // Recover always re-ingests all chunks (hash dedup prevents duplicates).
+      const queue = deps.processingQueue as jest.Mocked<ReturnType<typeof aFileProcessingQueueService>>;
+      expect(queue.addToQueue).toHaveBeenCalledTimes(1);
+      const task = queue.addToQueue.mock.calls[0][0] as () => Promise<void>;
+      await task();
+
+      expect(deps.ingestChunkUseCase.execute).toHaveBeenCalledTimes(1);
+      const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
+        chunks: { chunkIndex: number }[];
+        forceReembed?: boolean;
+      };
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
+      expect(submitted.forceReembed).toBe(true);
       expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
-      // Verification runs exactly one cheap (skipEnrichment) chunk pass — no enriched re-chunk.
-      expect(deps.chunkContentUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(deps.chunkContentUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ skipEnrichment: true }),
-      );
+      // Verification pass (skipEnrichment) + enriched repair pass.
+      expect(deps.chunkContentUseCase.execute).toHaveBeenCalledTimes(2);
     });
 
-    it('repairs a missing chunk index — only the repair-set chunk is submitted via IngestChunkUseCase with forceReembed and hashes', async () => {
+    it('repairs a missing chunk index — all chunks re-submitted via IngestChunkUseCase with forceReembed and hashes (always re-ingest)', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       deps.bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok({ status: 'present', chunks: [aStoredPresent(0)] }),
@@ -317,15 +328,16 @@ describe('RecoverService', () => {
         hardwareId?: string;
         metadata?: Record<string, string>;
       };
-      expect(submitted.chunks).toHaveLength(1);
-      expect(submitted.chunks[0].chunkIndex).toBe(1);
+      // Recover always re-ingests all chunks (hash dedup prevents duplicates).
+      expect(submitted.chunks).toHaveLength(2);
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
       expect(submitted.forceReembed).toBe(true);
       expect(submitted.fileHash).toBe('current-hash');
       expect(submitted.hardwareId).toBe('hw-id');
       expect(submitted.metadata).toEqual({ filePath: FILE_PATH });
     });
 
-    it('repairs a chunk whose stored memoryStatus is "missing"', async () => {
+    it('repairs a chunk whose stored memoryStatus is "missing" (all chunks re-ingested)', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       deps.bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok({
@@ -351,8 +363,8 @@ describe('RecoverService', () => {
       const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
         chunks: { chunkIndex: number }[];
       };
-      // Only the missing-memory chunk (index 1) is re-submitted; the healthy chunk 0 is not.
-      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([1]);
+      // Recover always re-ingests all chunks (hash dedup prevents duplicates).
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
     });
 
     it('runs the enriched re-chunk pass for the repair set (skipEnrichment absent) and keeps healthy chunks out of the submit', async () => {
@@ -575,10 +587,11 @@ describe('RecoverService', () => {
       const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
         chunks: { chunkIndex: number }[];
       };
-      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0]); // Only the stale chunk repaired
+      // Recover always re-ingests all chunks (hash dedup prevents duplicates).
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
     });
 
-    it('skips a file with matching content hash (healthy)', async () => {
+    it('re-ingests a healthy file with matching content hash (always re-ingest to sync memory content)', async () => {
       deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([aTracker()]);
       deps.bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok({
@@ -589,12 +602,19 @@ describe('RecoverService', () => {
           ],
         }),
       );
-      deps.chunkContentUseCase.execute.mockResolvedValue(Result.ok(expectedChunks()));
+      deps.chunkContentUseCase.execute
+        .mockResolvedValueOnce(Result.ok(expectedChunks()))
+        .mockResolvedValueOnce(Result.ok(enrichedChunks()));
 
       await service.recoverAll([aSource()]);
 
-      // No repair needed — hashes match
-      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
+      // Recover always re-ingests all chunks (even when hashes match — D7 + ADR-11).
+      const queue = deps.processingQueue as jest.Mocked<ReturnType<typeof aFileProcessingQueueService>>;
+      expect(queue.addToQueue).toHaveBeenCalledTimes(1);
+      const task = queue.addToQueue.mock.calls[0][0] as () => Promise<void>;
+      await task();
+
+      expect(deps.ingestChunkUseCase.execute).toHaveBeenCalledTimes(1);
       expect(deps.processFileUseCase.execute).not.toHaveBeenCalled();
     });
 
@@ -625,7 +645,8 @@ describe('RecoverService', () => {
       const submitted = deps.ingestChunkUseCase.execute.mock.calls[0][0] as {
         chunks: { chunkIndex: number }[];
       };
-      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0]); // Only the stale chunk repaired
+      // Recover always re-ingests all chunks (hash dedup prevents duplicates).
+      expect(submitted.chunks.map(c => c.chunkIndex)).toEqual([0, 1]);
     });
   });
 });

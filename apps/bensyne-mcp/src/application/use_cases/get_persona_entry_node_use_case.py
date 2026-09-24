@@ -116,7 +116,7 @@ class GetPersonaEntryNodeUseCase(BaseUseCase[dict, dict]):
                 fm[0].path,
             )
         )
-        entry_file, meta = entry_candidates[-1]
+        entry_file, meta = entry_candidates[0]
         file_id = entry_file.id
         title = meta.get("persona.title") or ""
 
@@ -132,6 +132,18 @@ class GetPersonaEntryNodeUseCase(BaseUseCase[dict, dict]):
                 memory_id = chunks[0].memory_id
                 node = self.mnemosyne_client(memory_id) or {}
                 text = node.get("content") or ""
+
+        # Filesystem fallback: when the memory broker returns empty content,
+        # read the node file directly from the filesystem (same content that
+        # racochu ingested). This handles cached/stale empty states.
+        if not text:
+            try:
+                import pathlib
+                file_path = pathlib.Path(entry_file.path)
+                if file_path.exists():
+                    text = file_path.read_text(encoding="utf-8")
+            except Exception:
+                pass  # Best-effort fallback; empty text is still acceptable
 
         return Result.ok(
             {

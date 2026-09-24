@@ -160,6 +160,7 @@ class TestToolSchemas:
             "recallMemory",
             "forgetMemory",
             "updateMemory",
+            "searchMemoryBank",
             "sleep",
             "getMemoryStats",
             "listMemoryBanks",

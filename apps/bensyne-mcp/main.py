@@ -123,7 +123,8 @@ def main() -> None:
     mark_default_instance_ready()
 
     # Step 7: Setup signal handlers for graceful shutdown
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(
             sig,

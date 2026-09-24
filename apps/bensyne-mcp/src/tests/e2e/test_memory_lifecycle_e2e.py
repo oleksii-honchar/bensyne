@@ -7,6 +7,7 @@ and in-memory repositories to avoid real database/service dependencies.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -106,11 +107,7 @@ class TestMemoryLifecycle:
         mock_router: MagicMock,
         mock_mnemosyne_client: MagicMock,
     ) -> None:
-        """Store a memory, recall it, update it, then forget it — full lifecycle.
-
-        Patches RememberMemoryUseCase because Memory.of() requires an id that
-        the handler does not provide — the real Mnemosyne library generates it.
-        """
+        """Store a memory, recall it, update it, then forget it — full lifecycle."""
         from src.infrastructure.mcp.handlers import (
             handle_remember,
             handle_recall,
@@ -121,23 +118,36 @@ class TestMemoryLifecycle:
         bank = "lifecycle_test"
 
         # --- Create ---
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-        ) as MockUc:
-            mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok(
-                {
-                    "status": "stored",
-                    "memory_id": "mem-lifecycle-1",
-                    "memory_bank": bank,
-                }
-            )
-            MockUc.return_value = mock_uc
+        mock_router.get_bank_dir.return_value = Path(f"/tmp/{bank}")
+        mock_hash_service = MagicMock()
+        mock_hash_service.lookup.return_value = None
+        mock_hash_service.store = MagicMock()
+        mock_file_service = MagicMock()
+        mock_file_service.upsert_file = MagicMock(return_value=Result.ok(None))
 
-            remember_result = await handle_remember(
-                mock_router,
-                {"memory_bank": bank, "content": "E2E lifecycle memory"},
-            )
+        mock_container = MagicMock()
+        mock_container.file_metadata_bundle.return_value = MagicMock(
+            file_repository=MagicMock(),
+            chunk_repository=MagicMock(),
+            relation_repository=MagicMock(),
+        )
+        mock_container.file_service.return_value = mock_file_service
+        mock_container.hash_index_service.return_value = mock_hash_service
+        mock_container.remember_memory_use_case.return_value = MagicMock(
+            execute=MagicMock(return_value=Result.ok({"status": "stored", "memory_id": "mem-lifecycle-1", "memory_bank": bank}))
+        )
+        mock_container.recall_memory_use_case.return_value = MagicMock(
+            execute=MagicMock(return_value=Result.ok({"results": [{"id": "mem-001", "content": "test memory", "score": 0.9}], "memory_bank": bank}))
+        )
+        mock_container.forget_memory_use_case.return_value = MagicMock(
+            execute=MagicMock(return_value=Result.ok({"status": "deleted", "memory_bank": bank}))
+        )
+
+        remember_result = await handle_remember(
+            mock_router,
+            {"memory_bank": bank, "content": "E2E lifecycle memory"},
+            container=mock_container,
+        )
 
         assert remember_result["status"] == "stored"
         assert remember_result["memory_bank"] == bank
@@ -218,13 +228,15 @@ class TestMemoryLifecycle:
         mock_hash_service.store = MagicMock()
         mock_hash_service.remove = MagicMock()
 
+        mock_file_service = MagicMock()
+        mock_file_service.get_chunks_by_memory_id.return_value = Result.ok([])
         logger = LoggerMock()
 
         # --- Create memory via RememberMemoryUseCase with in-memory repo ---
         process_uc = RememberMemoryUseCase(
             memory_repository=in_memory_repo,
             hash_index_service=mock_hash_service,
-            file_service=MagicMock(),
+            file_service=mock_file_service,
             logger=logger,
         )
 
@@ -253,8 +265,7 @@ class TestMemoryLifecycle:
             mnemosyne_client=mock_client,
             hash_index_service=mock_hash_service,
             logger=logger,
-            file_service=MagicMock(),
-            chunk_repository=MagicMock(),
+            file_service=mock_file_service,
             bank_type_checker=lambda bank: "pure_memories",
         )
 
@@ -284,18 +295,22 @@ class TestMemoryDeduplication:
         """When the same file hash is provided, the use case returns deduplicated status."""
         from src.application.use_cases.remember_memory_use_case import RememberMemoryUseCase
         from src.infrastructure.mcp.hash_index_service import HashIndexService
-        from src.tests.test_domain.domain_test_utils import a_memory_repository
         from src.utils.structured_logging import LoggerMock
 
         mock_hash_service = MagicMock(spec=HashIndexService)
         existing_id = "existing-mem-id"
         mock_hash_service.lookup.return_value = Result.ok(existing_id)
 
-        repo = a_memory_repository()
+        # Use a mock repository that has a .get() method (like MnemosyneClient)
+        mock_repo = MagicMock()
+        mock_repo.get.return_value = None  # Memory not found (stale dedup hit)
+        mock_repo.update.return_value = Result.ok(True)
+        mock_repo.save.return_value = Result.ok(a_memory(id=existing_id))
+
         logger = LoggerMock()
 
         uc = RememberMemoryUseCase(
-            memory_repository=repo,
+            memory_repository=mock_repo,
             hash_index_service=mock_hash_service,
             file_service=MagicMock(),
             logger=logger,
@@ -304,7 +319,7 @@ class TestMemoryDeduplication:
         result = uc.execute(
             {
                 "content": "file content",
-                "hash": "a" * 64,  # SHA-256 hash
+                "metadata": {"chunk_hash": "a" * 64},  # SHA-256 hash in metadata (D12)
             }
         )
 
@@ -312,45 +327,47 @@ class TestMemoryDeduplication:
         assert result.value["status"] == "deduplicated"
         assert result.value["memory_id"] == existing_id
         # Repository save should NOT be called when deduplicated
-        assert len(repo._store) == 0
+        mock_repo.save.assert_not_called()
         mock_hash_service.store.assert_not_called()
 
     async def test_deduplication_via_handler(
         self,
         mock_router: MagicMock,
     ) -> None:
-        """Handler-level deduplication: same hash returns deduplicated.
-
-        Patches RememberMemoryUseCase because Memory.of() requires an id that
-        the handler does not provide.
-        """
+        """Handler-level deduplication: same hash returns deduplicated."""
         from src.infrastructure.mcp.handlers import handle_remember
 
-        # Patch RememberMemoryUseCase to return deduplicated result
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-        ) as MockUc:
-            mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ok(
-                {
-                    "status": "deduplicated",
-                    "memory_id": "dedup-mem-id",
-                }
-            )
-            MockUc.return_value = mock_uc
+        mock_router.get_bank_dir.return_value = Path("/tmp/dedup_bank")
+        mock_hash_service = MagicMock()
+        mock_hash_service.lookup.return_value = "dedup-mem-id"
+        mock_file_service = MagicMock()
+        mock_file_service.upsert_file = MagicMock(return_value=Result.ok(None))
 
-            result = await handle_remember(
-                mock_router,
-                {
-                    "memory_bank": "dedup_bank",
-                    "content": "file content",
-                    "file_path": "/path/to/file.txt",
-                    "file_hash": "a" * 64,
-                },
-            )
+        mock_container = MagicMock()
+        mock_container.file_metadata_bundle.return_value = MagicMock(
+            file_repository=MagicMock(),
+            chunk_repository=MagicMock(),
+            relation_repository=MagicMock(),
+        )
+        mock_container.file_service.return_value = mock_file_service
+        mock_container.hash_index_service.return_value = mock_hash_service
+        mock_container.remember_memory_use_case.return_value = MagicMock(
+            execute=MagicMock(return_value=Result.ok({"status": "deduplicated", "memory_id": "dedup-mem-id"}))
+        )
 
-            assert result["status"] == "deduplicated"
-            assert result["memory_id"] == "dedup-mem-id"
+        result = await handle_remember(
+            mock_router,
+            {
+                "memory_bank": "dedup_bank",
+                "content": "file content",
+                "file_path": "/path/to/file.txt",
+                "file_hash": "a" * 64,
+            },
+            container=mock_container,
+        )
+
+        assert result["status"] == "deduplicated"
+        assert result["memory_id"] == "dedup-mem-id"
 
     async def test_new_hash_is_stored_after_save(
         self,
@@ -378,7 +395,7 @@ class TestMemoryDeduplication:
             {
                 "id": "new-mem-1",
                 "content": "file content",
-                "hash": test_hash,
+                "metadata": {"chunk_hash": test_hash},  # SHA-256 hash in metadata (D12)
             }
         )
 
@@ -553,22 +570,25 @@ class TestErrorHandling:
         """handle_remember raises ValidationError when use case returns Result.ko."""
         from src.infrastructure.mcp.handlers import handle_remember
 
-        with patch(
-            "src.infrastructure.mcp.handlers.RememberMemoryUseCase",
-        ) as MockUc:
-            mock_uc = MagicMock()
-            mock_uc.execute.return_value = Result.ko(
-                [
-                    MagicMock(error_code="CONTENT_REQUIRED", details={}),
-                ]
-            )
-            MockUc.return_value = mock_uc
+        mock_router.get_bank_dir.return_value = Path("/tmp/default")
+        mock_container = MagicMock()
+        mock_container.file_metadata_bundle.return_value = MagicMock(
+            file_repository=MagicMock(),
+            chunk_repository=MagicMock(),
+            relation_repository=MagicMock(),
+        )
+        mock_container.file_service.return_value = MagicMock()
+        mock_container.hash_index_service.return_value = MagicMock()
+        mock_container.remember_memory_use_case.return_value = MagicMock(
+            execute=MagicMock(return_value=Result.ko([MagicMock(error_code="CONTENT_REQUIRED", details={})]))
+        )
 
-            with pytest.raises(ValidationError):
-                await handle_remember(
-                    mock_router,
-                    {"memory_bank": "default", "content": "test"},
-                )
+        with pytest.raises(ValidationError):
+            await handle_remember(
+                mock_router,
+                {"memory_bank": "default", "content": "test"},
+                container=mock_container,
+            )
 
     async def test_remember_memory_use_case_rejects_empty_content(
         self,
@@ -622,14 +642,14 @@ class TestErrorHandling:
         from src.utils.structured_logging import LoggerMock
 
         mock_hash = MagicMock(spec=HashIndexService)
+        mock_file_service = MagicMock()
         logger = LoggerMock()
 
         uc = ForgetMemoryUseCase(
             mnemosyne_client=MagicMock(),
             hash_index_service=mock_hash,
             logger=logger,
-            file_service=MagicMock(),
-            chunk_repository=MagicMock(),
+            file_service=mock_file_service,
             bank_type_checker=lambda bank: "pure_memories",
         )
 

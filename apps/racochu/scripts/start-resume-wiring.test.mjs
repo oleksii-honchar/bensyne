@@ -22,9 +22,9 @@ const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 const project = JSON.parse(readFileSync(projectPath, 'utf8'));
 
 describe('start:resume npm script', () => {
-  it('exists with the exact expected command (kill-stale prepend + --resume)', () => {
+  it('exists with the exact expected command (run wrapper + --resume)', () => {
     expect(pkg.scripts['start:resume']).toBe(
-      'node scripts/kill-stale-racochu.mjs && node dist/src/main.js --resume',
+      'node scripts/run-racochu.mjs node dist/src/main.js --resume',
     );
   });
 });
