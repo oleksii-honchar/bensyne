@@ -1,6 +1,6 @@
 {
   "name": "racochu",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "DDD-based NestJS CLI server for semantic content chunking before Mnemosyne MCP ingestion",
   "bin": {
     "racochu": "dist/src/main.js"
