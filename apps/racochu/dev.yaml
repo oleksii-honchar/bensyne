@@ -52,7 +52,7 @@ enrichment:
   docMaxTokens: 16000
 enhancement:
   maxCharacters:
-    prose: 4000
+    prose: 3800
     code: 5000
     configuration: 1500
     documentation: 4000

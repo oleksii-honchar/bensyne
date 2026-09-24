@@ -100,24 +100,34 @@ async def handle_remember(
     # characters (e.g. Cyrillic 0xd0/0xd1). Use 3900 bytes to leave room
     # for the separator.
     CHUNK_SIZE = 3900
-    if len(content) > CHUNK_SIZE:
+    if len(content.encode("utf-8")) > CHUNK_SIZE:
         chunks = []
         start = 0
-        while start < len(content):
+        content_bytes = content.encode("utf-8")
+        while start < len(content_bytes):
             end = start + CHUNK_SIZE
             # Ensure we don't split in the middle of a UTF-8 character
-            chunk = content[start:end]
+            chunk_bytes = content_bytes[start:end]
             # If chunk is too long, it might have been split mid-character.
             # Find the nearest whitespace or punctuation to break at.
-            if len(chunk.encode("utf-8")) > CHUNK_SIZE:
-                # Split at last whitespace within the first 3800 bytes
-                safe_chunk = content[start:start + 3800]
-                last_space = safe_chunk.rfind(" ")
-                if last_space > start + 100:  # Don't break too early
-                    chunk = content[start:start + last_space]
+            if len(chunk_bytes) == CHUNK_SIZE:
+                # Check if the last byte is a continuation byte (10xxxxxx)
+                if chunk_bytes[-1] & 0xC0 == 0x80:
+                    # Split at previous position
+                    end -= 1
+                    chunk_bytes = content_bytes[start:end]
+            # Decode the chunk back to a string
+            try:
+                chunk = chunk_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                # If decoding fails, split at the last space
+                safe_chunk = content_bytes[start:start + 3800]
+                last_space = safe_chunk.rfind(b" ")
+                if last_space > 100:  # Don't break too early
+                    chunk = safe_chunk[:last_space].decode("utf-8")
                     end = start + last_space
                 else:
-                    chunk = content[start:start + 3500]
+                    chunk = content_bytes[start:start + 3500].decode("utf-8")
                     end = start + 3500
             chunks.append(chunk)
             start = end
