@@ -693,6 +693,74 @@ describe('BensyneClient (Streamable HTTP)', () => {
       expect(payload).not.toHaveProperty('force_reembed');
       expect(payload.metadata).not.toHaveProperty('force_reembed');
     });
+
+    describe('request-size guard', () => {
+      it('allows request that is within size limit', async () => {
+        let postCalled = false;
+
+        (http.request as jest.Mock).mockImplementation(
+          (_options: unknown, callback: (res: MockRes) => void) => {
+            const req = createMockReq();
+            postCalled = true;
+            const res = createMockResponse(
+              200,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                result: {
+                  content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+                },
+              }),
+            );
+            process.nextTick(() => callback(res));
+            return req;
+          },
+        );
+
+        const chunk = aContentChunk({ text: 'Small test content that is well under the limit' });
+        const result = await client.remember(chunk);
+
+        expect(result.isOk()).toBe(true);
+        expect(postCalled).toBe(true);
+      });
+
+      it('fails fast when request body exceeds size limit', async () => {
+        let postCalled = false;
+
+        (http.request as jest.Mock).mockImplementation(
+          (_options: unknown, callback: (res: MockRes) => void) => {
+            const req = createMockReq();
+            postCalled = true;
+            const res = createMockResponse(
+              200,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                result: {
+                  content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+                },
+              }),
+            );
+            process.nextTick(() => callback(res));
+            return req;
+          },
+        );
+
+        // Create a chunk with text large enough to exceed 4032 bytes in the full body
+        // The envelope overhead is ~300 bytes, so 4500 bytes of text will definitely exceed
+        const largeText = 'X'.repeat(4500);
+        const chunk = aContentChunk({ text: largeText });
+
+        const result = await client.remember(chunk);
+
+        expect(result.isOk()).toBe(false);
+        expect(postCalled).toBe(false);
+        const errors = result.getErrors();
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toContain('request too large');
+        expect(errors[0].message).toContain('4032');
+      });
+    });
   });
 
   describe('recall', () => {

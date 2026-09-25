@@ -88,6 +88,7 @@ export const DEFAULT_CONFIG_SEED = {
       configuration: 300,
       documentation: 300,
     },
+    maxChunkBytes: 3200,
     importance: {
       enabled: true,
       defaultScore: 0.5,

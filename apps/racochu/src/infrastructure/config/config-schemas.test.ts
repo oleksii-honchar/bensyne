@@ -414,6 +414,31 @@ describe('config-schemas', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('applies default maxChunkBytes of 3200 when not specified', () => {
+      const result = enhancementConfigSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.maxChunkBytes).toBe(3200);
+      }
+    });
+
+    it('accepts custom maxChunkBytes value', () => {
+      const result = enhancementConfigSchema.safeParse({
+        maxChunkBytes: 4096,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.maxChunkBytes).toBe(4096);
+      }
+    });
+
+    it('rejects non-positive maxChunkBytes', () => {
+      const result = enhancementConfigSchema.safeParse({
+        maxChunkBytes: 0,
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('chunkingConfigSchema', () => {
@@ -711,6 +736,27 @@ describe('config-schemas', () => {
         expect(result.data.enhancement.importance.enabled).toBe(false);
         expect(result.data.enhancement.tags.maxTags).toBe(5);
         expect(result.data.enhancement.source.includeMetadata).toBe(true);
+      }
+    });
+
+    it('applies default maxChunkBytes in root schema', () => {
+      const result = configurationSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enhancement.maxChunkBytes).toBe(3200);
+      }
+    });
+
+    it('parses custom maxChunkBytes in root schema', () => {
+      const input = {
+        enhancement: {
+          maxChunkBytes: 5000,
+        },
+      };
+      const result = configurationSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enhancement.maxChunkBytes).toBe(5000);
       }
     });
 

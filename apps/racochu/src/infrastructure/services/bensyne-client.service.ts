@@ -260,6 +260,20 @@ export class BensyneClient implements OnApplicationBootstrap {
       `Remembering chunk: id="${chunk.id}", index=${chunk.chunkIndex}, textLength=${chunk.text.length}`,
     );
 
+    // Request-size guard: fail fast if the JSON-RPC body exceeds the transport budget.
+    // Transport limit is 4096 bytes; envelope overhead is 312-908 bytes.
+    // We guard at 4032 (4096 - 64 margin) to catch oversized content before POST.
+    const body = JSON.stringify(request, (_, value) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
+    const bodyByteLength = Buffer.byteLength(body, 'utf8');
+    const MAX_REQUEST_BYTES = 4032;
+    if (bodyByteLength > MAX_REQUEST_BYTES) {
+      const errMsg = `remember request too large: ${bodyByteLength} bytes (limit ${MAX_REQUEST_BYTES})`;
+      this.logger.warn(`${errMsg}; chunkId="${chunk.id}"`);
+      return Result.ko([new ErrorWithDetails(errMsg, 'RequestTooLarge')]);
+    }
+
     let lastError: Error | null = null;
 
     this.ensureConfigLoaded();

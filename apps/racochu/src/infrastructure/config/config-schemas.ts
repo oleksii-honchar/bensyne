@@ -54,6 +54,9 @@ export const enhancementConfigSchema = z
         documentation: z.number().positive(),
       })
       .optional(),
+    // Byte-size safety budget: clamp chunk byte length after chunking.
+    // Overrides the character-only budget for UTF-8 transport safety.
+    maxChunkBytes: z.number().positive().optional(),
     importance: z
       .object({
         enabled: z.boolean(),
@@ -92,6 +95,7 @@ export const enhancementConfigSchema = z
       configuration: data.maxCharacters?.configuration ?? 300,
       documentation: data.maxCharacters?.documentation ?? 300,
     },
+    maxChunkBytes: data.maxChunkBytes ?? 3200,
     importance: data.importance ?? {
       enabled: true,
       defaultScore: 0.5,
@@ -264,6 +268,7 @@ export const configurationSchema = z
         configuration: data.enhancement?.maxCharacters?.configuration ?? 300,
         documentation: data.enhancement?.maxCharacters?.documentation ?? 300,
       },
+      maxChunkBytes: data.enhancement?.maxChunkBytes ?? 3200,
       importance: {
         enabled: data.enhancement?.importance?.enabled ?? true,
         defaultScore: data.enhancement?.importance?.defaultScore ?? 0.5,
