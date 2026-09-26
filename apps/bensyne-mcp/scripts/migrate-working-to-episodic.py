@@ -44,9 +44,11 @@ def resolve_db_path() -> str | None:
     ]
 
     for pattern in candidates:
-        for p in glob.glob(pattern):
-            if Path(p).exists():
-                return p
+        matches = glob.glob(pattern)
+        if matches:
+            for p in matches:
+                if Path(p).exists():
+                    return p
 
     # Try environment variable
     import os
@@ -55,6 +57,22 @@ def resolve_db_path() -> str | None:
         db_path = Path(data_dir) / "memories.db"
         if db_path.exists():
             return str(db_path)
+
+    # Debug: list all matches
+    print("DEBUG: No matches found for any pattern")
+    for pattern in candidates:
+        matches = glob.glob(pattern)
+        if matches:
+            print(f"  {pattern} -> {matches}")
+        else:
+            print(f"  {pattern} -> []")
+    print("DEBUG: Checking for memories.db in /home/tuiteraz/puma-lan/lite-llm/mcp/bensyne/data/")
+    try:
+        import os
+        listing = os.listdir("/home/tuiteraz/puma-lan/lite-llm/mcp/bensyne/data/")
+        print(f"  {listing}")
+    except Exception as e:
+        print(f"  Error: {e}")
 
     return None
 
