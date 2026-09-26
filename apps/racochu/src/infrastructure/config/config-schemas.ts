@@ -273,7 +273,7 @@ export const configurationSchema = z
         documentation: data.enhancement?.maxCharacters?.documentation ?? 300,
       },
       maxChunkBytes: data.enhancement?.maxChunkBytes ?? 3200,
-      serverRequestBodyLimit: data.enhancement?.serverRequestBodyLimit ?? 4032,
+      serverRequestBodyLimit: data.enhancement?.serverRequestBodyLimit ?? 8000,
       importance: {
         enabled: data.enhancement?.importance?.enabled ?? true,
         defaultScore: data.enhancement?.importance?.defaultScore ?? 0.5,
