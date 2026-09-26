@@ -99,7 +99,7 @@ export const enhancementConfigSchema = z
       documentation: data.maxCharacters?.documentation ?? 300,
     },
     maxChunkBytes: data.maxChunkBytes ?? 3200,
-    serverRequestBodyLimit: data.serverRequestBodyLimit ?? 4032,
+    serverRequestBodyLimit: data.serverRequestBodyLimit ?? 8000,
     importance: data.importance ?? {
       enabled: true,
       defaultScore: 0.5,
