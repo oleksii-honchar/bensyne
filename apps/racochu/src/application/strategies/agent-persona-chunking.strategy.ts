@@ -164,8 +164,10 @@ export function buildPersonaDecisionEdges(
     if (!index.has(resolved)) {
       continue; // dangling target → skipped (logged by the strategy)
     }
+    // Use path_handle (relative to parent of tree root) instead of absolute path
+    const targetPathHandle = path.relative(path.dirname(treeRoot), resolved).split(path.sep).join('/');
     edges.push({
-      target_path: resolved,
+      target_path: targetPathHandle,
       relation_type: 'decision_next',
       strength: 1.0,
       description: edge.when ?? '',
@@ -225,9 +227,11 @@ function buildFolderTree(treeRoot: string, fileIndex: string[]): FolderNode | nu
   return buildNode(path.resolve(treeRoot));
 }
 
-function hierarchyEdge(sourceHub: string, child: FolderNode): FileEdge {
+function hierarchyEdge(treeRoot: string, sourceHub: string, child: FolderNode): FileEdge {
+  // Use path_handle (relative to parent of tree root) instead of absolute path
+  const targetPathHandle = path.relative(path.dirname(treeRoot), child.hub).split(path.sep).join('/');
   return {
-    target_path: child.hub,
+    target_path: targetPathHandle,
     relation_type: 'folder_hierarchy',
     strength: 1.0,
     description: `folder branch ${path.basename(child.folder)} from ${path.basename(sourceHub)}`,
@@ -245,7 +249,7 @@ export function buildFolderHierarchyEdges(treeRoot: string, fileIndex: string[])
 
   const walk = (node: FolderNode): void => {
     for (const child of node.children) {
-      edges.push(hierarchyEdge(node.hub, child));
+      edges.push(hierarchyEdge(treeRoot, node.hub, child));
       walk(child);
     }
   };
@@ -368,7 +372,8 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
     const emitted = new Set(decisionEdges.map(e => e.target_path));
     for (const edge of meta.edges) {
       const resolved = path.resolve(treeRoot, edge.target);
-      if (resolved !== path.resolve(selfPath) && !index.has(resolved) && !emitted.has(resolved)) {
+      const resolvedPathHandle = path.relative(path.dirname(treeRoot), resolved).split(path.sep).join('/');
+      if (resolved !== path.resolve(selfPath) && !index.has(resolved) && !emitted.has(resolvedPathHandle)) {
         this.logger.debug(`Skipping dangling decision_next target: "${edge.target}" (node="${meta.nodeId}")`);
       }
     }
@@ -401,7 +406,7 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
     if (hubNode === null) {
       return [];
     }
-    return hubNode.children.map(child => hierarchyEdge(hubNode.hub, child));
+    return hubNode.children.map(child => hierarchyEdge(treeRoot, hubNode.hub, child));
   }
 
   /** Bounded recursive walk of the persona tree; fs errors degrade to []. */

@@ -128,13 +128,13 @@ describe('buildPersonaDecisionEdges (frontmatter edges[] → decision_next)', ()
     expect(edges).toHaveLength(2);
     expect(edges).toEqual([
       {
-        target_path: path.join(TREE_ROOT, '10-understand/10-assess-intent.md'),
+        target_path: 'architect/10-understand/10-assess-intent.md',
         relation_type: 'decision_next',
         strength: 1.0,
         description: 'intent is unclear',
       },
       {
-        target_path: path.join(TREE_ROOT, '20-plan/10-estimate.md'),
+        target_path: 'architect/20-plan/10-estimate.md',
         relation_type: 'decision_next',
         strength: 1.0,
         description: 'intent is clear',
@@ -163,7 +163,7 @@ describe('buildPersonaDecisionEdges (frontmatter edges[] → decision_next)', ()
     );
 
     expect(edges).toHaveLength(1);
-    expect(edges[0].target_path).toBe(path.join(TREE_ROOT, '10-understand/10-assess-intent.md'));
+    expect(edges[0].target_path).toBe('architect/10-understand/10-assess-intent.md');
     expect(edges[0].description).toBe('still resolves');
   });
 
@@ -190,19 +190,19 @@ describe('buildFolderHierarchyEdges (nesting → folder_hierarchy, hub(parent) �
 
     expect(edges).toEqual([
       {
-        target_path: path.join(TREE_ROOT, '10-understand/10-assess-intent.md'),
+        target_path: 'architect/10-understand/10-assess-intent.md',
         relation_type: 'folder_hierarchy',
         strength: 1.0,
         description: `folder branch 10-understand from 00-entry.md`,
       },
       {
-        target_path: path.join(TREE_ROOT, '20-plan/10-estimate.md'),
+        target_path: 'architect/20-plan/10-estimate.md',
         relation_type: 'folder_hierarchy',
         strength: 1.0,
         description: `folder branch 20-plan from 00-entry.md`,
       },
       {
-        target_path: path.join(TREE_ROOT, '30-deliver/10-implement.md'),
+        target_path: 'architect/30-deliver/10-implement.md',
         relation_type: 'folder_hierarchy',
         strength: 1.0,
         description: `folder branch 30-deliver from 00-entry.md`,
@@ -222,12 +222,12 @@ describe('buildFolderHierarchyEdges (nesting → folder_hierarchy, hub(parent) �
 
     // root hub → 10-understand hub
     expect(
-      edges.find(e => e.target_path === path.join(root, '10-understand/10-assess-intent.md'))?.target_path,
-    ).toBe(path.join(root, '10-understand/10-assess-intent.md'));
+      edges.find(e => e.target_path === 'deep/10-understand/10-assess-intent.md')?.target_path,
+    ).toBe('deep/10-understand/10-assess-intent.md');
     // 10-understand hub → 20-details hub
     expect(
-      edges.find(e => e.target_path === path.join(root, '10-understand/20-details/10-probe.md'))?.target_path,
-    ).toBe(path.join(root, '10-understand/20-details/10-probe.md'));
+      edges.find(e => e.target_path === 'deep/10-understand/20-details/10-probe.md')?.target_path,
+    ).toBe('deep/10-understand/20-details/10-probe.md');
     expect(edges).toHaveLength(2);
   });
 
@@ -333,9 +333,10 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
     const decisionNext = edges.filter(e => e.relation_type === 'decision_next');
     const folderHierarchy = edges.filter(e => e.relation_type === 'folder_hierarchy');
 
+    const targetPathHandle = path.relative(path.dirname(tmpRoot), path.join(tmpRoot, '10-understand/10-assess-intent.md'));
     expect(decisionNext).toEqual([
       {
-        target_path: path.join(tmpRoot, '10-understand/10-assess-intent.md'),
+        target_path: targetPathHandle,
         relation_type: 'decision_next',
         strength: 1.0,
         description: 'always first',
@@ -344,7 +345,7 @@ describe('AgentPersonaChunkingStrategy.chunkFile — one memory per node', () =>
     // 00-entry.md is the root hub; 10-understand is its only branch
     expect(folderHierarchy).toEqual([
       {
-        target_path: path.join(tmpRoot, '10-understand/10-assess-intent.md'),
+        target_path: targetPathHandle,
         relation_type: 'folder_hierarchy',
         strength: 1.0,
         description: `folder branch 10-understand from 00-entry.md`,
@@ -434,15 +435,16 @@ describe('AgentPersonaChunkingStrategy.chunkFile — tilde-prefixed tree roots (
 
     expect(result.isOk()).toBe(true);
     const edges = result.getValue()[0].edges ?? [];
+    const targetPathHandle = path.relative(path.dirname(treeRoot), path.join(treeRoot, '10-investigate/10-dig-in.md'));
     expect(edges).toEqual([
       {
-        target_path: path.join(treeRoot, '10-investigate/10-dig-in.md'),
+        target_path: targetPathHandle,
         relation_type: 'decision_next',
         strength: 1.0,
         description: 'always first',
       },
       {
-        target_path: path.join(treeRoot, '10-investigate/10-dig-in.md'),
+        target_path: targetPathHandle,
         relation_type: 'folder_hierarchy',
         strength: 1.0,
         description: 'folder branch 10-investigate from 00-entry.md',
