@@ -22,16 +22,13 @@ class SleepUseCase(BaseUseCase[dict, dict]):
         return Result.ok(parameters)
 
     def execute_internal(self, parameters: dict) -> Result[dict]:
-        """Execute sleep via MnemosyneClient."""
+        """Return no-op: all memories are already in episodic memory, so no consolidation needed."""
         memory_bank = parameters.get("memory_bank", "default")
-
-        sleep_result = self.mnemosyne_client.sleep()
-        if not sleep_result.is_ok:
-            return sleep_result
 
         return Result.ok(
             {
-                "result": sleep_result.value,
+                "consolidated": False,
+                "reason": "all memories already in episodic tier",
                 "memory_bank": memory_bank,
             }
         )

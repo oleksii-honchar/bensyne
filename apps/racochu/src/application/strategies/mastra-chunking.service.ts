@@ -180,8 +180,8 @@ export class MastraChunkingService {
   ) {}
   /**
    * Clamp content to fit within the server's request body limit.
-   * Uses the shared RememberRequestSerializer for accurate size measurement,
-   * ensuring the clamp measures the exact request body that will be sent.
+   * When a chunk overflows due to UTF-8 character size, split it in half
+   * to create two reasonably sized chunks instead of a full chunk with a small remainder.
    *
    * @param content - The content to clamp
    * @param chunkProps - The chunk properties needed to build a temporary ContentChunk for measurement
@@ -235,58 +235,21 @@ export class MastraChunkingService {
       return { clamped, remainder: '' };
     }
 
-    // Use binary search to find the maximum content length that fits
-    let low = 0;
-    let high = clamped.length;
+    // Chunk is too large — split it in half
+    const mid = Math.floor(clamped.length / 2);
+    const firstHalf = clamped.slice(0, mid);
+    const secondHalf = clamped.slice(mid);
 
-    while (low < high) {
-      const mid = Math.floor((low + high + 1) / 2);
-      const testContent = clamped.slice(0, mid);
-
-      const testChunk = ContentChunk.of({
-        id: chunk.id,
-        text: testContent,
-        chunkIndex: chunk.chunkIndex,
-        totalChunks: chunk.totalChunks,
-        sectionHeader: chunk.sectionHeader,
-        breadcrumb: chunk.breadcrumb,
-        fileRole: chunk.fileRole,
-        oversized: false,
-        metadata: chunkProps.metadata,
-        importance: 0.5,
-        tags: [],
-        memoryBank: 'default',
-      });
-
-      if (!testChunk.isOk()) {
-        high = mid - 1;
-        continue;
-      }
-
-      const testSerialized = this.serializer.buildAndSerialize(testChunk.getValue());
-      const testSerializedBytes = Buffer.byteLength(testSerialized, 'utf8');
-
-      if (testSerializedBytes <= SERVER_REQUEST_BODY_LIMIT) {
-        low = mid;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    const trimmedContent = clamped.slice(0, low);
-    const remainder = clamped.slice(low);
-    const trimmedBytes = Buffer.byteLength(trimmedContent, 'utf8');
-
-    this.logger.info('chunk trimmed to fit request body limit', {
+    this.logger.info('chunk split in half due to UTF-8 overflow', {
       originalBytes: Buffer.byteLength(clamped, 'utf8'),
-      trimmedBytes,
-      remainderBytes: Buffer.byteLength(remainder, 'utf8'),
+      firstHalfBytes: Buffer.byteLength(firstHalf, 'utf8'),
+      secondHalfBytes: Buffer.byteLength(secondHalf, 'utf8'),
       limit: SERVER_REQUEST_BODY_LIMIT,
       filePath: chunkProps.breadcrumb,
       chunkIndex: chunkProps.chunkIndex,
     });
 
-    return { clamped: trimmedContent, remainder };
+    return { clamped: firstHalf, remainder: secondHalf };
   }
 
   /**

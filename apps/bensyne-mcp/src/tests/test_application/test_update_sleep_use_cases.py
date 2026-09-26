@@ -146,35 +146,27 @@ class TestSleepUseCase:
             logger=logger,
         )
 
-    # -- Delegation --
+    # -- No-op behavior (all memories already in episodic tier) --
 
-    def test_execute_delegates_to_mnemosyne_client_sleep(self, use_case, mnemosyne_client) -> None:
-        """SleepUseCase should delegate to MnemosyneClient.sleep()."""
-        sleep_result = {"status": "consolidated", "merged": 5}
-        mnemosyne_client.sleep.return_value = Result.ok(sleep_result)
-
-        result = use_case.execute(
-            {
-                "memory_bank": "my_bank",
-            }
-        )
+    def test_execute_returns_noop_response(self, use_case) -> None:
+        """sleep() should return { consolidated: false, reason: '...' } without errors."""
+        result = use_case.execute({"memory_bank": "my_bank"})
 
         assert result.is_ok is True
-        mnemosyne_client.sleep.assert_called_once()
-        assert result.value["result"] == sleep_result
+        assert result.value["consolidated"] is False
+        assert result.value["reason"] == "all memories already in episodic tier"
         assert result.value["memory_bank"] == "my_bank"
 
-    def test_execute_returns_merged_result(self, use_case, mnemosyne_client) -> None:
-        """Result should contain the merged result dict from sleep()."""
-        sleep_result = {"status": "consolidated", "merged": 3, "discarded": 1}
-        mnemosyne_client.sleep.return_value = Result.ok(sleep_result)
-
-        result = use_case.execute(
-            {
-                "memory_bank": "default",
-            }
-        )
+    def test_execute_uses_default_memory_bank(self, use_case) -> None:
+        """When no memory_bank is provided, use default."""
+        result = use_case.execute({})
 
         assert result.is_ok is True
-        assert result.value["result"] == sleep_result
+        assert result.value["consolidated"] is False
         assert result.value["memory_bank"] == "default"
+
+    def test_execute_does_not_delegate_to_mnemosyne_client(self, use_case, mnemosyne_client) -> None:
+        """sleep() should not call MnemosyneClient.sleep() — it's a no-op."""
+        use_case.execute({"memory_bank": "my_bank"})
+
+        mnemosyne_client.sleep.assert_not_called()

@@ -74,22 +74,68 @@ class MnemosyneClient:
     # ------------------------------------------------------------------
 
     def save(self, memory: "Memory") -> Result["Memory"]:
-        """Persist a Memory entity via the underlying Mnemosyne instance.
+        """Persist a Memory entity via direct INSERT into episodic_memory.
 
-        Returns Result.ok(memory) with the actual memory_id from Mnemosyne.
-        The returned Memory may have a different id than the input.
+        Bypasses the Mnemosyne library's remember() API and inserts directly
+        into the episodic_memory table. Applies source-specific TTL:
+        agent-session memories get 365 days, all others get no expiry.
+
+        Returns Result.ok(memory) with the actual memory_id generated.
         """
         try:
-            actual_id = self._instance.remember(
-                content=memory.content,
-                source=memory.source,
-                importance=memory.importance,
+            import hashlib
+            import time
+            from datetime import datetime, timedelta, timezone
+
+            # Generate memory_id: SHA-256 of content + timestamp, truncated to 16 hex chars
+            timestamp_str = str(time.time())
+            hash_input = f"{memory.content}{timestamp_str}"
+            memory_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+            # Determine valid_until based on memory_bank
+            if self.memory_bank.startswith("agent-session-"):
+                valid_until = datetime.now(timezone.utc) + timedelta(days=365)
+            else:
+                valid_until = None
+
+            conn = self._instance.conn
+            conn.execute(
+                "INSERT OR IGNORE INTO episodic_memory "
+                "(id, content, source, timestamp, session_id, importance, valid_until) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    memory_id,
+                    memory.content,
+                    memory.source,
+                    datetime.now(timezone.utc).isoformat(),
+                    self.memory_bank,
+                    memory.importance,
+                    valid_until.isoformat() if valid_until else None,
+                ),
             )
-            # Use the actual ID from Mnemosyne — the input may have a placeholder
+            conn.commit()
+
+            # Best-effort embedding via numpy (don't fail the save if it fails)
+            try:
+                import numpy as np
+                from mnemosyne.core.embeddings import embed
+                vecs = embed([memory.content])
+                if vecs is not None and len(vecs) > 0:
+                    embedding = np.array(vecs[0], dtype=np.float32)
+                    # Store embedding as bytes blob
+                    embedding_bytes = embedding.tobytes()
+                    conn.execute(
+                        "UPDATE episodic_memory SET binary_vector = ? WHERE id = ?",
+                        (embedding_bytes, memory_id),
+                    )
+                    conn.commit()
+            except Exception as embed_exc:
+                logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
+
             from src.domain.memory_entity import Memory
 
             saved_memory = Memory(
-                id=actual_id,
+                id=memory_id,
                 content=memory.content,
                 importance=memory.importance,
                 source=memory.source,
@@ -109,10 +155,68 @@ class MnemosyneClient:
     # ------------------------------------------------------------------
 
     def remember(self, **kwargs: Any) -> Result[dict[str, Any]]:
-        """Store a durable memory."""
+        """Store a durable memory via direct INSERT into episodic_memory.
+
+        Bypasses the Mnemosyne library's remember() API and inserts directly
+        into the episodic_memory table. Applies source-specific TTL:
+        agent-session memories get 365 days, all others get no expiry.
+
+        Returns Result.ok({"memory_id": memory_id}).
+        """
         try:
-            value = self._instance.remember(**kwargs)
-            return Result.ok(value)
+            import hashlib
+            import time
+            from datetime import datetime, timedelta, timezone
+
+            content = kwargs.get("content", "")
+            source = kwargs.get("source", "bensyne")
+            importance = kwargs.get("importance", 0.5)
+
+            # Generate memory_id: SHA-256 of content + timestamp, truncated to 16 hex chars
+            timestamp_str = str(time.time())
+            hash_input = f"{content}{timestamp_str}"
+            memory_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+            # Determine valid_until based on memory_bank
+            if self.memory_bank.startswith("agent-session-"):
+                valid_until = datetime.now(timezone.utc) + timedelta(days=365)
+            else:
+                valid_until = None
+
+            conn = self._instance.conn
+            conn.execute(
+                "INSERT OR IGNORE INTO episodic_memory "
+                "(id, content, source, timestamp, session_id, importance, valid_until) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    memory_id,
+                    content,
+                    source,
+                    datetime.now(timezone.utc).isoformat(),
+                    self.memory_bank,
+                    importance,
+                    valid_until.isoformat() if valid_until else None,
+                ),
+            )
+            conn.commit()
+
+            # Best-effort embedding via numpy (don't fail the remember if it fails)
+            try:
+                import numpy as np
+                from mnemosyne.core.embeddings import embed
+                vecs = embed([content])
+                if vecs is not None and len(vecs) > 0:
+                    embedding = np.array(vecs[0], dtype=np.float32)
+                    embedding_bytes = embedding.tobytes()
+                    conn.execute(
+                        "UPDATE episodic_memory SET binary_vector = ? WHERE id = ?",
+                        (embedding_bytes, memory_id),
+                    )
+                    conn.commit()
+            except Exception as embed_exc:
+                logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
+
+            return Result.ok({"memory_id": memory_id})
         except Exception as exc:
             logger.error("Mnemosyne remember failed", memory_bank=self.memory_bank, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
@@ -126,20 +230,60 @@ class MnemosyneClient:
             logger.error("Mnemosyne recall failed", memory_bank=self.memory_bank, query=query, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def forget(self, memory_id: str) -> Result[dict[str, Any]]:
-        """Delete a memory."""
+    def forget(self, memory_id: str) -> Result[bool]:
+        """Delete a memory (from episodic_memory, with fallback to library)."""
         try:
+            # Try direct DELETE from episodic_memory first (new architecture)
+            conn = self._instance.conn
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM episodic_memory WHERE id = ?", (memory_id,))
+            if cursor.rowcount > 0:
+                conn.commit()
+                return Result.ok(True)
+            
+            # Fallback: use library method for backward compatibility
             value = self._instance.forget(memory_id=memory_id)
             return Result.ok(value)
         except Exception as exc:
             logger.error("Mnemosyne forget failed", memory_bank=self.memory_bank, memory_id=memory_id, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])
 
-    def update(self, memory_id: str, **kwargs: Any) -> Result[dict[str, Any]]:
-        """Update memory content or importance."""
+    def update(self, memory_id: str, **kwargs: Any) -> Result[bool]:
+        """Update memory content or importance (episodic_memory, with fallback to library)."""
         try:
-            value = self._instance.update(memory_id=memory_id, **kwargs)
-            return Result.ok(value)
+            # Build UPDATE for episodic_memory
+            content = kwargs.get("content", None)
+            importance = kwargs.get("importance", None)
+            
+            conn = self._instance.conn
+            cursor = conn.cursor()
+            
+            # Check if memory exists in episodic_memory
+            cursor.execute("SELECT id FROM episodic_memory WHERE id = ?", (memory_id,))
+            if cursor.fetchone() is None:
+                # Fallback: use library method for backward compatibility
+                value = self._instance.update(memory_id=memory_id, **kwargs)
+                return Result.ok(value)
+            
+            # Build SET clause
+            set_clauses = []
+            params = []
+            if content is not None:
+                set_clauses.append("content = ?")
+                params.append(content)
+            if importance is not None:
+                set_clauses.append("importance = ?")
+                params.append(importance)
+            
+            if set_clauses:
+                params.append(memory_id)
+                cursor.execute(
+                    f"UPDATE episodic_memory SET {', '.join(set_clauses)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+            
+            return Result.ok(True)
         except Exception as exc:
             logger.error("Mnemosyne update failed", memory_bank=self.memory_bank, memory_id=memory_id, error=str(exc))
             return Result.ko(errors=[ErrorWithDetails("DATABASE_ERROR", {"detail": str(exc)})])

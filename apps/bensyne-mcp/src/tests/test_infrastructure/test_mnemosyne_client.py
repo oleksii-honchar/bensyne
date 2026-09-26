@@ -34,6 +34,13 @@ def mock_mnemosyne_instance() -> MagicMock:
     mock.update.return_value = {"status": "updated", "memory_id": "mem_123"}
     mock.sleep.return_value = {"status": "consolidated", "consolidated": 5}
     mock.get_stats.return_value = {"working": 10, "episodic": 5}
+    
+    # Mock cursor for direct episodic_memory operations
+    mock_cursor = MagicMock()
+    mock_cursor.rowcount = 1
+    mock_cursor.fetchone.return_value = {"id": "mem_123"}
+    mock.conn.cursor.return_value = mock_cursor
+    
     return mock
 
 
@@ -113,33 +120,37 @@ class TestMnemosyneClientConstructor:
 
 
 class TestMnemosyneClientRemember:
-    """remember() returns Result.ok on success, Result.ko on error."""
+    """remember() uses direct INSERT into episodic_memory (not Mnemosyne's remember())."""
 
-    def test_returns_result_ok_on_success(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """remember() returns Result.ok with the library's response."""
+    def test_returns_result_ok_with_memory_id(self, client: MnemosyneClient) -> None:
+        """remember() returns Result.ok with a dict containing memory_id."""
         result = client.remember(content="test content", source="test")
 
         assert result.is_ok
-        assert result.value == {"memory_id": "mem_abc", "status": "stored"}
-        mock_mnemosyne_instance.remember.assert_called_once_with(content="test content", source="test")
+        assert "memory_id" in result.value
+        assert len(result.value["memory_id"]) == 16  # 16 hex chars
 
-    def test_returns_result_ko_on_exception(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """remember() returns Result.ko with DATABASE_ERROR when library raises."""
-        mock_mnemosyne_instance.remember.side_effect = ConnectionError("db down")
+    def test_returns_result_ko_on_exception(self, client: MnemosyneClient) -> None:
+        """remember() returns Result.ko with DATABASE_ERROR when db operation fails."""
+        # Patch the conn to raise an exception
+        with patch.object(client._instance, "conn") as mock_conn:
+            mock_conn.execute.side_effect = ConnectionError("db down")
+            result = client.remember(content="test")
 
-        result = client.remember(content="test")
+            assert result.is_ko
+            errors = result.get_errors()
+            assert len(errors) == 1
+            assert errors[0].error_code == "DATABASE_ERROR"
 
-        assert result.is_ko
-        errors = result.get_errors()
-        assert len(errors) == 1
-        assert errors[0].error_code == "DATABASE_ERROR"
-
-    def test_passes_kwargs_through(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """remember() passes through arbitrary kwargs."""
-        client.remember(content="test", source="custom", importance=0.9, tags=["tag1"])
-        mock_mnemosyne_instance.remember.assert_called_once_with(
-            content="test", source="custom", importance=0.9, tags=["tag1"]
+    def test_accepts_standard_kwargs(self, client: MnemosyneClient) -> None:
+        """remember() accepts content, source, importance kwargs."""
+        result = client.remember(
+            content="test",
+            source="custom",
+            importance=0.9,
+            tags=["tag1"],
         )
+        assert result.is_ok
 
 
 # ---------------------------------------------------------------------------
@@ -185,16 +196,17 @@ class TestMnemosyneClientForget:
     """forget() returns Result.ok on success, Result.ko on error."""
 
     def test_returns_result_ok_on_success(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """forget() returns Result.ok with the library's response."""
+        """forget() returns Result.ok(True) when deleted from episodic_memory."""
         result = client.forget(memory_id="mem_123")
 
         assert result.is_ok
-        assert result.value == {"status": "deleted", "memory_id": "mem_123"}
-        mock_mnemosyne_instance.forget.assert_called_once_with(memory_id="mem_123")
+        assert result.value is True
 
     def test_returns_result_ko_on_exception(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """forget() returns Result.ko with DATABASE_ERROR when library raises."""
-        mock_mnemosyne_instance.forget.side_effect = ConnectionError("db down")
+        """forget() returns Result.ko with DATABASE_ERROR when direct SQL raises."""
+        mock_cursor = MagicMock()
+        mock_cursor.execute.side_effect = ConnectionError("db down")
+        mock_mnemosyne_instance.conn.cursor.return_value = mock_cursor
 
         result = client.forget(memory_id="mem_123")
 
@@ -212,18 +224,19 @@ class TestMnemosyneClientUpdate:
     """update() returns Result.ok on success, Result.ko on error."""
 
     def test_returns_result_ok_on_success(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """update() returns Result.ok with the library's response."""
+        """update() returns Result.ok(True) when updated in episodic_memory."""
         result = client.update(memory_id="mem_123", content="new content", importance=0.8)
 
         assert result.is_ok
-        assert result.value == {"status": "updated", "memory_id": "mem_123"}
-        mock_mnemosyne_instance.update.assert_called_once_with(
-            memory_id="mem_123", content="new content", importance=0.8
-        )
+        assert result.value is True
 
     def test_returns_result_ko_on_exception(self, client: MnemosyneClient, mock_mnemosyne_instance: MagicMock) -> None:
-        """update() returns Result.ko with DATABASE_ERROR when library raises."""
-        mock_mnemosyne_instance.update.side_effect = RuntimeError("update failed")
+        """update() returns Result.ko with DATABASE_ERROR when direct SQL raises."""
+        mock_cursor = MagicMock()
+        mock_cursor.rowcount = 1
+        mock_cursor.fetchone.return_value = {"id": "mem_123"}
+        mock_cursor.execute.side_effect = RuntimeError("update failed")
+        mock_mnemosyne_instance.conn.cursor.return_value = mock_cursor
 
         result = client.update(memory_id="mem_123", content="new")
 
