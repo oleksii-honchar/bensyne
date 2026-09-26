@@ -249,6 +249,15 @@ describe('ConfigurationService', () => {
       expect(config.source.includePath).toBe(true);
     });
 
+    it('should have serverRequestBodyLimit default to 4032', async () => {
+      await fs.writeFile(configPath, '{}');
+      await createModule();
+      await service.load();
+
+      const config = service.getEnhancementConfig();
+      expect(config.serverRequestBodyLimit).toBe(4032);
+    });
+
     it('returns loaded enhancement config after load', async () => {
       const validConfig = {
         enhancement: {

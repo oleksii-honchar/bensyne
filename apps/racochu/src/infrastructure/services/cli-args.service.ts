@@ -17,6 +17,7 @@ export interface ParsedCliArgs {
   ttlSweep: boolean;
   recover: boolean;
   source: string | null;
+  file: string | null;
 }
 
 @Injectable()
@@ -39,6 +40,7 @@ Options:
   -r, --resume              Resume missing chunks: re-process only files with missing stored chunks
   --recover                 Recover missing chunks for DB-tracked files, then exit
   -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, or --process-only)
+  --file <path>             Process a single file (use with --source)
   --ttl-sweep               Run TTL sweep once and exit
 `;
 
@@ -65,6 +67,7 @@ Options:
       ttlSweep: false,
       recover: false,
       source: null,
+      file: null,
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -108,6 +111,9 @@ Options:
         case '-s':
         case '--source':
           result.source = args[++i];
+          break;
+        case '--file':
+          result.file = args[++i];
           break;
         case '--ttl-sweep':
           result.ttlSweep = true;

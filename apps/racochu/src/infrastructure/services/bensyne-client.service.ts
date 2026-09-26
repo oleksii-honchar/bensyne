@@ -8,6 +8,7 @@ import { ConfigurationService } from '../config/configuration.service';
 import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { BensyneRecallResult } from './bensyne-recall-result.type';
+import { RememberRequestSerializer } from '../mnemosyne/remember-request.serializer';
 
 /**
  * One stored chunk reported by the getFileChunks read-only tool.
@@ -97,6 +98,7 @@ export class BensyneClient implements OnApplicationBootstrap {
   constructor(
     private readonly configService: ConfigurationService,
     logger: BasePinoLogger,
+    private readonly serializer: RememberRequestSerializer,
   ) {
     this.logger = logger;
   }
@@ -243,31 +245,17 @@ export class BensyneClient implements OnApplicationBootstrap {
     chunk: ContentChunk,
     options?: { forceReembed?: boolean },
   ): Promise<Result<{ memory_id: string; status: string }>> {
-    const payload = BensyneRememberDto.fromChunk(chunk);
-    const argumentsPayload = options?.forceReembed ? { ...payload, force_reembed: true } : payload;
-
-    const request: McpToolRequest = {
-      jsonrpc: '2.0',
-      id: this.nextRequestId++,
-      method: 'tools/call',
-      params: {
-        name: 'rememberMemory',
-        arguments: argumentsPayload,
-      },
-    };
-
     this.logger.debug(
       `Remembering chunk: id="${chunk.id}", index=${chunk.chunkIndex}, textLength=${chunk.text.length}`,
     );
 
-    // Request-size guard: fail fast if the JSON-RPC body exceeds the transport budget.
-    // Transport limit is 4096 bytes; envelope overhead is 312-908 bytes.
-    // We guard at 4032 (4096 - 64 margin) to catch oversized content before POST.
-    const body = JSON.stringify(request, (_, value) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    );
+    // Use the shared serializer to build the exact request that will be sent.
+    // This ensures the size guard measures the same payload that reaches the server.
+    const request = this.serializer.buildRequest(chunk, options);
+    const body = this.serializer.serialize(request);
     const bodyByteLength = Buffer.byteLength(body, 'utf8');
     const MAX_REQUEST_BYTES = 4032;
+
     if (bodyByteLength > MAX_REQUEST_BYTES) {
       const errMsg = `remember request too large: ${bodyByteLength} bytes (limit ${MAX_REQUEST_BYTES})`;
       this.logger.warn(`${errMsg}; chunkId="${chunk.id}"`);

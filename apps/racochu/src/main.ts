@@ -183,7 +183,15 @@ export async function bootstrap(): Promise<void> {
   // regardless of --process-only. Exclude reconciliation + TTL sweep above
   // still ran at startup in this mode.
   if (args.recover) {
-    if (args.source) {
+    if (args.file) {
+      logger.info(`Recovering single file: ${args.file}`);
+      if (!args.source) {
+        logger.error('--file requires --source to specify the source ID');
+        await app.close();
+        process.exit(1);
+      }
+      await recoverService.recoverFile(args.file, args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+    } else if (args.source) {
       logger.info(`Recovering missing chunks for source: ${args.source}`);
       await recoverService.recoverSource(args.source, sources, args.dryRun ? { dryRun: true } : undefined);
     } else {

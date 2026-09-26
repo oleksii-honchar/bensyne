@@ -10,6 +10,7 @@ import { watchSourceConfigSchema } from '../infrastructure/config/config-schemas
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
 import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
+import { RememberRequestSerializer } from '../infrastructure/mnemosyne/remember-request.serializer';
 import { BaseUseCase } from '../utils/base-use-case';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
@@ -32,6 +33,8 @@ export type ChunkContentParams = z.infer<typeof chunkContentParamsSchema>;
 
 @Injectable()
 export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, ContentChunk[]> {
+  private readonly serializer: RememberRequestSerializer;
+
   constructor(
     private readonly strategyRouter: StrategyRouter,
     private readonly enhancementPipelineService: EnhancementPipelineService,
@@ -40,6 +43,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
   ) {
     super(logger);
     this.logger = this.logger.child({ component: 'ChunkContentUseCase' });
+    this.serializer = new RememberRequestSerializer();
   }
 
   protected validateParams(params: ChunkContentParams): Result<ChunkContentParams> {
@@ -176,19 +180,36 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       return ContentChunk.of(updatedProps).getValue();
     });
 
-    // Safety check: warn if any chunk exceeds 4000 bytes (close to Mnemosyne's 4096-byte split limit)
-    // to help catch configuration issues that could trigger the UTF-8 byte-splitting bug.
+    // Clamp oversized chunks (UTF-8 byte limit for Cyrillic text).
+    // Measure the serialized request body size, not just the chunk text.
+    const MAX_REQUEST_BYTES = 4000; // Leave margin for metadata variations
+    let allChunks: ContentChunk[] = [];
+    let chunkIndex = 0;
     for (const chunk of finalChunks) {
-      const byteLength = Buffer.byteLength(chunk.text, 'utf8');
-      if (byteLength > 4000) {
-        this.logger.warn(
-          `Chunk exceeds 4000 bytes (close to Mnemosyne's 4096-byte split limit); path="${params.filePath}", chunkIndex=${chunk.chunkIndex}, byteLength=${byteLength}. ` +
-          `Consider reducing enhancement.maxCharacters to prevent the UTF-8 byte-splitting bug.`,
+      // Measure the actual serialized request body size
+      const serialized = this.serializer.buildAndSerialize(chunk);
+      const serializedBytes = Buffer.byteLength(serialized, 'utf8');
+
+      if (serializedBytes <= MAX_REQUEST_BYTES) {
+        // Chunk fits — re-index and add
+        const chunkProps = chunk.toJson();
+        chunkProps.chunkIndex = chunkIndex++;
+        allChunks.push(ContentChunk.of(chunkProps).getValue());
+      } else {
+        // Re-chunk oversized chunk to stay under request body limit
+        this.logger.info(
+          `Clamping oversized chunk: path="${params.filePath}", originalChunkIndex=${chunk.chunkIndex}, serializedBytes=${serializedBytes}`,
         );
+        const clampedChunks = this.clampChunkToRequestBody(chunk, MAX_REQUEST_BYTES);
+        for (const clamped of clampedChunks) {
+          const chunkProps = clamped.toJson();
+          chunkProps.chunkIndex = chunkIndex++;
+          allChunks.push(ContentChunk.of(chunkProps).getValue());
+        }
       }
     }
 
-    return Result.ok(finalChunks);
+    return Result.ok(allChunks);
   }
 
   /**
@@ -205,5 +226,73 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       );
       return undefined;
     }
+  }
+
+  /**
+   * Clamps a chunk to stay under the request body limit by splitting the text
+   * at safe boundaries (paragraph, sentence, or byte) and measuring each split
+   * against the actual serialized request body size.
+   */
+  private clampChunkToRequestBody(chunk: ContentChunk, maxRequestBytes: number): ContentChunk[] {
+    const text = chunk.text;
+
+    // Use binary search to find the maximum content length that fits
+    let low = 0;
+    let high = text.length;
+
+    while (low < high) {
+      const mid = Math.floor((low + high + 1) / 2);
+      const testContent = text.substring(0, mid);
+      const testChunk = this.createClampedChunk(chunk, testContent);
+
+      const serialized = this.serializer.buildAndSerialize(testChunk);
+      const serializedBytes = Buffer.byteLength(serialized, 'utf8');
+
+      if (serializedBytes <= maxRequestBytes) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    // low is now the maximum character count that fits
+    if (low === 0) {
+      // Even 1 character is too large — return the original chunk as-is
+      this.logger.warn(
+        `Chunk cannot be clamped to fit request body limit: chunkIndex=${chunk.chunkIndex}`,
+      );
+      return [chunk];
+    }
+
+    // Split the text at the found boundary
+    const fits = text.substring(0, low);
+    const remainder = text.substring(low);
+
+    const chunks: ContentChunk[] = [this.createClampedChunk(chunk, fits)];
+
+    // If there's remainder, create a new chunk for it
+    if (remainder.length > 0) {
+      // Trim leading whitespace from remainder
+      const trimmedRemainder = remainder.trimStart();
+      if (trimmedRemainder.length > 0) {
+        // Recursively clamp the remainder
+        const remainderChunks = this.clampChunkToRequestBody(
+          this.createClampedChunk(chunk, trimmedRemainder),
+          maxRequestBytes,
+        );
+        chunks.push(...remainderChunks);
+      }
+    }
+
+    return chunks;
+  }
+
+  private createClampedChunk(originalChunk: ContentChunk, text: string): ContentChunk {
+    // Copy metadata from original chunk
+    const metadata = originalChunk.metadata ? { ...originalChunk.metadata } : {};
+    const chunkProps = originalChunk.toJson();
+    chunkProps.text = text;
+    chunkProps.metadata = metadata;
+    return ContentChunk.of(chunkProps).getValue();
   }
 }

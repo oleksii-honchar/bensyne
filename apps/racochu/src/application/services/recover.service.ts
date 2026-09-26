@@ -101,12 +101,49 @@ export class RecoverService {
     await this.recoverSourceInternal(source, options);
   }
 
+  async recoverFile(
+    filePath: string,
+    sourceId: string,
+    sources: WatchSourceConfig[],
+    options?: RecoverOptions,
+  ): Promise<void> {
+    this.logger.info(`Recovering single file; path="${filePath}", source="${sourceId}"`);
+
+    const source = sources.find(s => s.id === sourceId);
+    if (!source) {
+      this.logger.error(`Source not found; id="${sourceId}"`);
+      return;
+    }
+
+    // Look up the tracker for this file
+    const trackers = await this.fileTrackerRepository.findTrackedBySourceId(source.id);
+    const tracker = trackers.find(t => t.filePath === filePath);
+
+    if (!tracker) {
+      this.logger.info(`File not tracked yet, treating as new file: path="${filePath}"`);
+      // Run ProcessFileUseCase directly for untracked files
+      const result = await this.processFileUseCase.execute({
+        filePath,
+        eventType: 'add',
+        sourceId: source.id,
+        memoryBank: source.memoryBank,
+        sourceConfig: source,
+      });
+      if (result.isKo()) {
+        this.logger.error(`File processing failed: path="${filePath}", error="${result.getFormattedErrors()}"`);
+      }
+      return;
+    }
+
+    await this.recoverFileInternal(tracker, source, options);
+  }
+
   private async recoverSourceInternal(source: WatchSourceConfig, options?: RecoverOptions): Promise<void> {
     const trackers = await this.fileTrackerRepository.findTrackedBySourceId(source.id);
     this.logger.info(`Tracked files found for recovery: source="${source.id}", count=${trackers.length}`);
 
     for (const tracker of trackers) {
-      await this.recoverFile(tracker, source, options);
+      await this.recoverFileInternal(tracker, source, options);
     }
   }
 
@@ -115,7 +152,7 @@ export class RecoverService {
    * and future callers can aggregate. Never throws for per-file failures — each
    * row degrades to an outcome and the loop continues.
    */
-  private async recoverFile(
+  private async recoverFileInternal(
     tracker: FileTracker,
     source: WatchSourceConfig,
     options?: RecoverOptions,

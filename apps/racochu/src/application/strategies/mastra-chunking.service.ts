@@ -5,7 +5,9 @@ import { ConfigurationService } from '@/infrastructure/config/configuration.serv
 import { BasePinoLogger } from '@/infrastructure/logging/base-pino-logger';
 import { generateId } from '@/utils/big-endian-id';
 import { ErrorWithDetails } from '@/utils/error-with-details';
+import { clampUtf8 } from './utf8-clamp';
 import { Result } from '@/utils/result';
+import { RememberRequestSerializer } from '@/infrastructure/mnemosyne/remember-request.serializer';
 import { MDocument } from '@mastra/rag';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
@@ -169,12 +171,124 @@ export class MastraChunkingService {
   constructor(
     private readonly configService: ConfigurationService,
     private readonly logger: BasePinoLogger,
+    private readonly serializer: RememberRequestSerializer,
     /**
      * Backoff sleeper for 429 retries. Injected so tests can record delays without
      * real timers; defaults to the real `sleep`. Resolved as optional by Nest DI.
      */
     @Optional() private readonly sleepFn: (ms: number) => Promise<void> = sleep,
   ) {}
+  /**
+   * Clamp content to fit within the server's request body limit.
+   * Uses the shared RememberRequestSerializer for accurate size measurement,
+   * ensuring the clamp measures the exact request body that will be sent.
+   *
+   * @param content - The content to clamp
+   * @param chunkProps - The chunk properties needed to build a temporary ContentChunk for measurement
+   * @returns Object with clamped content and remainder
+   */
+  private clampContentToFit(
+    content: string,
+    chunkProps: {
+      chunkIndex: number;
+      totalChunks: number;
+      sectionHeader: string;
+      breadcrumb: string;
+      fileRole: FileRole;
+      metadata?: Record<string, string>;
+    },
+  ): { clamped: string; remainder: string } {
+    const SERVER_REQUEST_BODY_LIMIT = this.configService.getEnhancementConfig().serverRequestBodyLimit;
+    const maxChunkBytes = this.configService.getEnhancementConfig().maxChunkBytes;
+
+    // First, apply the fixed clamp
+    const clamped = clampUtf8(content, maxChunkBytes);
+
+    // Build a temporary ContentChunk for size measurement
+    const tempChunk = ContentChunk.of({
+      id: generateId(),
+      text: clamped,
+      chunkIndex: chunkProps.chunkIndex,
+      totalChunks: chunkProps.totalChunks,
+      sectionHeader: chunkProps.sectionHeader,
+      breadcrumb: chunkProps.breadcrumb,
+      fileRole: chunkProps.fileRole,
+      oversized: false,
+      metadata: chunkProps.metadata,
+      importance: 0.5,
+      tags: [],
+      memoryBank: 'default',
+    });
+
+    if (!tempChunk.isOk()) {
+      // If chunk creation fails, fall back to returning the clamped content
+      return { clamped, remainder: '' };
+    }
+
+    let chunk = tempChunk.getValue();
+
+    // Serialize and measure
+    let serialized = this.serializer.buildAndSerialize(chunk);
+    let serializedBytes = Buffer.byteLength(serialized, 'utf8');
+
+    if (serializedBytes <= SERVER_REQUEST_BODY_LIMIT) {
+      return { clamped, remainder: '' };
+    }
+
+    // Use binary search to find the maximum content length that fits
+    let low = 0;
+    let high = clamped.length;
+
+    while (low < high) {
+      const mid = Math.floor((low + high + 1) / 2);
+      const testContent = clamped.slice(0, mid);
+
+      const testChunk = ContentChunk.of({
+        id: chunk.id,
+        text: testContent,
+        chunkIndex: chunk.chunkIndex,
+        totalChunks: chunk.totalChunks,
+        sectionHeader: chunk.sectionHeader,
+        breadcrumb: chunk.breadcrumb,
+        fileRole: chunk.fileRole,
+        oversized: false,
+        metadata: chunkProps.metadata,
+        importance: 0.5,
+        tags: [],
+        memoryBank: 'default',
+      });
+
+      if (!testChunk.isOk()) {
+        high = mid - 1;
+        continue;
+      }
+
+      const testSerialized = this.serializer.buildAndSerialize(testChunk.getValue());
+      const testSerializedBytes = Buffer.byteLength(testSerialized, 'utf8');
+
+      if (testSerializedBytes <= SERVER_REQUEST_BODY_LIMIT) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    const trimmedContent = clamped.slice(0, low);
+    const remainder = clamped.slice(low);
+    const trimmedBytes = Buffer.byteLength(trimmedContent, 'utf8');
+
+    this.logger.info('chunk trimmed to fit request body limit', {
+      originalBytes: Buffer.byteLength(clamped, 'utf8'),
+      trimmedBytes,
+      remainderBytes: Buffer.byteLength(remainder, 'utf8'),
+      limit: SERVER_REQUEST_BODY_LIMIT,
+      filePath: chunkProps.breadcrumb,
+      chunkIndex: chunkProps.chunkIndex,
+    });
+
+    return { clamped: trimmedContent, remainder };
+  }
+
   /**
    * Get max characters limit for a given file role from enhancement config.
    */
@@ -759,9 +873,20 @@ Do not include any other text, explanations, or markdown formatting.`;
         metadata.mastraDocSummary = enrichmentSummary;
       }
 
+      // Clamp chunk text to fit within the server's request body limit.
+      // Must be called after metadata is built (needed for request body size calculation).
+      const { clamped, remainder } = this.clampContentToFit(mastraChunk.text, {
+        chunkIndex: i,
+        totalChunks,
+        sectionHeader: enrichmentTitle || filePath,
+        breadcrumb: filePath,
+        fileRole,
+        metadata,
+      });
+
       const chunkResult = ContentChunk.of({
         id: generateId(),
-        text: mastraChunk.text,
+        text: clamped,
         chunkIndex: i,
         totalChunks,
         sectionHeader: enrichmentTitle || filePath,
@@ -773,6 +898,44 @@ Do not include any other text, explanations, or markdown formatting.`;
         tags: [],
         memoryBank: 'default',
       });
+
+      // If there's remainder, create additional chunk(s) for it
+      let currentRemainder = remainder;
+      while (currentRemainder.length > 0) {
+        const trimmedRemainder = currentRemainder.trimStart();
+        if (trimmedRemainder.length === 0) break;
+
+        // Clamp the remainder as a separate chunk
+        const { clamped: clampedRemainder, remainder: nextRemainder } = this.clampContentToFit(trimmedRemainder, {
+          chunkIndex: i,
+          totalChunks,
+          sectionHeader: enrichmentTitle || filePath,
+          breadcrumb: filePath,
+          fileRole,
+          metadata,
+        });
+
+        const remainderChunkResult = ContentChunk.of({
+          id: generateId(),
+          text: clampedRemainder,
+          chunkIndex: i,
+          totalChunks,
+          sectionHeader: enrichmentTitle || filePath,
+          breadcrumb: filePath,
+          fileRole,
+          oversized: false,
+          metadata,
+          importance: 0.5,
+          tags: [],
+          memoryBank: 'default',
+        });
+
+        if (remainderChunkResult.isOk()) {
+          chunks.push(remainderChunkResult.getValue());
+        }
+
+        currentRemainder = nextRemainder;
+      }
 
       if (chunkResult.isOk()) {
         chunks.push(chunkResult.getValue());

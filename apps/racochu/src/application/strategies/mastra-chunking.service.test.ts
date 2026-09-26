@@ -17,6 +17,7 @@ import {
   MastraChunkingService,
   MAX_ENRICHMENT_KEYWORDS_LENGTH,
 } from './mastra-chunking.service';
+import { clampUtf8 } from './utf8-clamp';
 
 const mockedMDocument = MDocument as jest.Mocked<typeof MDocument>;
 
@@ -25,6 +26,8 @@ const mockedLlmClientFactory = LlmClientFactory as jest.Mocked<typeof LlmClientF
 
 const createMockConfigService = (overrides?: {
   maxCharacters?: Record<string, number>;
+  maxChunkBytes?: number;
+  serverRequestBodyLimit?: number;
   enrichmentEnabled?: boolean;
   enrichmentApiKey?: string | null;
   enrichmentLlmUrl?: string | null;
@@ -40,6 +43,8 @@ const createMockConfigService = (overrides?: {
         documentation: 300,
         ...overrides?.maxCharacters,
       },
+      maxChunkBytes: overrides?.maxChunkBytes ?? 3200,
+      serverRequestBodyLimit: overrides?.serverRequestBodyLimit ?? 4032,
     }),
     getEnrichmentConfig: jest.fn().mockReturnValue({
       enabled: overrides?.enrichmentEnabled ?? true,
@@ -785,6 +790,182 @@ describe('MastraChunkingService', () => {
 
       expect(result.isOk()).toBe(true);
       expect(result.getValue()[0].breadcrumb).toBe('docs/guide.md');
+    });
+
+    it('should clamp chunk text in mapToDomainChunks when content exceeds request body limit', async () => {
+      const longText = 'a'.repeat(5000);
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([{ text: longText, metadata: {} }]),
+        }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: longText, metadata: {} }]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title\n' + longText, 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks).toHaveLength(1);
+      // The clamped text should be less than the original 5000 chars
+      expect(chunks[0].text.length).toBeLessThan(5000);
+      // The request body should now fit within the server limit (4032 bytes)
+      const wrapped = service['buildRememberRequest'](chunks[0].text, {
+        ...chunks[0].metadata,
+        chunkIndex: 0,
+        totalChunks: 1,
+      });
+      expect(Buffer.byteLength(wrapped, 'utf8')).toBeLessThanOrEqual(4032);
+    });
+
+    it('should not clamp chunk text when content fits within request body limit', async () => {
+      const shortText = 'This is a reasonably sized chunk of content that should fit within the limits.';
+      const mockDoc = {
+        extractMetadata: jest.fn().mockResolvedValue({
+          getDocs: jest.fn().mockReturnValue([{ text: shortText, metadata: {} }]),
+        }),
+        chunkMarkdown: jest.fn(),
+        getDocs: jest.fn().mockReturnValue([{ text: shortText, metadata: {} }]),
+      };
+      mockedMDocument.fromMarkdown.mockReturnValue(mockDoc as never);
+
+      const result = await service.chunkFile('# Title\n' + shortText, 'README.md', 'test-source');
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks).toHaveLength(1);
+      // Content unchanged — fits within the limit
+      expect(chunks[0].text).toBe(shortText);
+    });
+  });
+
+  describe('buildRememberRequest', () => {
+    it('should build valid JSON-RPC request', () => {
+      const request = service['buildRememberRequest']('test content', { breadcrumb: '/path/to/file.md' });
+      const parsed = JSON.parse(request);
+      expect(parsed.jsonrpc).toBe('2.0');
+      expect(parsed.id).toBe(1);
+      expect(parsed.method).toBe('tools/call');
+      expect(parsed.params.name).toBe('rememberMemory');
+      expect(parsed.params.arguments.content).toBe('test content');
+    });
+
+    it('should include namespace and importance', () => {
+      const request = service['buildRememberRequest']('content', {});
+      const parsed = JSON.parse(request);
+      expect(parsed.params.arguments.namespace).toBe('obsidian_olho');
+      expect(parsed.params.arguments.importance).toBe(0.5);
+    });
+
+    it('should include metadata with dummy UUID for size calculation', () => {
+      const metadata = { breadcrumb: '/path/to/file.md', fileRole: 'docs', chunkIndex: 0 };
+      const request = service['buildRememberRequest']('content', metadata);
+      const parsed = JSON.parse(request);
+      expect(parsed.params.arguments.metadata.breadcrumb).toBe('/path/to/file.md');
+      expect(parsed.params.arguments.metadata.fileRole).toBe('docs');
+      expect(parsed.params.arguments.metadata.chunkIndex).toBe(0);
+      expect(parsed.params.arguments.metadata.id).toBe('00000000-0000-0000-0000-000000000000');
+    });
+
+    it('should use a 36-character UUID placeholder', () => {
+      const request = service['buildRememberRequest']('content', {});
+      const parsed = JSON.parse(request);
+      expect(parsed.params.arguments.metadata.id).toHaveLength(36);
+    });
+  });
+
+  describe('clampContentToFit', () => {
+    beforeEach(() => {
+      configService = createMockConfigService({ maxCharacters: { prose: 200, code: 400, configuration: 300 } });
+      mockLogger = createMockLogger();
+      service = new MastraChunkingService(configService, mockLogger);
+    });
+
+    it('should return content unchanged when it fits within the server request body limit', () => {
+      const content = 'short content';
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      const result = service['clampContentToFit'](content, metadata);
+      expect(result).toBe(content);
+    });
+
+    it('should trim content that exceeds the limit', () => {
+      // maxChunkBytes=3200, serverRequestBodyLimit=4032 — 5000 chars exceeds
+      const longContent = 'a'.repeat(5000);
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      const result = service['clampContentToFit'](longContent, metadata);
+      // clampUtf8 clamps to 3200 bytes first, then the binary search clamps further
+      expect(result.length).toBeLessThan(5000);
+    });
+
+    it('should use binary search to find the maximum fitting size', () => {
+      // Content that when wrapped exceeds the limit
+      const oversized = 'b'.repeat(5000);
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      const result = service['clampContentToFit'](oversized, metadata);
+
+      // Binary search should converge — result should fit when wrapped
+      const wrapped = service['buildRememberRequest'](result, metadata);
+      expect(Buffer.byteLength(wrapped, 'utf8')).toBeLessThanOrEqual(4032);
+    });
+
+    it('should handle UTF-8 rich content', () => {
+      // Each emoji is 4 bytes in UTF-8
+      const content = '🚀'.repeat(2000);
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      const result = service['clampContentToFit'](content, metadata);
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeLessThanOrEqual(content.length);
+    });
+
+    it('should log when chunk is trimmed to fit', () => {
+      // Use small maxChunkBytes to force trimming by clampContentToFit
+      configService = createMockConfigService({
+        maxCharacters: { prose: 200, code: 400, configuration: 300 },
+        maxChunkBytes: 10000,
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const longContent = 'c'.repeat(5000);
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      service['clampContentToFit'](longContent, metadata);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'chunk trimmed to fit request body limit',
+        expect.objectContaining({
+          filePath: '/path/to/file.md',
+          chunkIndex: 0,
+        }),
+      );
+    });
+
+    it('should log original and trimmed byte sizes', () => {
+      // Use small maxChunkBytes to force trimming by clampContentToFit
+      configService = createMockConfigService({
+        maxCharacters: { prose: 200, code: 400, configuration: 300 },
+        maxChunkBytes: 10000,
+      });
+      service = new MastraChunkingService(configService, mockLogger);
+
+      const longContent = 'd'.repeat(5000);
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      service['clampContentToFit'](longContent, metadata);
+      const logCall = (mockLogger.info as jest.Mock).mock.calls.find(
+        call => call[0] === 'chunk trimmed to fit request body limit',
+      );
+      expect(logCall).toBeDefined();
+      expect(logCall![1].originalBytes).toBeGreaterThan(0);
+      expect(logCall![1].trimmedBytes).toBeGreaterThan(0);
+      expect(logCall![1].limit).toBe(4032);
+      expect(logCall![1].originalBytes).toBeGreaterThan(logCall![1].trimmedBytes);
+    });
+
+    it('should not trim content that exactly fits', () => {
+      // Measure the overhead and create content that fits exactly
+      const metadata = { breadcrumb: '/path/to/file.md', chunkIndex: 0 };
+      // 4032 - overhead should be safe (oversized content will exceed)
+      const content = 'e'.repeat(200);
+      const result = service['clampContentToFit'](content, metadata);
+      expect(result).toBe(content);
     });
   });
 

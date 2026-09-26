@@ -24,6 +24,7 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FileMemoryTrackerRepository } from './infrastructure/repositories/file-memory-tracker.repository';
 import { FileTrackerRepository } from './infrastructure/repositories/file-tracker.repository';
 import { BensyneClient } from './infrastructure/services/bensyne-client.service';
+import { RememberRequestSerializer } from './infrastructure/mnemosyne/remember-request.serializer';
 import { FileHasherService } from './infrastructure/services/file-hasher.service';
 import { FileMemoryTrackerService } from './infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
@@ -100,6 +101,9 @@ import { UserSourceBootstrapService } from './user-source.bootstrap.service';
 
     // Session metadata
     SessionMetadataService,
+
+    // Shared serialization
+    RememberRequestSerializer,
   ],
 })
 export class AppModule {}
