@@ -106,32 +106,39 @@ def get_session_ttl(session_id: str | None) -> datetime | None:
 
 def migrate(db_path: str) -> int:
     """Run the migration. Returns number of rows migrated."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-
+    import os
     try:
-        cursor = conn.cursor()
-
-        # Check if working_memory table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='working_memory'
-        """)
-        if cursor.fetchone() is None:
-            print("No working_memory table found. Database may be empty or already migrated.")
-            print("Checking for existing episodic_memory rows...")
-            cursor.execute("SELECT count(*) as cnt FROM episodic_memory")
-            count = cursor.fetchone()["cnt"]
-            print(f"Found {count} rows in episodic_memory. No migration needed.")
+        # Check if DB is writable (skip read-only root-owned DBs)
+        if not os.access(db_path, os.W_OK):
+            print(f"Skipping (read-only): {db_path}")
             return 0
 
-        # Query all working_memory rows
-        cursor.execute("""
-            SELECT id, content, source, timestamp, session_id, importance,
-                   metadata_json, veracity, created_at
-            FROM working_memory
-        """)
-        rows = cursor.fetchall()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+
+        try:
+            cursor = conn.cursor()
+
+            # Check if working_memory table exists
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='working_memory'
+            """)
+            if cursor.fetchone() is None:
+                print("No working_memory table found. Database may be empty or already migrated.")
+                print("Checking for existing episodic_memory rows...")
+                cursor.execute("SELECT count(*) as cnt FROM episodic_memory")
+                count = cursor.fetchone()["cnt"]
+                print(f"Found {count} rows in episodic_memory. No migration needed.")
+                return 0
+
+            # Query all working_memory rows
+            cursor.execute("""
+                SELECT id, content, source, timestamp, session_id, importance,
+                       metadata_json, veracity, created_at
+                FROM working_memory
+            """)
+            rows = cursor.fetchall()
 
         print(f"Migrating {len(rows)} rows from working_memory to episodic_memory...")
 
