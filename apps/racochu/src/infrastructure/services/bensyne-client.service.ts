@@ -254,7 +254,7 @@ export class BensyneClient implements OnApplicationBootstrap {
     const request = this.serializer.buildRequest(chunk, options);
     const body = this.serializer.serialize(request);
     const bodyByteLength = Buffer.byteLength(body, 'utf8');
-    const MAX_REQUEST_BYTES = 4032;
+    const MAX_REQUEST_BYTES = 8000;
 
     if (bodyByteLength > MAX_REQUEST_BYTES) {
       const errMsg = `remember request too large: ${bodyByteLength} bytes (limit ${MAX_REQUEST_BYTES})`;
