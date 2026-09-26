@@ -68,10 +68,10 @@ def resolve_db_paths() -> list[str]:
             for p in glob.glob(banks_pattern):
                 if Path(p).exists():
                     found.append(p)
-            # Check for old-style single DB
-            db_path = Path(data_dir) / "memories.db"
-            if db_path.exists() and str(db_path) not in found:
-                found.append(str(db_path))
+            # Check for old-style single DB (deprecated, skip)
+            # db_path = Path(data_dir) / "memories.db"
+            # if db_path.exists() and str(db_path) not in found:
+            #     found.append(str(db_path))
 
     # Debug: list all matches
     if not found:
@@ -124,6 +124,14 @@ def migrate(db_path: str) -> int:
             WHERE type='table' AND name='working_memory'
         """)
         if cursor.fetchone() is None:
+            # Check if episodic_memory exists (older DBs may not have it)
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='episodic_memory'
+            """)
+            if cursor.fetchone() is None:
+                print("No working_memory or episodic_memory tables. Empty DB.")
+                return 0
             print("No working_memory table found. Database may be empty or already migrated.")
             print("Checking for existing episodic_memory rows...")
             cursor.execute("SELECT count(*) as cnt FROM episodic_memory")
