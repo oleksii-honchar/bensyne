@@ -113,6 +113,18 @@ def migrate(db_path: str, dry_run: bool = False) -> int:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
+    # Load sqlite-vec extension
+    try:
+        import sqlite_vec
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+    except ImportError as e:
+        print(f"ERROR: sqlite-vec not installed: {e}")
+        conn.close()
+        return 0
+    except Exception as e:
+        print(f"WARNING: Failed to load sqlite-vec: {e}")
+
     try:
         cursor = conn.cursor()
 
