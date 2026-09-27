@@ -77,8 +77,10 @@ class MnemosyneClient:
         """Persist a Memory entity via direct INSERT into episodic_memory.
 
         Bypasses the Mnemosyne library's remember() API and inserts directly
-        into the episodic_memory table. Applies source-specific TTL:
-        agent-session memories get 365 days, all others get no expiry.
+        into the episodic_memory table. Generates embedding at save time and
+        stores it in the vec_episodes sqlite-vec virtual table. Applies
+        source-specific TTL: agent-session memories get 365 days, all others
+        get no expiry.
 
         Returns Result.ok(memory) with the actual memory_id generated.
         """
@@ -99,7 +101,7 @@ class MnemosyneClient:
                 valid_until = None
 
             conn = self._instance.conn
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT OR IGNORE INTO episodic_memory "
                 "(id, content, source, timestamp, session_id, importance, valid_until) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -113,22 +115,25 @@ class MnemosyneClient:
                     valid_until.isoformat() if valid_until else None,
                 ),
             )
+            rowid = cursor.lastrowid
             conn.commit()
 
-            # Best-effort embedding via numpy (don't fail the save if it fails)
+            # Generate embedding and store in vec_episodes (not binary_vector)
             try:
                 import numpy as np
                 from mnemosyne.core.embeddings import embed
+                from mnemosyne.core.beam import _vec_insert, _vec_available
+
                 vecs = embed([memory.content])
                 if vecs is not None and len(vecs) > 0:
-                    embedding = np.array(vecs[0], dtype=np.float32)
-                    # Store embedding as bytes blob
-                    embedding_bytes = embedding.tobytes()
-                    conn.execute(
-                        "UPDATE episodic_memory SET binary_vector = ? WHERE id = ?",
-                        (embedding_bytes, memory_id),
-                    )
-                    conn.commit()
+                    embedding = np.asarray(vecs[0]).tolist()
+                    if _vec_available(conn):
+                        try:
+                            _vec_insert(conn, rowid, embedding)
+                        except Exception as vec_exc:
+                            logger.warning("save: vec_episodes insert failed (rowid=%s): %s", rowid, vec_exc)
+                    else:
+                        logger.debug("save: vec_episodes not available, skipping vec insert", memory_id=memory_id)
             except Exception as embed_exc:
                 logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
 
@@ -158,8 +163,10 @@ class MnemosyneClient:
         """Store a durable memory via direct INSERT into episodic_memory.
 
         Bypasses the Mnemosyne library's remember() API and inserts directly
-        into the episodic_memory table. Applies source-specific TTL:
-        agent-session memories get 365 days, all others get no expiry.
+        into the episodic_memory table. Generates embedding at save time and
+        stores it in the vec_episodes sqlite-vec virtual table. Applies
+        source-specific TTL: agent-session memories get 365 days, all others
+        get no expiry.
 
         Returns Result.ok({"memory_id": memory_id}).
         """
@@ -184,7 +191,7 @@ class MnemosyneClient:
                 valid_until = None
 
             conn = self._instance.conn
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT OR IGNORE INTO episodic_memory "
                 "(id, content, source, timestamp, session_id, importance, valid_until) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -198,21 +205,25 @@ class MnemosyneClient:
                     valid_until.isoformat() if valid_until else None,
                 ),
             )
+            rowid = cursor.lastrowid
             conn.commit()
 
-            # Best-effort embedding via numpy (don't fail the remember if it fails)
+            # Generate embedding and store in vec_episodes (not binary_vector)
             try:
                 import numpy as np
                 from mnemosyne.core.embeddings import embed
+                from mnemosyne.core.beam import _vec_insert, _vec_available
+
                 vecs = embed([content])
                 if vecs is not None and len(vecs) > 0:
-                    embedding = np.array(vecs[0], dtype=np.float32)
-                    embedding_bytes = embedding.tobytes()
-                    conn.execute(
-                        "UPDATE episodic_memory SET binary_vector = ? WHERE id = ?",
-                        (embedding_bytes, memory_id),
-                    )
-                    conn.commit()
+                    embedding = np.asarray(vecs[0]).tolist()
+                    if _vec_available(conn):
+                        try:
+                            _vec_insert(conn, rowid, embedding)
+                        except Exception as vec_exc:
+                            logger.warning("remember: vec_episodes insert failed (rowid=%s): %s", rowid, vec_exc)
+                    else:
+                        logger.debug("remember: vec_episodes not available, skipping vec insert", memory_id=memory_id)
             except Exception as embed_exc:
                 logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
 
