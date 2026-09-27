@@ -7,7 +7,9 @@
  * that each file's stored chunks have corresponding episodic memories.
  *
  * Usage:
- *     node verify-episodic-consistency.mjs <bank> [bank ...]
+ *     node verify-episodic-consistency.mjs                    # verify all persona banks
+ *     node verify-episodic-consistency.mjs <bank> [bank ...]  # verify specific banks
+ *     node verify-episodic-consistency.mjs --config <path>    # use custom config path
  *
  * Exit codes:
  *     0 — All specified banks are consistent
@@ -18,8 +20,10 @@
 import { readFileSync } from "fs";
 import { exit } from "process";
 
-const MCP_URL = process.env.BENSYNE_MCP_URL || "http://localhost:3000/mcp";
-let API_KEY = process.env.BENSYNE_MCP_API_KEY || "";
+// Default to the LiteLLM gateway URL used by racochu production config
+const MCP_URL = process.env.BENSYNE_MCP_URL || "https://lite-llm.lan/mcp/bensyne";
+// Use LLM_API_KEY from environment (same as racochu config) or BENSYNE_MCP_API_KEY
+let API_KEY = process.env.LLM_API_KEY || process.env.BENSYNE_MCP_API_KEY || "";
 if (API_KEY && !API_KEY.startsWith("Bearer ")) {
   API_KEY = `Bearer ${API_KEY}`;
 }
@@ -122,15 +126,49 @@ async function verifyBank(bank, sessionId) {
   return true;
 }
 
+function getAllBanksFromConfig(configPath) {
+  // Read racochu config and extract all watch source IDs (used as memoryBank names)
+  try {
+    const config = readFileSync(configPath, "utf-8");
+    const banks = [];
+    // Match lines like "- id: agent-persona_architect" or "- id: vault_macmini-lan"
+    const regex = /^  - id: ([a-zA-Z0-9_-]+)/gm;
+    let match;
+    while ((match = regex.exec(config)) !== null) {
+      banks.push(match[1]);
+    }
+    return banks;
+  } catch (e) {
+    console.error(`Error reading config at ${configPath}: ${e.message}`);
+    return [];
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
-  if (args.length < 1) {
-    console.log(`Usage: node verify-episodic-consistency.mjs <bank> [bank ...]`);
-    console.log(`MCP URL: ${MCP_URL}`);
-    exit(2);
+
+  // Parse optional --config flag
+  let configPath = process.env.RACOCHU_CONFIG || `${process.env.HOME}/.config/racochu.yaml`;
+  let banks = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--config" && args[i + 1]) {
+      configPath = args[i + 1];
+      i++;
+    } else {
+      banks.push(args[i]);
+    }
   }
 
-  const banks = args;
+  // If no banks specified, detect all memory banks from config
+  if (banks.length === 0) {
+    console.log(`Detecting memory banks from config: ${configPath}`);
+    banks = getAllBanksFromConfig(configPath);
+    if (banks.length === 0) {
+      console.log(`No memory banks found in config.`);
+      exit(2);
+    }
+    console.log(`Found ${banks.length} memory bank(s): ${banks.join(", ")}`);
+  }
 
   try {
     console.log(`Connecting to MCP server at ${MCP_URL}...`);
