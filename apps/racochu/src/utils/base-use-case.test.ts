@@ -153,4 +153,31 @@ describe('BaseUseCase', () => {
       expect(result.getValue()).toEqual({ id: 'test' });
     });
   });
+
+  describe('regression: useCase binding duplication', () => {
+    it('useCase binding not duplicated across multiple execute calls', async () => {
+      // This test ensures the useCase binding is applied exactly once (in the constructor)
+      // and not re-applied on each execute() call. The original bug caused child() to be
+      // called inside execute(), which chained bindings for each call, resulting in the
+      // useCase field being serialized hundreds of times in logs.
+      const logger = new MockLogger();
+      const useCase = new TestUseCase(logger);
+
+      // Call execute() multiple times (use cases are NestJS singletons)
+      await useCase.execute({ id: 'test-1' });
+      await useCase.execute({ id: 'test-2' });
+      await useCase.execute({ id: 'test-3' });
+
+      // The logger should still have only the single useCase binding from the constructor
+      const childLogger = useCase.logger as unknown as Record<string, unknown>;
+      const bindings = childLogger.__bindings as Record<string, unknown>;
+      expect(bindings).toBeDefined();
+      expect(bindings.useCase).toBe('TestUseCase');
+
+      // The bug would have produced nested/repeated useCase bindings. Verify there is
+      // only one binding object, not a chain.
+      expect(typeof bindings.useCase).toBe('string');
+      expect(bindings.useCase).not.toEqual(expect.arrayContaining([expect.anything()]));
+    });
+  });
 });

@@ -65,6 +65,22 @@ export class ForceReprocessService {
     await this.resumeSourceInternal(source);
   }
 
+  async forceReprocessFile(filePath: string, source: WatchSourceConfig): Promise<void> {
+    this.logger.info(`Force reprocessing single file; path="${filePath}", source="${source.id}"`);
+
+    const result = await this.processFileUseCase.execute({
+      filePath,
+      eventType: 'add',
+      sourceId: source.id,
+      memoryBank: source.memoryBank,
+      sourceConfig: source,
+    });
+
+    if (result.isKo()) {
+      this.logger.error(`File reprocessing failed: path="${filePath}", error="${result.getFormattedErrors()}"`);
+    }
+  }
+
   /** Startup population: resume only sources that have not opted out. */
   async autoPopulateSources(sources: WatchSourceConfig[]): Promise<void> {
     const targets = sources.filter(s => s.autoPopulate !== false);

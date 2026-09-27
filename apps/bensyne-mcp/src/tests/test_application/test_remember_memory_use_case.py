@@ -512,15 +512,15 @@ class TestRememberMemoryForceReembed:
         params.update(overrides)
         return params
 
-    def test_live_memory_hit_with_force_reembed_is_unchanged(
+    def test_live_memory_hit_without_force_reembed_is_unchanged(
         self, use_case, memory_repository, hash_index_service, file_service
     ) -> None:
-        """force_reembed True + dedup hit whose memory is LIVE ⇒ today's dedup path."""
+        """Live memory dedup hit without force_reembed ⇒ today's dedup path."""
         existing_id = "mem_live"
         hash_index_service.lookup.return_value = Result.ok(existing_id)
         memory_repository.get.return_value = {"id": existing_id}
 
-        result = use_case.execute(self._params(force_reembed=True))
+        result = use_case.execute(self._params())
 
         assert result.is_ok is True
         assert result.value["status"] == "deduplicated"
@@ -593,42 +593,61 @@ class TestRememberMemoryForceReembed:
         # Never delete a 0-chunk file — the chunk rows are re-created right after.
         file_service.delete_file.assert_not_called()
 
-    def test_stale_hit_without_force_reembed_returns_dead_memory_id(
+    def test_stale_hit_without_force_reembed_is_auto_detected(
         self, use_case, memory_repository, hash_index_service, file_service
     ) -> None:
-        """Dedup hit + dead memory + force_reembed ABSENT ⇒ today's behavior
-        (dedup returns the dead memory_id, no re-embed, no cleanup)."""
+        """Dedup hit + dead memory + force_reembed ABSENT ⇒ automatic stale
+        detection (no flag needed). Drops stale entries and re-embeds."""
         stale_id = "mem_dead"
+        new_memory = a_memory(id="mem_new")
         hash_index_service.lookup.return_value = Result.ok(stale_id)
-        # Even though the memory is dead, the flag is absent ⇒ unchanged path.
-        memory_repository.get.return_value = None
+        memory_repository.get.return_value = None  # memory lost externally
+        memory_repository.save.return_value = Result.ok(new_memory)
+        file_service.get_chunks_by_memory_id.return_value = Result.ok(
+            [_a_chunk(file_id="f1", memory_id=stale_id)]
+        )
+        file_service.materialize_file_context.return_value = Result.ok(
+            {"file_id": "file_x", "relations_created": 0, "rebuilt": False, "errors": []}
+        )
 
         result = use_case.execute(self._params())
 
+        # Automatic stale detection — no flag needed.
         assert result.is_ok is True
-        assert result.value["status"] == "deduplicated"
-        assert result.value["memory_id"] == stale_id
-        memory_repository.save.assert_not_called()
-        memory_repository.get.assert_called_once_with(stale_id)
-        hash_index_service.remove.assert_not_called()
-        file_service.get_chunks_by_memory_id.assert_not_called()
+        assert result.value["status"] == "stored"
+        assert result.value["memory_id"] == "mem_new"
+        # Stale hash-index entry dropped.
+        hash_index_service.remove.assert_called_once_with(stale_id)
+        # Stale file_chunks rows resolved and removed.
+        file_service.get_chunks_by_memory_id.assert_called_once_with(stale_id)
+        file_service.remove_chunk.assert_called_once_with("f1", stale_id)
+        # Miss path ran: save → store → materialize.
+        memory_repository.save.assert_called_once()
+        hash_index_service.store.assert_called_once_with("a" * 64, "mem_new")
+        materialize_args = file_service.materialize_file_context.call_args
+        assert materialize_args[0][2] == "mem_new"
 
-    def test_stale_hit_with_force_reembed_false_returns_dead_memory_id(
+    def test_stale_hit_with_force_reembed_false_is_auto_detected(
         self, use_case, memory_repository, hash_index_service, file_service
     ) -> None:
-        """Dedup hit + dead memory + force_reembed False ⇒ today's behavior."""
+        """Dedup hit + dead memory + force_reembed False ⇒ automatic stale
+        detection (flag irrelevant for dead memory). Re-embeds."""
         stale_id = "mem_dead"
+        new_memory = a_memory(id="mem_new")
         hash_index_service.lookup.return_value = Result.ok(stale_id)
         memory_repository.get.return_value = None
+        memory_repository.save.return_value = Result.ok(new_memory)
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([])
 
         result = use_case.execute(self._params(force_reembed=False))
 
         assert result.is_ok is True
-        assert result.value["status"] == "deduplicated"
-        assert result.value["memory_id"] == stale_id
-        memory_repository.save.assert_not_called()
-        hash_index_service.remove.assert_not_called()
-        file_service.remove_chunk.assert_not_called()
+        assert result.value["status"] == "stored"
+        assert result.value["memory_id"] == "mem_new"
+        # Stale detection is automatic regardless of the flag.
+        hash_index_service.remove.assert_called_once_with(stale_id)
+        memory_repository.save.assert_called_once()
+        hash_index_service.store.assert_called_once_with("a" * 64, "mem_new")
 
     def test_stale_hit_with_no_stale_chunk_rows_still_reembeds(
         self, use_case, memory_repository, hash_index_service, file_service

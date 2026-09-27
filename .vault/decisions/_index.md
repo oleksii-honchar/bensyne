@@ -2,7 +2,7 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-26T16:10:13Z"
+updatedAt: "2026-09-27T14:17:00Z"
 tags: []
 ---
 
@@ -127,3 +127,4 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0088-chokidar-watcher-ready-log]] — Per-Source Watcher `ready` Logging for Detectability
 - [[0089-persona-tree-walk-tilde-expansion]] — Tilde Expansion in AgentPersonaChunkingStrategy Tree Walk (DEC-0090)
 - [[0099-forgetbyfile-error-wrapped-fallback]] — BensyneClient Defensive Fallback for Error-Wrapped FILE_NOT_FOUND (DEC-0100)
+- [[0110-logger-child-chain-fix]] — Remove Redundant child() Call from BaseUseCase.execute() (DEC-0111)

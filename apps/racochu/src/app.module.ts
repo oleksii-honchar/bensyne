@@ -6,6 +6,7 @@ import { AppConfig } from './app.config';
 import { validateAppEnv } from './app.env.validation';
 import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/services/force-reprocess.service';
+import { ReEmbedService } from './application/services/re-embed.service';
 import { RecoverService } from './application/services/recover.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
@@ -83,6 +84,7 @@ import { UserSourceBootstrapService } from './user-source.bootstrap.service';
     // Application services
     ForceReprocessService,
     RecoverService,
+    ReEmbedService,
     ExcludeReconciliationService,
     TtlReconciliationService,
 

@@ -61,36 +61,51 @@ class RememberMemoryUseCase(BaseUseCase[dict, dict]):
                 existing_memory_id = lookup_result.value
                 force_reembed = parameters.get("force_reembed") is True
                 existing_memory = self.memory_repository.get(existing_memory_id)
-                # ADR-11 content-sync fix: always refresh content from new input
-                # on dedup hit. The memory content field is a cache that must
-                # stay in sync with the FileChunk; the hash index prevents
-                # duplicate embeddings but the content still needs updating.
-                update_result = self.memory_repository.update(
-                    existing_memory_id,
-                    content=parameters.get("content", ""),
-                )
-                if update_result.is_ko:
-                    self.logger.warning(
-                        "Failed to sync content on dedup hit",
-                        use_case="remember_memory",
-                        memory_id=existing_memory_id,
-                        errors=update_result.get_formatted_errors(),
-                    )
-                if force_reembed and existing_memory is None:
-                    # ADR-8 stale-hit repair: the dedup target's memory no longer
-                    # exists (external loss), so a plain dedup would return the
-                    # dead id forever. Drop the stale hash-index entry and the
-                    # stale file_chunks rows, then fall through to the normal
-                    # miss path — save (embedding) → store → materialize — which
-                    # re-embeds under a NEW memory id.
+                
+                if existing_memory is None:
+                    # Stale hit: the dedup target's memory no longer exists
+                    # (external loss or never properly created). Drop the stale
+                    # hash-index entry and the stale file_chunks rows, then fall
+                    # through to the normal miss path — save (embedding) → store
+                    # → materialize — which re-embeds under a NEW memory id.
+                    # This repair is automatic regardless of force_reembed.
                     self.logger.info(
-                        "Force re-embedding stale dedup hit",
+                        "Detected stale dedup hit (memory missing)",
                         use_case="remember_memory",
                         stale_memory_id=existing_memory_id,
                     )
                     self.hash_index_service.remove(existing_memory_id)
                     self._remove_stale_chunk_rows(existing_memory_id)
+                    # Fall through to miss path (below) — do NOT return.
+                elif force_reembed:
+                    # Live memory but force re-embed requested — drop stale
+                    # entries and fall through to re-embed under a NEW id.
+                    self.logger.info(
+                        "Force re-embedding live dedup hit",
+                        use_case="remember_memory",
+                        existing_memory_id=existing_memory_id,
+                    )
+                    self.hash_index_service.remove(existing_memory_id)
+                    self._remove_stale_chunk_rows(existing_memory_id)
+                    # Fall through to miss path (below) — do NOT return.
                 else:
+                    # Live memory dedup hit: sync content and return.
+                    # ADR-11 content-sync fix: always refresh content from new
+                    # input on dedup hit. The memory content field is a cache
+                    # that must stay in sync with the FileChunk; the hash index
+                    # prevents duplicate embeddings but the content still needs
+                    # updating.
+                    update_result = self.memory_repository.update(
+                        existing_memory_id,
+                        content=parameters.get("content", ""),
+                    )
+                    if update_result.is_ko:
+                        self.logger.warning(
+                            "Failed to sync content on dedup hit",
+                            use_case="remember_memory",
+                            memory_id=existing_memory_id,
+                            errors=update_result.get_formatted_errors(),
+                        )
                     self.logger.info(
                         "Memory deduplicated",
                         use_case="remember_memory",

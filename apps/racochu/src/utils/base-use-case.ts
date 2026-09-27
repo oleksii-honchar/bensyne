@@ -37,7 +37,6 @@ export abstract class BaseUseCase<TParams, TResult> {
    */
   async execute(params: TParams): Promise<Result<TResult>> {
     const requestName = this.constructor.name;
-    this.logger = this.logger.child({ useCase: requestName });
 
     const validated = this.validateParams(params);
     if (validated.isKo()) {

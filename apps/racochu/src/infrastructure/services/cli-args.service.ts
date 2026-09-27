@@ -16,6 +16,7 @@ export interface ParsedCliArgs {
   resume: boolean;
   ttlSweep: boolean;
   recover: boolean;
+  reEmbed: boolean;
   source: string | null;
   file: string | null;
 }
@@ -39,8 +40,9 @@ Options:
   -f, --force-reprocess     Force re-process all sources
   -r, --resume              Resume missing chunks: re-process only files with missing stored chunks
   --recover                 Recover missing chunks for DB-tracked files, then exit
-  -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, or --process-only)
-  --file <path>             Process a single file (use with --source)
+  --re-embed                Re-embed files with missing embeddings, then exit
+  -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, --process-only, or --re-embed)
+  --file <path>             Process a single file (use with --source and --force-reprocess or --re-embed)
   --ttl-sweep               Run TTL sweep once and exit
 `;
 
@@ -66,6 +68,7 @@ Options:
       resume: false,
       ttlSweep: false,
       recover: false,
+      reEmbed: false,
       source: null,
       file: null,
     };
@@ -120,6 +123,10 @@ Options:
           break;
         case '--recover':
           result.recover = true;
+          result.watch = false;
+          break;
+        case '--re-embed':
+          result.reEmbed = true;
           result.watch = false;
           break;
       }

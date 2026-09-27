@@ -12,6 +12,7 @@ import 'reflect-metadata';
 import { AppModule } from './app.module';
 import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/services/force-reprocess.service';
+import { ReEmbedService } from './application/services/re-embed.service';
 import { RecoverService } from './application/services/recover.service';
 import { TtlReconciliationService } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
@@ -63,18 +64,21 @@ export async function bootstrap(): Promise<void> {
   const recoverService = app.get(RecoverService);
   const excludeReconciliationService = app.get(ExcludeReconciliationService);
   const ttlService = app.get(TtlReconciliationService);
+  const reEmbedService = app.get(ReEmbedService);
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
   const mode = args.recover
     ? `recover${args.source ? ` (${args.source})` : ' (all)'}`
-    : args.resume
-      ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
-      : args.forceReprocess
-        ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
-        : args.processOnly
-          ? 'process-only'
-          : 'watch';
+    : args.reEmbed
+      ? `re-embed${args.source ? ` (${args.source})` : ' (all)'}`
+      : args.resume
+        ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
+        : args.forceReprocess
+          ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
+          : args.processOnly
+            ? 'process-only'
+            : 'watch';
   logger.info(
     `racochu starting: mode="${mode}", verbose=${args.verbose}, config="${args.config}"${args.source ? `, source="${args.source}"` : ''}`,
   );
@@ -147,7 +151,21 @@ export async function bootstrap(): Promise<void> {
 
   // Handle force-reprocess
   if (args.forceReprocess) {
-    if (args.source) {
+    if (args.file) {
+      logger.info(`Force reprocessing single file: ${args.file}`);
+      if (!args.source) {
+        logger.error('--file requires --source to specify the source ID');
+        await app.close();
+        process.exit(1);
+      }
+      const source = sources.find(s => s.id === args.source);
+      if (!source) {
+        logger.error(`Source not found: ${args.source}`);
+        await app.close();
+        process.exit(1);
+      }
+      await forceReprocessService.forceReprocessFile(args.file, source);
+    } else if (args.source) {
       logger.info(`Force reprocessing source: ${args.source}`);
       await forceReprocessService.forceReprocessSource(args.source, sources);
     } else {
@@ -204,12 +222,34 @@ export async function bootstrap(): Promise<void> {
     process.exit(0);
   }
 
+  if (args.reEmbed) {
+    if (args.file) {
+      logger.info(`Re-embedding single file: ${args.file}`);
+      if (!args.source) {
+        logger.error('--file requires --source to specify the source ID');
+        await app.close();
+        process.exit(1);
+      }
+      await reEmbedService.reEmbedFile(args.file, args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+    } else if (args.source) {
+      logger.info(`Re-embedding files with missing embeddings for source: ${args.source}`);
+      await reEmbedService.reEmbedSource(args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+    } else {
+      logger.info('Re-embedding files with missing embeddings for all sources');
+      await reEmbedService.reEmbedAll(sources, args.dryRun ? { dryRun: true } : undefined);
+    }
+    await processingQueue.waitForEmpty();
+    logger.info('Re-embed complete, exiting');
+    await app.close();
+    process.exit(0);
+  }
+
   // Start file watcher (default watch mode)
   if (args.watch) {
     // Startup auto-population (default true per source). Guard: run only in
-    // plain watch mode — --resume / --force-reprocess without --process-only
+    // plain watch mode — --resume / --force-reprocess / --re-embed without --process-only
     // fall through here and must not re-run the same pass.
-    if (!args.resume && !args.forceReprocess) {
+    if (!args.resume && !args.forceReprocess && !args.reEmbed) {
       logger.info('Auto-populating sources before watch');
       // Non-blocking: start the watcher immediately; the serialized queue drains
       // the pass in the background. resumeSourceInternal already catches per-file
