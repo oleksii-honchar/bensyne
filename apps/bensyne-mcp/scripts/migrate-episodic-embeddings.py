@@ -8,9 +8,10 @@ stored embeddings in the binary_vector column instead of vec_episodes. Embedding
 search (polyphonic recall) requires embeddings to be in vec_episodes.
 
 Usage:
-    python migrate-episodic-embeddings.py [db_path]
+    python migrate-episodic-embeddings.py --db /path/to/mnemosyne.db
+    python migrate-episodic-embeddings.py --db /path/to/mnemosyne.db --dry-run
 
-If db_path is not provided, it will search for all Bensyne database files.
+If --db is not provided, it will search for all Bensyne database files.
 """
 
 import sqlite3
@@ -18,6 +19,7 @@ import sys
 import glob
 import os
 import time
+import argparse
 import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,7 +103,7 @@ def is_vec_available(conn) -> bool:
         return False
 
 
-def migrate(db_path: str) -> int:
+def migrate(db_path: str, dry_run: bool = False) -> int:
     """Run the migration. Returns number of embeddings migrated."""
     # Check if DB is writable (skip read-only root-owned DBs)
     if not os.access(db_path, os.W_OK):
@@ -145,6 +147,10 @@ def migrate(db_path: str) -> int:
             print(f"No embeddings to migrate in {db_path}")
             return 0
 
+        if dry_run:
+            print(f"[DRY-RUN] Would migrate {len(rows)} embeddings from binary_vector to vec_episodes in {db_path}")
+            return len(rows)
+
         print(f"Migrating {len(rows)} embeddings from binary_vector to vec_episodes in {db_path}")
 
         # Import Mnemosyne's _vec_insert function
@@ -169,7 +175,7 @@ def migrate(db_path: str) -> int:
                 # Insert into vec_episodes
                 _vec_insert(conn, rowid, embedding)
 
-                # Optional: Clear binary_vector after successful migration
+                # Clear binary_vector after successful migration
                 cursor.execute(
                     "UPDATE episodic_memory SET binary_vector = NULL WHERE rowid = ?",
                     (rowid,),
@@ -192,13 +198,18 @@ def migrate(db_path: str) -> int:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Migrate episodic memory embeddings to vec_episodes")
+    parser.add_argument("--db", type=str, help="Path to specific mnemosyne.db to migrate")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be migrated without making changes")
+    args = parser.parse_args()
+
     # Determine db_paths
-    if len(sys.argv) > 1:
-        db_paths = [sys.argv[1]]
+    if args.db:
+        db_paths = [args.db]
     else:
         db_paths = resolve_db_paths()
         if not db_paths:
-            print("ERROR: No databases found. Provide path as argument.")
+            print("ERROR: No databases found. Provide path with --db.")
             sys.exit(1)
         print(f"Found {len(db_paths)} databases to migrate:")
         for p in db_paths:
@@ -207,7 +218,7 @@ def main():
     total_migrated = 0
     for db_path in db_paths:
         print(f"\nRunning migration on: {db_path}")
-        migrated = migrate(db_path)
+        migrated = migrate(db_path, dry_run=args.dry_run)
         total_migrated += migrated
 
     print(f"\n=== Migration complete: {total_migrated} total embeddings migrated across {len(db_paths)} databases ===")
