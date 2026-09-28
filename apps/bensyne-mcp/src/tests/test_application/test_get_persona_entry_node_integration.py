@@ -92,7 +92,8 @@ def _remember(mnemosyne: MnemosyneClient, content: str) -> str:
         source="integration-test",
     )
     assert result.is_ok, f"remember failed: {result.errors}"
-    return result.value
+    # remember() returns {"memory_id": "..."} — extract the id
+    return result.value["memory_id"]
 
 
 def _make_chunk_id(file_id: str, memory_id: str) -> str:

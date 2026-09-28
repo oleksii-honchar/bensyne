@@ -184,11 +184,20 @@ class MnemosyneClient:
             hash_input = f"{content}{timestamp_str}"
             memory_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
-            # Determine valid_until based on memory_bank
-            if self.memory_bank.startswith("agent-session-"):
-                valid_until = datetime.now(timezone.utc) + timedelta(days=365)
-            else:
-                valid_until = None
+            # Honor explicit valid_until if provided; otherwise use bank-based default
+            valid_until = kwargs.get("valid_until")
+            if valid_until is None:
+                if self.memory_bank.startswith("agent-session-"):
+                    valid_until = datetime.now(timezone.utc) + timedelta(days=365)
+                else:
+                    valid_until = None
+            # Handle string datetime formats
+            if isinstance(valid_until, str):
+                from datetime import datetime
+                candidate = valid_until.strip()
+                if candidate.endswith("Z"):
+                    candidate = candidate[:-1] + "+00:00"
+                valid_until = datetime.fromisoformat(candidate)
 
             conn = self._instance.conn
             cursor = conn.execute(
@@ -320,6 +329,13 @@ class MnemosyneClient:
         """
         try:
             value = self._instance.get_stats()
+            # The library's total_memories doesn't count episodic memories inserted
+            # directly by remember(). Recompute from beam component counts.
+            if "beam" in value:
+                beam = value.get("beam", {})
+                working_total = beam.get("working_memory", {}).get("total", 0)
+                episodic_total = beam.get("episodic_memory", {}).get("total", 0)
+                value["total_memories"] = working_total + episodic_total
             if self.memory_bank_router is not None:
                 self._remove_phantom_banks_dir()
                 value["banks"] = self.memory_bank_router.list_bank_dirs()

@@ -90,7 +90,8 @@ def _remember(mnemosyne: MnemosyneClient, tag: str, valid_until: str | None = No
         valid_until=valid_until,
     )
     assert result.is_ok, f"remember failed: {result.errors}"
-    mid = result.value
+    # remember() returns {"memory_id": "..."} — extract the id
+    mid = result.value["memory_id"]
     assert mid, f"expected a memory_id for {tag}, got {mid!r}"
     return mid
 

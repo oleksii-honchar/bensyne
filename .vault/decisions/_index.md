@@ -2,7 +2,7 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-27T14:17:00Z"
+updatedAt: "2026-09-27T18:20:00Z"
 tags: []
 ---
 
@@ -128,3 +128,4 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0089-persona-tree-walk-tilde-expansion]] — Tilde Expansion in AgentPersonaChunkingStrategy Tree Walk (DEC-0090)
 - [[0099-forgetbyfile-error-wrapped-fallback]] — BensyneClient Defensive Fallback for Error-Wrapped FILE_NOT_FOUND (DEC-0100)
 - [[0110-logger-child-chain-fix]] — Remove Redundant child() Call from BaseUseCase.execute() (DEC-0111)
+- [[0111-ephemeral-session-bank-cleanup]] — Ephemeral Session Bank Cleanup via HTTP Endpoint (DEC-0112)

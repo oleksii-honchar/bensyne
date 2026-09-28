@@ -87,6 +87,9 @@ def create_application(
     # Mount health check endpoints
     mount_health_routes(mcp, router)
 
+    # Mount admin endpoints
+    mount_admin_routes(mcp, router)
+
     return mcp
 
 
@@ -631,3 +634,20 @@ def mount_health_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:
     mcp.custom_route("/health", methods=["GET"], name="health")(health_handler)
     mcp.custom_route("/health/ready", methods=["GET"], name="health_ready")(health_ready_handler)
     mcp.custom_route("/health/log", methods=["GET"], name="health_log")(health_log_handler)
+
+
+def mount_admin_routes(mcp: FastMCP, router: MemoryBankRouter) -> None:
+    """Mount admin endpoints onto the FastMCP server using custom_route.
+
+    Args:
+        mcp: FastMCP server instance.
+        router: Memory bank router for admin endpoint queries.
+    """
+    from src.middleware.admin import cleanup_session_banks_endpoint, set_admin_router
+
+    set_admin_router(router)
+
+    # Register admin endpoints as custom HTTP routes
+    mcp.custom_route("/api/v1/banks/cleanup", methods=["POST"], name="cleanup_session_banks")(
+        cleanup_session_banks_endpoint
+    )
