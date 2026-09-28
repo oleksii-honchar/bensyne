@@ -2,7 +2,7 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-27T18:20:00Z"
+updatedAt: "2026-09-28T18:47:00Z"
 tags: []
 ---
 
@@ -57,6 +57,9 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0106-getfilechunks-observability-only]] — getFileChunks: Instrument Missing Rows, Never Change Behavior (DEC-0107)
 - [[0107-dedup-content-sync-fix]] — Content-Sync Fix for Hash Deduplication on Dedup Hits (DEC-0108)
 - [[0109-episodic-memory-tier-migration]] — Episodic Memory Tier Migration — Direct INSERT into episodic_memory (DEC-0110)
+- [[0112-use-client-side-remember-episodic]] — Use Client-Side `_remember_episodic()` Instead of Library's `remember_episodic()` (DEC-0112)
+- [[0113-file-chunks-reingest-index-fix]] — Fix file_chunks Index Management During Re-ingest (DEC-0113)
+- [[0114-verify-source-consistency-beam]] — Update verify-source-consistency.mjs for BEAM Architecture (DEC-0114)
 
 ### racochu
 

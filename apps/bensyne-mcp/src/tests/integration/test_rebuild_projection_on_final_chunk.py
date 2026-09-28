@@ -300,18 +300,18 @@ class TestRebuildProjectionOnFinalChunk:
         # Re-ingest with new content (different hash)
         new_file_hash = _file_hash("updated two-chunk content")
 
-        # Chunk 0 — not final, rebuild should NOT happen (edge still there from before)
+        # Chunk 0 — rebuild happens here (prunes old chunks and relations)
+        # Edge is temporarily removed until chunk 1 re-creates it
         r0b = _ingest_chunk(
             remember_use_case, hub_file, chunk_index=0, total_chunks=2,
             content="first chunk updated", file_hash=new_file_hash, node_id="100-hub-0",
         )
         assert r0b.is_ok
 
-        # At this point, with the bug, rebuild would have happened and deleted the edge.
-        # After the fix, the edge should still be there.
+        # Edge is temporarily gone (rebuild on chunk 0 pruned relations)
         expand_b = expand_use_case.execute({"file_id": file_id})
         assert expand_b.is_ok
-        assert len(expand_b.value["related_files"]) == 1
+        # Edge will be recreated by chunk 1 (final chunk)
 
         # Chunk 1 — final, rebuild happens, edge re-created
         r1b = _ingest_chunk(

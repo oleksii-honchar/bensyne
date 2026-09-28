@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 //
-// Verify source consistency across all memory banks.
+// Verify source consistency across all memory banks (BEAM architecture).
+//
+// BEAM architecture notes:
+// - `memories` table is legacy (write-only, never read) — check `episodic_memory` directly
+// - `file_chunks` index links file-backed memories (node_memories in getPersonaStatus)
+// - Memories are classified by file association and temporality, not by table placement
 //
 // Checks:
-// 1. File-based sources: file → memory → episodic chain
-// 2. Agent session banks: memory → episodic chain
-// 3. Flags memories not connected to either files or episodic
+// 1. Episodic memory count (direct, not via legacy `memories` table)
+// 2. Legacy `memories` table entries (should be 0 — write-only, never read)
+// 3. file_chunks index integrity for file-backed memories
+// 4. Orphaned file_chunks entries (chunks without corresponding episodic memories)
+// 5. Missing index entries (episodic memories that should be file-backed but lack file_chunks)
+// 6. FTS index coverage
 //
 // Usage: npx dotenvx run -- node scripts/verify-source-consistency.mjs [bank-name]
 //        bank-name defaults to all banks if not specified
@@ -77,62 +85,62 @@ async function verifyBank(bankName, dbPath) {
 
     console.log(`Working on temp copy: ${tmpDb}`);
 
-    // Count memories in different tiers
-    const memoriesCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM memories');
+    // In BEAM architecture, episodic_memory is the primary table.
+    // The `memories` table is legacy (write-only, never read).
     const episodicCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM episodic_memory');
-    const workingCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM working_memory');
+    console.log(`Episodic memories: ${episodicCount}`);
 
-    console.log(`Memories: ${memoriesCount}`);
-    console.log(`Episodic: ${episodicCount}`);
-    console.log(`Working: ${workingCount}`);
+    // Check 2: Legacy `memories` table should be empty (write-only, never read in BEAM)
+    const legacyMemoriesCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM memories');
+    console.log(`Legacy memories table entries: ${legacyMemoriesCount}`);
+    if (legacyMemoriesCount > 0) {
+        issues.push(`Legacy 'memories' table has ${legacyMemoriesCount} entries (should be 0 — run cleanup-legacy-memories.mjs)`);
+    }
 
     if (isAgentSessionBank(bankName)) {
-        // Agent session banks: verify memory → episodic chain
-        console.log('Checking memory → episodic chain...');
-        const missingEpisodic = countQuery(
-            tmpDb,
-            'SELECT COUNT(*) FROM memories m WHERE NOT EXISTS (SELECT 1 FROM episodic_memory e WHERE e.id = m.id)'
-        );
-        if (missingEpisodic > 0) {
-            issues.push(`${missingEpisodic} memories not in episodic_memory`);
-        }
+        // Agent session banks: verify episodic entries are present
+        console.log('Checking episodic_memory entries...');
 
-        // Check for episodic entries without memory table entries (post-ADR-13 style)
-        const episodicWithoutMemory = countQuery(
+        // Check that episodic entries have content
+        const emptyContent = countQuery(
             tmpDb,
-            'SELECT COUNT(*) FROM episodic_memory e WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.id = e.id)'
+            'SELECT COUNT(*) FROM episodic_memory WHERE content IS NULL OR content = ""'
         );
-        if (episodicWithoutMemory > 0) {
-            console.log(`Note: ${episodicWithoutMemory} episodic entries without memory table entries (post-ADR-13)`);
+        if (emptyContent > 0) {
+            issues.push(`${emptyContent} episodic memories with empty content`);
         }
     }
 
     if (isFileBasedBank(bankName)) {
-        // File-based banks: verify file → memory → episodic chain
-        console.log('Checking file → memory → episodic chain...');
+        // File-based banks: verify file_chunks index integrity
+        console.log('Checking file_chunks index integrity...');
 
-        // Get file IDs from memory metadata
-        const fileMemories = query(tmpDb, 'SELECT id FROM memories WHERE metadata_json LIKE "%file_id%"');
-        const fileMemoryIds = fileMemories.map(m => m.id);
+        // Check 1: Orphaned file_chunks entries (chunks without corresponding episodic memories)
+        const orphanedChunks = countQuery(
+            tmpDb,
+            'SELECT COUNT(*) FROM file_chunks fc WHERE NOT EXISTS (SELECT 1 FROM episodic_memory em WHERE em.id = fc.memory_id)'
+        );
+        if (orphanedChunks > 0) {
+            issues.push(`${orphanedChunks} orphaned file_chunks entries (no corresponding episodic memory)`);
+        }
 
-        // Check that file memories have episodic entries
-        if (fileMemoryIds.length > 0) {
-            const missingEpisodic = countQuery(
-                tmpDb,
-                `SELECT COUNT(*) FROM memories m WHERE m.metadata_json LIKE '%file_id%' AND NOT EXISTS (SELECT 1 FROM episodic_memory e WHERE e.id = m.id)`
-            );
-            if (missingEpisodic > 0) {
-                issues.push(`${missingEpisodic} file memories not in episodic_memory`);
-            }
+        // Check 2: Episodic memories that should be file-backed but lack file_chunks entries
+        // A memory is considered "should be file-backed" if its metadata_json contains file_id
+        const fileBackedWithoutChunks = countQuery(
+            tmpDb,
+            'SELECT COUNT(*) FROM episodic_memory em WHERE em.metadata_json LIKE "%file_id%" AND NOT EXISTS (SELECT 1 FROM file_chunks fc WHERE fc.memory_id = em.id)'
+        );
+        if (fileBackedWithoutChunks > 0) {
+            issues.push(`${fileBackedWithoutChunks} episodic memories that should be file-backed but lack file_chunks entries`);
+        }
 
-            // Check that episodic entries have content
-            const emptyContent = countQuery(
-                tmpDb,
-                `SELECT COUNT(*) FROM episodic_memory e WHERE e.id IN (${fileMemoryIds.map(id => `'${id}'`).join(',')}) AND (e.content IS NULL OR e.content = '')`
-            );
-            if (emptyContent > 0) {
-                issues.push(`${emptyContent} file episodic entries with empty content`);
-            }
+        // Check 3: Verify file_chunks have valid file IDs
+        const chunksWithoutFile = countQuery(
+            tmpDb,
+            'SELECT COUNT(*) FROM file_chunks fc WHERE fc.file_id IS NULL OR fc.file_id = ""'
+        );
+        if (chunksWithoutFile > 0) {
+            issues.push(`${chunksWithoutFile} file_chunks entries without valid file_id`);
         }
 
         // Check FTS index coverage
@@ -140,15 +148,6 @@ async function verifyBank(bankName, dbPath) {
         if (ftsCount < episodicCount) {
             issues.push(`FTS index incomplete (${ftsCount} < ${episodicCount})`);
         }
-    }
-
-    // Check for memories not connected to episodic (leftover pre-migration entries)
-    const orphanedMemories = countQuery(
-        tmpDb,
-        'SELECT COUNT(*) FROM memories m WHERE NOT EXISTS (SELECT 1 FROM episodic_memory e WHERE e.id = m.id)'
-    );
-    if (orphanedMemories > 0) {
-        console.log(`Note: ${orphanedMemories} orphaned memories not in episodic_memory (pre-migration)`);
     }
 
     // Clean up temp directory

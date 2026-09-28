@@ -447,8 +447,8 @@ class TestMaterializeHashChangeRebuild:
         new_context = _context(
             file_hash=OTHER_HASH,
             edges=[{"target_path": "/edge_new.md", "relation_type": "backlink"}],
-            chunk_index=4,
-            total_chunks=5,
+            chunk_index=0,
+            total_chunks=2,
         )
         result = service.materialize_file_context(BANK, new_context, "m1")
         assert result.is_ok is True
@@ -908,6 +908,7 @@ class TestMaterializeFailureHandling:
 
     def test_rebuild_projection_failure_returns_ko(self) -> None:
         service, _, chunk_repo, relation_repo = self._mock_service()
+        chunk_repo.get_chunks_by_file_id.return_value = self._ok_result([])
         chunk_repo.delete_chunks_by_file_id.return_value = Result.ko(
             [ErrorWithDetails("CHUNK_DELETE_BY_FILE_ID_ERROR", {"error": "db down"})]
         )
@@ -920,6 +921,7 @@ class TestMaterializeFailureHandling:
 
     def test_rebuild_projection_success_returns_ok_none(self) -> None:
         service, _, chunk_repo, relation_repo = self._mock_service()
+        chunk_repo.get_chunks_by_file_id.return_value = self._ok_result([])
         chunk_repo.delete_chunks_by_file_id.return_value = Result.ok(True)
         relation_repo.delete_relations_by_file_id.return_value = Result.ok(True)
 

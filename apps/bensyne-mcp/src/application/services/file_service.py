@@ -398,16 +398,21 @@ class FileService:
         # 2. Rebuild the projection when the whole-file hash changed (D5).
         #    Runs BEFORE loading the aggregate so stale chunks of this file
         #    and its outbound relations are pruned first.
-        #    CRITICAL: Only on the final chunk — if we rebuild on chunk 0 of 2,
-        #    the edge created on chunk 0 is deleted by rebuild on chunk 1.
+        #    CRITICAL: Must run on chunk 0 (first chunk), not the final chunk.
+        #    If run on the final chunk, it prunes the file_chunks rows of chunks
+        #    ingested earlier in the same re-ingest session, leaving only the
+        #    final chunk as file-backed. Running on chunk 0 prunes old chunks
+        #    before any new chunks are ingested.
         rebuilt = False
         if (
             stored_file is not None
             and stored_file.hash is not None
             and context.file_hash != stored_file.hash
-            and context.chunk_index == context.total_chunks - 1
+            and context.chunk_index == 0
         ):
-            rebuild_result = self.rebuild_projection(file_id, {memory_id})
+            # On chunk 0, all existing chunks are stale — prune them all.
+            # New chunks haven't been ingested yet, so the exclude set is empty.
+            rebuild_result = self.rebuild_projection(file_id, set())
             if rebuild_result.is_ko:
                 errors.extend(rebuild_result.errors)
                 return Result.ko(errors, events=events)  # type: ignore[return-value]
@@ -641,6 +646,23 @@ class FileService:
             file_id=file_id,
             keep_memory_ids=sorted(keep_memory_ids),
         )
+        # Query existing chunks to log what will be deleted
+        existing_result = self.chunk_repository.get_chunks_by_file_id(file_id)
+        if existing_result.is_ko:
+            return Result.ko(existing_result.errors)  # type: ignore[return-value]
+        existing_chunks = existing_result.value
+        chunks_to_delete = [
+            chunk for chunk in existing_chunks
+            if chunk.memory_id not in keep_memory_ids
+        ]
+        if chunks_to_delete:
+            self._log_info(
+                "Pruning stale chunks during re-ingest",
+                method="rebuild_projection",
+                file_id=file_id,
+                chunks_to_delete=[chunk.memory_id for chunk in chunks_to_delete],
+                chunks_kept=len(keep_memory_ids),
+            )
         chunks_result = self.chunk_repository.delete_chunks_by_file_id(file_id, keep_memory_ids)
         if chunks_result.is_ko:
             return Result.ko(chunks_result.errors)  # type: ignore[return-value]

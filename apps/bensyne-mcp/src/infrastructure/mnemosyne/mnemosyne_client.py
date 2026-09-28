@@ -73,69 +73,137 @@ class MnemosyneClient:
     # Domain repository interface (called by use cases)
     # ------------------------------------------------------------------
 
-    def save(self, memory: "Memory") -> Result["Memory"]:
-        """Persist a Memory entity via direct INSERT into episodic_memory.
+    def _remember_episodic(
+        self,
+        content: str,
+        source: str = "bensyne",
+        importance: float = 0.5,
+        valid_until: str | None = None,
+        metadata: dict | None = None,
+    ) -> str:
+        """Insert directly into episodic_memory, bypassing working_memory.
 
-        Bypasses the Mnemosyne library's remember() API and inserts directly
-        into the episodic_memory table. Generates embedding at save time and
-        stores it in the vec_episodes sqlite-vec virtual table. Applies
-        source-specific TTL: agent-session memories get 365 days, all others
-        get no expiry.
+        This is the client-side implementation of remember_episodic() since the
+        library's BeamMemory object does not expose this method. Uses the same
+        approach as the library's consolidate_to_episodic() but without requiring
+        source_wm_ids (this is not a consolidation, it's a direct insert).
+
+        Generates embedding at insert time and stores in vec_episodes virtual table.
+
+        Args:
+            content: The memory content text
+            source: Origin of the memory (e.g., "bensyne", "conversation")
+            importance: 0.0-1.0 relevance score
+            valid_until: ISO timestamp string for TTL, or None for no expiry
+            metadata: Optional dict of additional fields (stored as JSON)
+
+        Returns:
+            The generated memory_id (16 hex chars)
+        """
+        import hashlib
+        import json
+        import time
+        from datetime import datetime, timezone
+
+        # Use library's beam session_id for consistency with recall/get queries
+        beam_session_id = self._instance.beam.session_id
+
+        # Generate deterministic memory_id (same approach as library)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        id_input = f"{now_iso}{content[:100]}{self.memory_bank}"
+        memory_id = hashlib.sha256(id_input.encode()).hexdigest()[:16]
+
+        # Compute embedding
+        vec = None
+        try:
+            from mnemosyne.core import embeddings as _embeddings
+            if _embeddings.available():
+                vec = _embeddings.embed([content])
+        except Exception as exc:
+            logger.warning("Embedding failed, storing without vector", error=str(exc))
+
+        # Perform insert
+        conn = self._instance.conn
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO episodic_memory
+            (id, content, source, timestamp, session_id, importance, metadata_json,
+             summary_of, valid_until, scope, author_id, author_type, channel_id,
+             memory_type, veracity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                memory_id,
+                content,
+                source,
+                now_iso,
+                beam_session_id,
+                importance,
+                json.dumps(metadata or {}),
+                "",  # summary_of (not a consolidation)
+                valid_until,
+                "session",
+                None,
+                None,
+                None,
+                None,
+                "unknown",
+            ),
+        )
+        conn.commit()
+
+        # Store embedding if computed
+        if vec is not None:
+            try:
+                from mnemosyne.core.beam import _vec_available, _vec_insert
+                if _vec_available(conn):
+                    import numpy as np
+                    rowid = cursor.lastrowid
+                    if rowid is not None:
+                        _vec_insert(conn, rowid, np.asarray(vec[0]).tolist())
+                else:
+                    # Fallback: store in memory_embeddings table
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding_json, model)
+                        VALUES (?, ?, ?)
+                        """,
+                        (memory_id, json.dumps(vec[0]), _embeddings.get_model_name()),
+                    )
+                    conn.commit()
+            except Exception as exc:
+                logger.warning("Vector insert failed", error=str(exc))
+
+        return memory_id
+
+    def save(self, memory: "Memory") -> Result["Memory"]:
+        """Persist a Memory entity directly into episodic_memory.
+
+        Inserts directly into episodic_memory (bypasses working_memory) using
+        the client-side _remember_episodic() method. Applies source-specific
+        TTL: agent-session memories get 365 days, all others get no expiry.
 
         Returns Result.ok(memory) with the actual memory_id generated.
         """
         try:
-            import hashlib
-            import time
             from datetime import datetime, timedelta, timezone
-
-            # Generate memory_id: SHA-256 of content + timestamp, truncated to 16 hex chars
-            timestamp_str = str(time.time())
-            hash_input = f"{memory.content}{timestamp_str}"
-            memory_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
             # Determine valid_until based on memory_bank
             if self.memory_bank.startswith("agent-session-"):
                 valid_until = datetime.now(timezone.utc) + timedelta(days=365)
+                valid_until = valid_until.isoformat()
             else:
                 valid_until = None
 
-            conn = self._instance.conn
-            cursor = conn.execute(
-                "INSERT OR IGNORE INTO episodic_memory "
-                "(id, content, source, timestamp, session_id, importance, valid_until) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    memory_id,
-                    memory.content,
-                    memory.source,
-                    datetime.now(timezone.utc).isoformat(),
-                    self.memory_bank,
-                    memory.importance,
-                    valid_until.isoformat() if valid_until else None,
-                ),
+            # Use client-side episodic insert (DEC-0110/ADR-13)
+            memory_id = self._remember_episodic(
+                memory.content,
+                source=memory.source,
+                importance=memory.importance,
+                valid_until=valid_until,
+                metadata=memory.metadata,
             )
-            rowid = cursor.lastrowid
-            conn.commit()
-
-            # Generate embedding and store in vec_episodes (not binary_vector)
-            try:
-                import numpy as np
-                from mnemosyne.core.embeddings import embed
-                from mnemosyne.core.beam import _vec_insert, _vec_available
-
-                vecs = embed([memory.content])
-                if vecs is not None and len(vecs) > 0:
-                    embedding = np.asarray(vecs[0]).tolist()
-                    if _vec_available(conn):
-                        try:
-                            _vec_insert(conn, rowid, embedding)
-                        except Exception as vec_exc:
-                            logger.warning("save: vec_episodes insert failed (rowid=%s): %s", rowid, vec_exc)
-                    else:
-                        logger.debug("save: vec_episodes not available, skipping vec insert", memory_id=memory_id)
-            except Exception as embed_exc:
-                logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
 
             from src.domain.memory_entity import Memory
 
@@ -160,81 +228,42 @@ class MnemosyneClient:
     # ------------------------------------------------------------------
 
     def remember(self, **kwargs: Any) -> Result[dict[str, Any]]:
-        """Store a durable memory via direct INSERT into episodic_memory.
+        """Store a durable memory directly into episodic_memory.
 
-        Bypasses the Mnemosyne library's remember() API and inserts directly
-        into the episodic_memory table. Generates embedding at save time and
-        stores it in the vec_episodes sqlite-vec virtual table. Applies
-        source-specific TTL: agent-session memories get 365 days, all others
-        get no expiry.
+        Inserts directly into episodic_memory (bypasses working_memory) using
+        the client-side _remember_episodic() method. Applies source-specific
+        TTL: agent-session memories get 365 days, all others get no expiry.
 
         Returns Result.ok({"memory_id": memory_id}).
         """
         try:
-            import hashlib
-            import time
             from datetime import datetime, timedelta, timezone
 
             content = kwargs.get("content", "")
             source = kwargs.get("source", "bensyne")
             importance = kwargs.get("importance", 0.5)
-
-            # Generate memory_id: SHA-256 of content + timestamp, truncated to 16 hex chars
-            timestamp_str = str(time.time())
-            hash_input = f"{content}{timestamp_str}"
-            memory_id = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+            metadata = kwargs.get("metadata")
 
             # Honor explicit valid_until if provided; otherwise use bank-based default
             valid_until = kwargs.get("valid_until")
             if valid_until is None:
                 if self.memory_bank.startswith("agent-session-"):
                     valid_until = datetime.now(timezone.utc) + timedelta(days=365)
+                    valid_until = valid_until.isoformat()
                 else:
                     valid_until = None
             # Handle string datetime formats
-            if isinstance(valid_until, str):
-                from datetime import datetime
-                candidate = valid_until.strip()
-                if candidate.endswith("Z"):
-                    candidate = candidate[:-1] + "+00:00"
-                valid_until = datetime.fromisoformat(candidate)
+            if isinstance(valid_until, datetime):
+                valid_until = valid_until.isoformat()
 
-            conn = self._instance.conn
-            cursor = conn.execute(
-                "INSERT OR IGNORE INTO episodic_memory "
-                "(id, content, source, timestamp, session_id, importance, valid_until) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    memory_id,
-                    content,
-                    source,
-                    datetime.now(timezone.utc).isoformat(),
-                    self.memory_bank,
-                    importance,
-                    valid_until.isoformat() if valid_until else None,
-                ),
+            # Use client-side episodic insert (DEC-0110/ADR-13)
+            memory_id = self._remember_episodic(
+                content,
+                source=source,
+                importance=importance,
+                valid_until=valid_until,
+                metadata=metadata,
             )
-            rowid = cursor.lastrowid
-            conn.commit()
-
-            # Generate embedding and store in vec_episodes (not binary_vector)
-            try:
-                import numpy as np
-                from mnemosyne.core.embeddings import embed
-                from mnemosyne.core.beam import _vec_insert, _vec_available
-
-                vecs = embed([content])
-                if vecs is not None and len(vecs) > 0:
-                    embedding = np.asarray(vecs[0]).tolist()
-                    if _vec_available(conn):
-                        try:
-                            _vec_insert(conn, rowid, embedding)
-                        except Exception as vec_exc:
-                            logger.warning("remember: vec_episodes insert failed (rowid=%s): %s", rowid, vec_exc)
-                    else:
-                        logger.debug("remember: vec_episodes not available, skipping vec insert", memory_id=memory_id)
-            except Exception as embed_exc:
-                logger.debug("Best-effort embedding failed", memory_id=memory_id, error=str(embed_exc))
 
             return Result.ok({"memory_id": memory_id})
         except Exception as exc:

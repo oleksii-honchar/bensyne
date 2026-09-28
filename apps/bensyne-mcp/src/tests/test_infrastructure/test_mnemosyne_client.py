@@ -132,9 +132,11 @@ class TestMnemosyneClientRemember:
 
     def test_returns_result_ko_on_exception(self, client: MnemosyneClient) -> None:
         """remember() returns Result.ko with DATABASE_ERROR when db operation fails."""
-        # Patch the conn to raise an exception
+        # Patch the conn's cursor to raise an exception
         with patch.object(client._instance, "conn") as mock_conn:
-            mock_conn.execute.side_effect = ConnectionError("db down")
+            mock_cursor = MagicMock()
+            mock_cursor.execute.side_effect = ConnectionError("db down")
+            mock_conn.cursor.return_value = mock_cursor
             result = client.remember(content="test")
 
             assert result.is_ko

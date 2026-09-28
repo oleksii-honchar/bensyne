@@ -1,4 +1,4 @@
-"""Unit test: rebuild_projection only called on the final chunk.
+"""Unit test: rebuild_projection only called on chunk 0 of re-ingested files.
 
 Uses mocks to verify the fix in materialize_file_context.
 """
@@ -88,8 +88,14 @@ class TestRebuildProjectionFinalChunk:
         # rebuild should have been called because chunk_index == total_chunks - 1
         service.rebuild_projection.assert_called_once()
 
-    def test_non_final_chunk_no_rebuild(self):
-        """Multi-chunk file: non-final chunks do NOT trigger rebuild."""
+    def test_chunk_zero_triggers_rebuild(self):
+        """Multi-chunk file: chunk 0 (first chunk) triggers rebuild.
+
+        Rebuild is triggered on chunk 0, not the final chunk, so that old
+        chunks are pruned before any new chunks are ingested. This prevents
+        rebuild from pruning the file_chunks rows of chunks ingested earlier
+        in the same re-ingest session.
+        """
         file_repo = MagicMock()
         chunk_repo = MagicMock()
         relation_repo = MagicMock()
@@ -115,7 +121,7 @@ class TestRebuildProjectionFinalChunk:
             "value": None,
         })())
 
-        # Chunk 0 of 2 — not final, no rebuild
+        # Chunk 0 of 2 — first chunk, rebuild
         context = make_context(
             file_hash="new-hash",
             chunk_index=0,
@@ -123,11 +129,11 @@ class TestRebuildProjectionFinalChunk:
         )
         service.materialize_file_context("test-bank", context, "memory-1")
 
-        # rebuild should NOT have been called
-        service.rebuild_projection.assert_not_called()
+        # rebuild should have been called on chunk 0
+        service.rebuild_projection.assert_called_once()
 
-    def test_final_chunk_triggers_rebuild(self):
-        """Multi-chunk file: final chunk DOES trigger rebuild."""
+    def test_non_first_chunk_no_rebuild(self):
+        """Multi-chunk file: chunks after chunk 0 do NOT trigger rebuild."""
         file_repo = MagicMock()
         chunk_repo = MagicMock()
         relation_repo = MagicMock()
@@ -153,7 +159,7 @@ class TestRebuildProjectionFinalChunk:
             "value": None,
         })())
 
-        # Chunk 1 of 2 — final, rebuild
+        # Chunk 1 of 2 — not first, no rebuild
         context = make_context(
             file_hash="new-hash",
             chunk_index=1,
@@ -161,7 +167,8 @@ class TestRebuildProjectionFinalChunk:
         )
         service.materialize_file_context("test-bank", context, "memory-1")
 
-        service.rebuild_projection.assert_called_once()
+        # rebuild should NOT have been called (already done on chunk 0)
+        service.rebuild_projection.assert_not_called()
 
     def test_same_hash_no_rebuild(self):
         """Same hash → no rebuild regardless of chunk index."""
