@@ -20,10 +20,9 @@
 //
 
 import { execSync } from 'child_process';
-import { existsSync, readdirSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { tmpdir } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BENSYNE_DATA_DIR = process.env.BENSYNE_DATA_DIR || `${__dirname}/../../bensyne-mcp/data`;
@@ -70,28 +69,16 @@ function isFileBasedBank(bankName) {
 
 async function verifyBank(bankName, dbPath) {
     console.log(`\n=== Verifying bank: ${bankName} ===`);
+    console.log(`Working on: ${dbPath}`);
     const issues = [];
-
-    // Copy database to temp location to avoid WAL mode issues with -readonly
-    const tmpDir = mkdtempSync(join(tmpdir(), 'verify-bank-'));
-    const tmpDb = join(tmpDir, 'mnemosyne.db');
-    try {
-        execSync(`cp "${dbPath}" "${tmpDb}"`, { encoding: 'utf8', timeout: 30000 });
-    } catch (e) {
-        console.error(`Failed to copy database: ${e.message}`);
-        rmSync(tmpDir, { recursive: true, force: true });
-        return false;
-    }
-
-    console.log(`Working on temp copy: ${tmpDb}`);
 
     // In BEAM architecture, episodic_memory is the primary table.
     // The `memories` table is legacy (write-only, never read).
-    const episodicCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM episodic_memory');
+    const episodicCount = countQuery(dbPath, 'SELECT COUNT(*) FROM episodic_memory');
     console.log(`Episodic memories: ${episodicCount}`);
 
     // Check 2: Legacy `memories` table should be empty (write-only, never read in BEAM)
-    const legacyMemoriesCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM memories');
+    const legacyMemoriesCount = countQuery(dbPath, 'SELECT COUNT(*) FROM memories');
     console.log(`Legacy memories table entries: ${legacyMemoriesCount}`);
     if (legacyMemoriesCount > 0) {
         issues.push(`Legacy 'memories' table has ${legacyMemoriesCount} entries (should be 0 — run cleanup-legacy-memories.mjs)`);
@@ -103,7 +90,7 @@ async function verifyBank(bankName, dbPath) {
 
         // Check that episodic entries have content
         const emptyContent = countQuery(
-            tmpDb,
+            dbPath,
             'SELECT COUNT(*) FROM episodic_memory WHERE content IS NULL OR content = ""'
         );
         if (emptyContent > 0) {
@@ -117,7 +104,7 @@ async function verifyBank(bankName, dbPath) {
 
         // Check 1: Orphaned file_chunks entries (chunks without corresponding episodic memories)
         const orphanedChunks = countQuery(
-            tmpDb,
+            dbPath,
             'SELECT COUNT(*) FROM file_chunks fc WHERE NOT EXISTS (SELECT 1 FROM episodic_memory em WHERE em.id = fc.memory_id)'
         );
         if (orphanedChunks > 0) {
@@ -127,7 +114,7 @@ async function verifyBank(bankName, dbPath) {
         // Check 2: Episodic memories that should be file-backed but lack file_chunks entries
         // A memory is considered "should be file-backed" if its metadata_json contains file_id
         const fileBackedWithoutChunks = countQuery(
-            tmpDb,
+            dbPath,
             'SELECT COUNT(*) FROM episodic_memory em WHERE em.metadata_json LIKE "%file_id%" AND NOT EXISTS (SELECT 1 FROM file_chunks fc WHERE fc.memory_id = em.id)'
         );
         if (fileBackedWithoutChunks > 0) {
@@ -136,7 +123,7 @@ async function verifyBank(bankName, dbPath) {
 
         // Check 3: Verify file_chunks have valid file IDs
         const chunksWithoutFile = countQuery(
-            tmpDb,
+            dbPath,
             'SELECT COUNT(*) FROM file_chunks fc WHERE fc.file_id IS NULL OR fc.file_id = ""'
         );
         if (chunksWithoutFile > 0) {
@@ -144,14 +131,11 @@ async function verifyBank(bankName, dbPath) {
         }
 
         // Check FTS index coverage
-        const ftsCount = countQuery(tmpDb, 'SELECT COUNT(*) FROM fts_episodes');
+        const ftsCount = countQuery(dbPath, 'SELECT COUNT(*) FROM fts_episodes');
         if (ftsCount < episodicCount) {
             issues.push(`FTS index incomplete (${ftsCount} < ${episodicCount})`);
         }
     }
-
-    // Clean up temp directory
-    rmSync(tmpDir, { recursive: true, force: true });
 
     if (issues.length > 0) {
         console.log(`FAIL: ${bankName}`);
