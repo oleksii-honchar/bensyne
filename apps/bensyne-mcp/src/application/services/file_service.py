@@ -535,10 +535,14 @@ class FileService:
 
         # 4b. total_chunks is projection state — re-aggregate it from the file's
         #     actual chunk set (the source of truth), never the producer's
-        #     contract claim. After the upsert (and any rebuild before it), the
-        #     aggregate's chunk list IS the persisted set, so its length is
-        #     authoritative (spec §2.2, DDD).
-        actual_total = len(aggregate.chunks)
+        #     contract claim. Count from the database, not the in-memory
+        #     aggregate list, because the aggregate list may not include
+        #     chunks that were deduplicated (already in the database).
+        chunk_count_result = self.chunk_repository.get_chunks_by_file_id(file_id)
+        if chunk_count_result.is_ko:
+            errors.extend(chunk_count_result.errors)
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        actual_total = len(chunk_count_result.value)
         if aggregate.file.total_chunks != actual_total:
             recompute_result = aggregate.file.update_metadata(total_chunks=actual_total)
             if recompute_result.is_ko:
