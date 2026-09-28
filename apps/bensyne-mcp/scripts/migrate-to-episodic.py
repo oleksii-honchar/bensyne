@@ -139,62 +139,117 @@ def migrate(db_path: str) -> int:
             print(f"Found {count} rows in episodic_memory. No migration needed.")
             return 0
 
-        # Query all working_memory rows
+        total_migrated = 0
+
+        # First, migrate from working_memory to episodic_memory
         cursor.execute("""
             SELECT id, content, source, timestamp, session_id, importance,
                    metadata_json, veracity, created_at
             FROM working_memory
         """)
-        rows = cursor.fetchall()
+        wm_rows = cursor.fetchall()
 
-        print(f"Migrating {len(rows)} rows from working_memory to episodic_memory...")
+        if len(wm_rows) > 0:
+            print(f"Migrating {len(wm_rows)} rows from working_memory to episodic_memory...")
+            migrated = 0
+            for row in wm_rows:
+                mem_id = row["id"]
+                content = row["content"]
+                source = row["source"] or "bensyne:migration"
+                timestamp = row["timestamp"]
+                session_id = row["session_id"] or "bensyne"
+                importance = row["importance"] or 0.5
+                metadata_json = row["metadata_json"]
+                veracity = row["veracity"] or "unknown"
+                created_at = row["created_at"]
 
-        migrated = 0
-        for row in rows:
-            mem_id = row["id"]
-            content = row["content"]
-            source = row["source"] or "bensyne:migration"
-            timestamp = row["timestamp"]
-            session_id = row["session_id"] or "bensyne"
-            importance = row["importance"] or 0.5
-            metadata_json = row["metadata_json"]
-            veracity = row["veracity"] or "unknown"
-            created_at = row["created_at"]
+                ttl = get_session_ttl(session_id)
+                valid_until = ttl.isoformat() if ttl else None
 
-            # Determine TTL based on session_id
-            ttl = get_session_ttl(session_id)
-            valid_until = ttl.isoformat() if ttl else None
+                cursor.execute("""
+                    INSERT OR IGNORE INTO episodic_memory
+                    (id, content, source, timestamp, session_id, importance,
+                     metadata_json, summary_of, veracity, created_at, valid_until)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
+                """, (
+                    mem_id,
+                    content,
+                    source,
+                    timestamp,
+                    session_id,
+                    importance,
+                    metadata_json,
+                    veracity,
+                    created_at,
+                    valid_until,
+                ))
 
-            # Direct INSERT into episodic_memory (INSERT OR IGNORE to avoid duplicates)
-            cursor.execute("""
-                INSERT OR IGNORE INTO episodic_memory
-                (id, content, source, timestamp, session_id, importance,
-                 metadata_json, summary_of, veracity, created_at, valid_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
-            """, (
-                mem_id,
-                content,
-                source,
-                timestamp,
-                session_id,
-                importance,
-                metadata_json,
-                veracity,
-                created_at,
-                valid_until,
-            ))
+                if cursor.rowcount > 0:
+                    migrated += 1
 
-            if cursor.rowcount > 0:
-                migrated += 1
+                if migrated > 0 and migrated % 100 == 0:
+                    conn.commit()
+                    print(f"Migrated {migrated}/{len(wm_rows)} rows from working_memory...")
 
-            if migrated > 0 and migrated % 100 == 0:
-                conn.commit()
-                print(f"Migrated {migrated}/{len(rows)} rows...")
+            conn.commit()
+            print(f"Migrated {migrated} rows from working_memory.")
+            total_migrated += migrated
 
-        conn.commit()
-        print(f"Migration complete. {migrated} rows migrated.")
+        # Then, migrate from memories to episodic_memory (file memories)
+        cursor.execute("""
+            SELECT id, content, source, timestamp, session_id, importance,
+                   metadata_json, created_at
+            FROM memories
+        """)
+        mem_rows = cursor.fetchall()
 
-        return migrated
+        if len(mem_rows) > 0:
+            print(f"Migrating {len(mem_rows)} rows from memories to episodic_memory...")
+            migrated = 0
+            for row in mem_rows:
+                mem_id = row["id"]
+                content = row["content"]
+                source = row["source"] or "bensyne:migration"
+                timestamp = row["timestamp"]
+                session_id = row["session_id"] or "bensyne"
+                importance = row["importance"] or 0.5
+                metadata_json = row["metadata_json"]
+                created_at = row["created_at"]
+
+                ttl = get_session_ttl(session_id)
+                valid_until = ttl.isoformat() if ttl else None
+
+                cursor.execute("""
+                    INSERT OR IGNORE INTO episodic_memory
+                    (id, content, source, timestamp, session_id, importance,
+                     metadata_json, summary_of, veracity, created_at, valid_until)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, '', 'unknown', ?, ?)
+                """, (
+                    mem_id,
+                    content,
+                    source,
+                    timestamp,
+                    session_id,
+                    importance,
+                    metadata_json,
+                    created_at,
+                    valid_until,
+                ))
+
+                if cursor.rowcount > 0:
+                    migrated += 1
+
+                if migrated > 0 and migrated % 100 == 0:
+                    conn.commit()
+                    print(f"Migrated {migrated}/{len(mem_rows)} rows from memories...")
+
+            conn.commit()
+            print(f"Migrated {migrated} rows from memories.")
+            total_migrated += migrated
+
+        print(f"Migration complete. {total_migrated} rows migrated.")
+
+        return total_migrated
     finally:
         conn.close()
 
