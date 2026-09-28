@@ -23,10 +23,9 @@
 //
 
 import { execSync } from 'child_process';
-import { existsSync, readdirSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { tmpdir } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BENSYNE_DATA_DIR = process.env.BENSYNE_DATA_DIR || `${__dirname}/../../bensyne-mcp/data`;
@@ -63,68 +62,39 @@ function execute(db, sql) {
 
 async function cleanupBank(bankName, dbPath, dryRun) {
     console.log(`\n=== Cleaning bank: ${bankName} ===`);
-
-    // Copy database to temp location to avoid WAL mode issues
-    const tmpDir = mkdtempSync(join(tmpdir(), 'cleanup-bank-'));
-    const tmpDb = join(tmpDir, 'mnemosyne.db');
-    try {
-        execSync(`cp "${dbPath}" "${tmpDb}"`, { encoding: 'utf8', timeout: 30000 });
-    } catch (e) {
-        console.error(`Failed to copy database: ${e.message}`);
-        rmSync(tmpDir, { recursive: true, force: true });
-        return false;
-    }
-
-    console.log(`Working on temp copy: ${tmpDb}`);
+    console.log(`Working on: ${dbPath}`);
 
     // Check if memories table exists
-    const tableExists = query(tmpDb, "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'");
+    const tableExists = query(dbPath, "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'");
     if (tableExists !== 'memories') {
         console.log(`No legacy 'memories' table found — nothing to clean.`);
-        rmSync(tmpDir, { recursive: true, force: true });
         return true;
     }
 
     // Count legacy memories before cleanup
-    const countBefore = query(tmpDb, 'SELECT COUNT(*) FROM memories');
+    const countBefore = query(dbPath, 'SELECT COUNT(*) FROM memories');
     console.log(`Legacy memories before cleanup: ${countBefore}`);
 
     if (dryRun) {
         console.log(`[DRY RUN] Would delete ${countBefore} legacy memories from bank: ${bankName}`);
-        // Clean up temp directory
-        rmSync(tmpDir, { recursive: true, force: true });
         return true;
     }
 
     // Delete all entries from memories table
-    execute(tmpDb, 'DELETE FROM memories;');
+    execute(dbPath, 'DELETE FROM memories;');
 
     // Count after cleanup
-    const countAfter = query(tmpDb, 'SELECT COUNT(*) FROM memories');
+    const countAfter = query(dbPath, 'SELECT COUNT(*) FROM memories');
     console.log(`Legacy memories after cleanup: ${countAfter}`);
 
     if (countAfter !== '0') {
         console.error(`FAIL: Expected 0 memories after cleanup, got ${countAfter}`);
-        rmSync(tmpDir, { recursive: true, force: true });
         return false;
     }
 
     // Vacuum the database to reclaim space
     console.log('Vacuuming database...');
-    execute(tmpDb, 'VACUUM;');
-
-    // Copy cleaned database back
-    console.log('Copying cleaned database back...');
-    try {
-        execSync(`cp "${tmpDb}" "${dbPath}"`, { encoding: 'utf8', timeout: 30000 });
-    } catch (e) {
-        console.error(`Failed to copy cleaned database back: ${e.message}`);
-        rmSync(tmpDir, { recursive: true, force: true });
-        return false;
-    }
-
-    // Clean up temp directory
-    rmSync(tmpDir, { recursive: true, force: true });
+    execute(dbPath, 'VACUUM;');
 
     console.log(`PASS: Cleaned ${countBefore} legacy memories from bank: ${bankName}`);
     return true;
