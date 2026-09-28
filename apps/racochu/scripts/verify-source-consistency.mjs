@@ -165,8 +165,23 @@ async function verifyBank(bankName, dbPath) {
 }
 
 async function main() {
-    const baseDir = process.argv[2] || BENSYNE_DATA_DIR;
-    const bankName = process.argv[3] || null;
+    let baseDir = null;
+    let bankName = null;
+
+    for (let i = 2; i < process.argv.length; i++) {
+        const arg = process.argv[i];
+        if (arg.startsWith('--base=')) {
+            baseDir = arg.slice(7);
+        } else if (arg.startsWith('/')) {
+            baseDir = arg;
+        } else {
+            bankName = arg;
+        }
+    }
+
+    if (!baseDir) {
+        baseDir = BENSYNE_DATA_DIR;
+    }
 
     if (bankName) {
         const dbPath = join(baseDir, 'banks', bankName, 'mnemosyne.db');
