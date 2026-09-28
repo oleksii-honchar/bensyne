@@ -77,6 +77,14 @@ async function cleanupBank(bankName, dbPath, dryRun) {
 
     console.log(`Working on temp copy: ${tmpDb}`);
 
+    // Check if memories table exists
+    const tableExists = query(tmpDb, "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'");
+    if (tableExists !== 'memories') {
+        console.log(`No legacy 'memories' table found — nothing to clean.`);
+        rmSync(tmpDir, { recursive: true, force: true });
+        return true;
+    }
+
     // Count legacy memories before cleanup
     const countBefore = query(tmpDb, 'SELECT COUNT(*) FROM memories');
     console.log(`Legacy memories before cleanup: ${countBefore}`);
