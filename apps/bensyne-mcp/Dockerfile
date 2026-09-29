@@ -30,4 +30,7 @@ ENV LOG_LEVEL=INFO
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
+# Run as non-root user (nobody, uid 65534)
+USER nobody
+
 CMD ["python", "main.py"]
