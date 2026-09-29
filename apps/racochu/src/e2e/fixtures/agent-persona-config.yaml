@@ -1,0 +1,7 @@
+# Minimal racochu config fixture for the agent-persona integration test.
+# Mirrors the production values from ~/.config/racochu.yaml (maxChunkBytes and
+# serverRequestBodyLimit both 8000) so the clamp limit under test matches the
+# Mnemosyne wire limit enforced in bensyne-client.service.ts.
+enhancement:
+  maxChunkBytes: 8000
+  serverRequestBodyLimit: 8000
