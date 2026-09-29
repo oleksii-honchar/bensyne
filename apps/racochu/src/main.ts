@@ -13,6 +13,7 @@ import { AppModule } from './app.module';
 import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/services/force-reprocess.service';
 import { ReEmbedService } from './application/services/re-embed.service';
+import { ReprocessEdgesService } from './application/services/reprocess-edges.service';
 import { RecoverService } from './application/services/recover.service';
 import { TtlReconciliationService } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
@@ -65,6 +66,7 @@ export async function bootstrap(): Promise<void> {
   const excludeReconciliationService = app.get(ExcludeReconciliationService);
   const ttlService = app.get(TtlReconciliationService);
   const reEmbedService = app.get(ReEmbedService);
+  const reprocessEdgesService = app.get(ReprocessEdgesService);
   const fileWatcherService = app.get(FileWatcherService);
   const processingQueue = app.get(FileProcessingQueue);
 
@@ -72,13 +74,15 @@ export async function bootstrap(): Promise<void> {
     ? `recover${args.source ? ` (${args.source})` : ' (all)'}`
     : args.reEmbed
       ? `re-embed${args.source ? ` (${args.source})` : ' (all)'}`
-      : args.resume
-        ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
-        : args.forceReprocess
-          ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
-          : args.processOnly
-            ? 'process-only'
-            : 'watch';
+      : args.reprocessEdges
+        ? `reprocess-edges${args.source ? ` (${args.source})` : ' (all)'}`
+        : args.resume
+          ? `resume${args.source ? ` (${args.source})` : ' (all)'}`
+          : args.forceReprocess
+            ? `force-reprocess${args.source ? ` (${args.source})` : ' (all)'}`
+            : args.processOnly
+              ? 'process-only'
+              : 'watch';
   logger.info(
     `racochu starting: mode="${mode}", verbose=${args.verbose}, config="${args.config}"${args.source ? `, source="${args.source}"` : ''}`,
   );
@@ -180,6 +184,21 @@ export async function bootstrap(): Promise<void> {
       await app.close();
       process.exit(0);
     }
+  }
+
+  // Handle reprocess-edges: re-resolve all edge targets after reprocessing
+  if (args.reprocessEdges) {
+    if (args.source) {
+      logger.info(`Reprocessing edges for source: ${args.source}`);
+      await reprocessEdgesService.reprocessSource(args.source, sources);
+    } else {
+      logger.info('Reprocessing edges for all sources');
+      await reprocessEdgesService.reprocessAll(sources);
+    }
+    await processingQueue.waitForEmpty();
+    logger.info('Edge reprocessing complete, exiting');
+    await app.close();
+    process.exit(0);
   }
 
   // Handle process-only (no force-reprocess and no resume)

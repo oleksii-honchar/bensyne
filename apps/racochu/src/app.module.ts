@@ -8,6 +8,7 @@ import { ExcludeReconciliationService } from './application/services/exclude-rec
 import { ForceReprocessService } from './application/services/force-reprocess.service';
 import { ReEmbedService } from './application/services/re-embed.service';
 import { RecoverService } from './application/services/recover.service';
+import { ReprocessEdgesService } from './application/services/reprocess-edges.service';
 import { EnhancementPipelineService } from './application/services/enhancement-pipeline.service';
 import { ImportanceScoringService } from './application/services/importance-scoring.service';
 import { TagExtractionService } from './application/services/tag-extraction.service';
@@ -37,6 +38,7 @@ import { SessionMetadataService } from './infrastructure/services/session-metada
 import { ChunkContentUseCase } from './use-cases/chunk-content.use-case';
 import { IngestChunkUseCase } from './use-cases/ingest-chunk.use-case';
 import { ProcessFileUseCase } from './use-cases/process-file.use-case';
+import { ReprocessEdgesUseCase } from './use-cases/reprocess-edges.use-case';
 import { UserSourceBootstrapService } from './user-source.bootstrap.service';
 
 @Module({
@@ -68,6 +70,7 @@ import { UserSourceBootstrapService } from './user-source.bootstrap.service';
     ChunkContentUseCase,
     ProcessFileUseCase,
     IngestChunkUseCase,
+    ReprocessEdgesUseCase,
 
     // Chunking
     MastraChunkingService,
@@ -87,6 +90,7 @@ import { UserSourceBootstrapService } from './user-source.bootstrap.service';
     ForceReprocessService,
     RecoverService,
     ReEmbedService,
+    ReprocessEdgesService,
     ExcludeReconciliationService,
     TtlReconciliationService,
 

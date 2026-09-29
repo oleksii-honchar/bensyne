@@ -90,7 +90,7 @@ echo "==> Running one-shot force-reprocess (--process-only)..."
 if [ -n "$SOURCE_ID" ]; then
   # Single source: use global config directly with --source flag (no filtering needed)
   echo "    source: $SOURCE_ID"
-  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$SRC_CONFIG" --source "$SOURCE_ID"
+  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only --reprocess-edges -c "$SRC_CONFIG" --source "$SOURCE_ID"
 else
   # All personas: build temporary persona-only config (requires yq)
   echo "    sources: all persona sources (agent-persona-*)"
@@ -102,7 +102,7 @@ else
   yq eval 'del(.watchSources[] | select(.id | test("^agent-persona_") | not))' "$SRC_CONFIG" > "$TMP_CONFIG"
   KEPT="$(yq eval '.watchSources[].id' "$TMP_CONFIG" | tr '\n' ' ')"
   echo "    filtered sources: ${KEPT}"
-  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only -c "$TMP_CONFIG"
+  npx dotenvx run -- node dist/src/main.js --force-reprocess --process-only --reprocess-edges -c "$TMP_CONFIG"
 fi
 
 # ── 5. report file_relations per persona bank ───────────────────────────────

@@ -561,6 +561,81 @@ export class BensyneClient implements OnApplicationBootstrap {
   }
 
   /**
+   * Expand file relations (edges) for a file via the expandFileRelations MCP tool.
+   *
+   * Returns the outgoing edges from the given file. Each edge contains a target
+   * file reference that may or may not still exist (ghost edges).
+   *
+   * @param fileId - The file ID to expand relations for
+   * @param memoryBank - The memory bank where the file resides
+   * @param relationTypes - Optional array of relation types to filter by (e.g. ["file_ref"])
+   * @returns Result.ok with array of edges; each edge has source_file_id, target_file_id, relation_type
+   */
+  async expandFileRelations(
+    fileId: string,
+    memoryBank: string,
+    relationTypes?: string[],
+  ): Promise<Result<Array<{ source_file_id: string; target_file_id: string; relation_type: string }>>> {
+    const request: McpToolRequest = {
+      jsonrpc: '2.0',
+      id: this.nextRequestId++,
+      method: 'tools/call',
+      params: {
+        name: 'expandFileRelations',
+        arguments: {
+          file_id: fileId,
+          memory_bank: memoryBank,
+          relation_types: relationTypes,
+        },
+      },
+    };
+
+    this.ensureConfigLoaded();
+    this.logger.debug(`Expanding file relations: fileId="${fileId}", memoryBank="${memoryBank}"`);
+
+    try {
+      const response = await this.sendRequest(request);
+
+      if (response.error) {
+        return Result.ko([new ErrorWithDetails(`MCP error: ${response.error.message}`, 'McpToolError')]);
+      }
+
+      const parsed = this.parseMcpResponse(response);
+
+      if (parsed.status === 'error') {
+        const errMsg =
+          (typeof parsed.message === 'string' ? parsed.message : JSON.stringify(parsed.message)) ||
+          'expandFileRelations error';
+        this.logger.warn(`expandFileRelations error: fileId="${fileId}", error="${errMsg}"`);
+        return Result.ko([new ErrorWithDetails(errMsg, 'ExpandRelationsError')]);
+      }
+
+      const rawEdges = parsed.edges ?? [];
+      const edges: Array<{ source_file_id: string; target_file_id: string; relation_type: string }> =
+        Array.isArray(rawEdges)
+          ? rawEdges.flatMap((raw): Array<{ source_file_id: string; target_file_id: string; relation_type: string }> => {
+              if (typeof raw !== 'object' || raw === null) return [];
+              const item = raw as Record<string, unknown>;
+              const srcId = item.source_file_id ?? item.source ?? null;
+              const tgtId = item.target_file_id ?? item.target ?? null;
+              const relType = item.relation_type ?? item.type ?? null;
+              if (typeof srcId !== 'string' || typeof tgtId !== 'string' || typeof relType !== 'string') {
+                return [];
+              }
+              return [{ source_file_id: srcId, target_file_id: tgtId, relation_type: relType }];
+            })
+          : [];
+
+      this.logger.debug(`expandFileRelations returned ${edges.length} edges for fileId="${fileId}"`);
+      return Result.ok(edges);
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to expand file relations: fileId="${fileId}", error="${errMsg}"`);
+      return Result.ko([new ErrorWithDetails(errMsg, 'ExpandRelationsError')]);
+    }
+  }
+
+  /**
    * Register a memory bank with a description via the registerMemoryBank MCP tool.
    *
    * @param name - Memory bank name

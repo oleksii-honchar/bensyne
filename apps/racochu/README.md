@@ -179,6 +179,7 @@ Pass the flag to select the mode (help: `racochu --help`):
 | *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup, processing existing files to seed the Mnemosyne database. |
 | `--process-only` | Process existing files once, then exit (no watching) |
 | `-f, --force-reprocess` | Force re-process all sources (sequential reprocess of every file) |
+| `--reprocess-edges` | Two-pass reprocessing: after re-chunking files, re-resolve all edge targets via `resolve_file_ref` to fix ghost edges (see [Ghost-Edge Cleanup](#ghost-edge-cleanup--reprocess-edges)) |
 | `-r, --resume` | Resume missing chunks: re-process only files with missing stored chunks |
 | `--recover` | Recover missing chunks for DB-tracked files, then exit |
 | `--ttl-sweep` | Run the TTL sweep once, then exit (optionally scoped with `-s/--source`) |
@@ -197,6 +198,87 @@ Untracked files are never touched, and the process exits after the pass.
 (incomplete file tracker entries). Files with missing or partial chunk records
 are automatically re-processed, eliminating the need for manual intervention
 to fix stub row issues.
+
+## Ghost-Edge Cleanup (`--reprocess-edges`)
+
+**Two-pass reprocessing** fixes orphaned "ghost-edge" stubs in persona decision-tree
+banks that can persist after a standard `--force-reprocess`.
+
+### What are ghost edges?
+
+Ghost edges occur when the bensyne-mcp consumer creates phantom file records
+(ghost stubs) for edge targets that reference relative path handles instead of
+absolute paths. Even after fixing the consumer to resolve edge targets before
+deriving file ids, the orphaned ghost stubs remain in the database because
+`--force-reprocess` re-chunks files but does not delete or re-resolve existing
+`file_relations` before creating new ones.
+
+### When to use it
+
+Run `--reprocess-edges` when:
+- You've upgraded from an older racochu version that emitted relative path handles
+- You see phantom PENDING/unknown stubs in persona bank files
+- After any edge-fix regression that causes edges to point at non-existent files
+- As part of your regular persona reprocessing workflow (it's safe to run even
+  when no ghost edges exist — it's idempotent)
+
+### How it works
+
+The `--reprocess-edges` flag triggers a two-pass reprocessing flow:
+
+1. **First pass (re-chunk):** Materialize all files as usual — read each file,
+   chunk it, and ingest the chunks into Mnemosyne. This is identical to
+   `--force-reprocess`.
+
+2. **Second pass (re-resolve edges):** After all files in the source have been
+   reprocessed, iterate over every file in the bank, fetch its outgoing edges,
+   re-resolve each edge target via `resolve_file_ref`, and update any edges
+   whose target has changed (e.g., from a ghost stub id to the real file id).
+   Orphaned ghost stubs that no longer have incoming edges are pruned.
+
+### Example
+
+Reprocess all persona sources with edge cleanup:
+
+```bash
+npx racochu --force-reprocess --process-only --reprocess-edges
+```
+
+Reprocess a single persona source with edge cleanup:
+
+```bash
+npx racochu --force-reprocess --process-only --reprocess-edges --source agent-persona-worker
+```
+
+Or use the provided script:
+
+```bash
+./scripts/reprocess-personas.sh
+```
+
+The script now automatically passes `--reprocess-edges` for all persona sources.
+
+### Script: `reprocess-personas.sh`
+
+The `scripts/reprocess-personas.sh` script is the recommended way to reprocess
+persona decision-tree banks. It:
+- Filters the config to include only persona sources (`agent-persona-*`)
+- Passes `--force-reprocess --process-only --reprocess-edges` automatically
+- Reports the resulting `file_relations` count per persona bank
+
+```bash
+# Reprocess all persona sources with edge cleanup
+./scripts/reprocess-personas.sh
+
+# Reprocess a single persona source
+./scripts/reprocess-personas.sh --source agent-persona-worker
+
+# Rebuild dist before running
+./scripts/reprocess-personas.sh --build
+
+# Kill a running racochu instance first
+./scripts/reprocess-personas.sh --kill-running
+```
 
 ## Scripts
 
@@ -217,6 +299,7 @@ to fix stub row issues.
  | `npm run bensyne:start`   | Start Mnemosyne MCP via Docker Compose (bensyne)              |
  | `npm run bensyne:stop`    | Stop Mnemosyne MCP container                                  |
  | `npm run bensyne:logs`    | Tail Mnemosyne MCP logs                                       |
+ | `scripts/reprocess-personas.sh` | Reprocess persona decision-tree banks with edge cleanup |
 
 ## Mnemosyne MCP Integration
 
