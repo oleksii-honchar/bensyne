@@ -603,6 +603,7 @@ export class BensyneClient implements OnApplicationBootstrap {
       if (response.result?.content && Array.isArray(response.result.content)) {
         this.logger.debug(`expandFileRelations content items: count=${response.result.content.length}`);
         const firstItem = response.result.content[0];
+        this.logger.debug(`expandFileRelations first item type: ${firstItem?.type}`);
         if (firstItem?.type === 'text' && typeof firstItem.text === 'string') {
           const textLen = firstItem.text.length;
           this.logger.debug(`expandFileRelations text length: ${textLen}`);
@@ -621,6 +622,7 @@ export class BensyneClient implements OnApplicationBootstrap {
 
       const parsed = this.parseMcpResponse(response);
 
+      this.logger.debug(`expandFileRelations parsed response keys; fileId="${fileId}", keys=${Object.keys(parsed).join(',')}`);
       const edgesCount = parsed.edges && Array.isArray(parsed.edges) ? parsed.edges.length : 'undefined';
       this.logger.debug(`expandFileRelations parsed response; fileId="${fileId}", status="${parsed.status}", edges=${edgesCount}`);
 
