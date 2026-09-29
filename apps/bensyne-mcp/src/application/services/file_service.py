@@ -395,30 +395,10 @@ class FileService:
             return Result.ko(errors, events=events)  # type: ignore[return-value]
         stored_file = stored_result.value
 
-        # 2. Rebuild the projection when the whole-file hash changed (D5).
-        #    Runs BEFORE loading the aggregate so stale chunks of this file
-        #    and its outbound relations are pruned first.
-        #    CRITICAL: Must run on chunk 0 (first chunk), not the final chunk.
-        #    If run on the final chunk, it prunes the file_chunks rows of chunks
-        #    ingested earlier in the same re-ingest session, leaving only the
-        #    final chunk as file-backed. Running on chunk 0 prunes old chunks
-        #    before any new chunks are ingested.
-        rebuilt = False
-        if (
-            stored_file is not None
-            and stored_file.hash is not None
-            and context.file_hash != stored_file.hash
-            and context.chunk_index == 0
-        ):
-            # On chunk 0, all existing chunks are stale — prune them all.
-            # New chunks haven't been ingested yet, so the exclude set is empty.
-            rebuild_result = self.rebuild_projection(file_id, set())
-            if rebuild_result.is_ko:
-                errors.extend(rebuild_result.errors)
-                return Result.ko(errors, events=events)  # type: ignore[return-value]
-            rebuilt = True
-
-        # 3. Build or mutate the File aggregate.
+        # 2. Build or mutate the File aggregate.
+        #    Load the aggregate FIRST so the rebuild decision can inspect
+        #    existing chunks. This avoids the chunk_index-based heuristic
+        #    which breaks when the producer sends non-sequential indices.
         if stored_file is None:
             # Fresh file: File.of with status=INDEXED, tags from context.
             # total_chunks is projection state — it is re-aggregated from the
@@ -445,6 +425,7 @@ class FileService:
             events.extend(file_result.events)
             chunks: list[FileChunk] = []
             relations: list[FileRelation] = []
+            rebuilt = False
         else:
             # Existing file: load full aggregate, then mutate in place.
             agg_result = self._load_aggregate(
@@ -456,6 +437,29 @@ class FileService:
                 return Result.ko(errors, events=events)  # type: ignore[return-value]
             aggregate_loaded = agg_result.value
             file = aggregate_loaded.file
+            chunks = aggregate_loaded.chunks
+            relations = aggregate_loaded.relations
+
+            # 2b. Rebuild the projection when re-ingesting an existing file.
+            #     Runs AFTER loading the aggregate so we can inspect existing
+            #     chunks. If the file has existing chunks, this is a re-ingest:
+            #     all old chunks are stale and must be pruned before ingesting
+            #     the new ones. This replaces the fragile chunk_index==0
+            #     heuristic which breaks when producers send non-sequential
+            #     chunk indices. The rebuild fires exactly once — on the first
+            #     chunk of the re-ingest — because after the rebuild the
+            #     aggregate's chunk list is reset to empty, so subsequent
+            #     chunks see len(chunks)==0 and skip the rebuild.
+            rebuilt = False
+            if chunks is not None and len(chunks) > 0:
+                # All existing chunks are stale — prune them via rebuild.
+                rebuild_result = self.rebuild_projection(file_id, set())
+                if rebuild_result.is_ko:
+                    errors.extend(rebuild_result.errors)
+                    return Result.ko(errors, events=events)  # type: ignore[return-value]
+                rebuilt = True
+                # Reset chunks list since rebuild pruned them all.
+                chunks = []
 
             # 3a. Resurrect DELETED → INDEXED (D21), or mark PENDING → INDEXED.
             if file.status != FileStatus.INDEXED:

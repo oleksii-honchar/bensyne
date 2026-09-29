@@ -51,7 +51,7 @@ class TestRebuildProjectionFinalChunk:
     """rebuild_projection is called only on the final chunk of a re-ingested file."""
 
     def test_single_chunk_triggers_rebuild(self):
-        """Single-chunk file: chunk 0/0 is the final chunk → rebuild triggered."""
+        """Single-chunk file: re-ingest triggers rebuild on first chunk."""
         file_repo = MagicMock()
         chunk_repo = MagicMock()
         relation_repo = MagicMock()
@@ -64,6 +64,20 @@ class TestRebuildProjectionFinalChunk:
             "is_ko": False,
             "is_ok": True,
             "value": stored_file,
+        })()
+
+        # Mock aggregate load: return existing chunk (re-ingest scenario)
+        mock_chunk = MagicMock()
+        mock_chunk.memory_id = "old-memory"
+        chunk_repo.get_chunks_by_file_id.return_value = type("Result", (), {
+            "is_ko": False,
+            "is_ok": True,
+            "value": [mock_chunk],
+        })()
+        relation_repo.get_relations_by_file_id.return_value = type("Result", (), {
+            "is_ko": False,
+            "is_ok": True,
+            "value": [],
         })()
 
         service = FileService(
@@ -85,16 +99,16 @@ class TestRebuildProjectionFinalChunk:
         )
         service.materialize_file_context("test-bank", context, "memory-1")
 
-        # rebuild should have been called because chunk_index == total_chunks - 1
+        # rebuild should have been called because aggregate had existing chunks
         service.rebuild_projection.assert_called_once()
 
     def test_chunk_zero_triggers_rebuild(self):
-        """Multi-chunk file: chunk 0 (first chunk) triggers rebuild.
+        """Multi-chunk file: first chunk of re-ingest triggers rebuild.
 
-        Rebuild is triggered on chunk 0, not the final chunk, so that old
-        chunks are pruned before any new chunks are ingested. This prevents
-        rebuild from pruning the file_chunks rows of chunks ingested earlier
-        in the same re-ingest session.
+        Rebuild is triggered on the first chunk of a re-ingest (when the
+        aggregate has existing chunks), not based on chunk_index. This
+        prevents rebuild from pruning the file_chunks rows of chunks
+        ingested earlier in the same re-ingest session.
         """
         file_repo = MagicMock()
         chunk_repo = MagicMock()
@@ -109,6 +123,20 @@ class TestRebuildProjectionFinalChunk:
             "value": stored_file,
         })()
 
+        # Mock aggregate load: return existing chunks (re-ingest scenario)
+        mock_chunk = MagicMock()
+        mock_chunk.memory_id = "old-memory"
+        chunk_repo.get_chunks_by_file_id.return_value = type("Result", (), {
+            "is_ko": False,
+            "is_ok": True,
+            "value": [mock_chunk],
+        })()
+        relation_repo.get_relations_by_file_id.return_value = type("Result", (), {
+            "is_ko": False,
+            "is_ok": True,
+            "value": [],
+        })()
+
         service = FileService(
             file_repository=file_repo,
             chunk_repository=chunk_repo,
@@ -121,7 +149,7 @@ class TestRebuildProjectionFinalChunk:
             "value": None,
         })())
 
-        # Chunk 0 of 2 — first chunk, rebuild
+        # First chunk of re-ingest — rebuild
         context = make_context(
             file_hash="new-hash",
             chunk_index=0,
@@ -129,7 +157,7 @@ class TestRebuildProjectionFinalChunk:
         )
         service.materialize_file_context("test-bank", context, "memory-1")
 
-        # rebuild should have been called on chunk 0
+        # rebuild should have been called (aggregate had existing chunks)
         service.rebuild_projection.assert_called_once()
 
     def test_non_first_chunk_no_rebuild(self):
