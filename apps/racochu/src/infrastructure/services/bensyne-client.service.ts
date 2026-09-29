@@ -599,11 +599,30 @@ export class BensyneClient implements OnApplicationBootstrap {
     try {
       const response = await this.sendRequest(request);
 
+      this.logger.debug(`expandFileRelations raw response received; fileId="${fileId}"`);
+      if (response.result?.content && Array.isArray(response.result.content)) {
+        this.logger.debug(`expandFileRelations content items: count=${response.result.content.length}`);
+        const firstItem = response.result.content[0];
+        if (firstItem?.type === 'text' && typeof firstItem.text === 'string') {
+          const textLen = firstItem.text.length;
+          this.logger.debug(`expandFileRelations text length: ${textLen}`);
+          if (textLen > 0 && textLen < 500) {
+            this.logger.debug(`expandFileRelations text content: ${firstItem.text}`);
+          }
+        }
+      } else {
+        this.logger.debug(`expandFileRelations no content array in result`);
+      }
+
       if (response.error) {
+        this.logger.warn(`expandFileRelations MCP error; fileId="${fileId}", error="${response.error.message}"`);
         return Result.ko([new ErrorWithDetails(`MCP error: ${response.error.message}`, 'McpToolError')]);
       }
 
       const parsed = this.parseMcpResponse(response);
+
+      const edgesCount = parsed.edges && Array.isArray(parsed.edges) ? parsed.edges.length : 'undefined';
+      this.logger.debug(`expandFileRelations parsed response; fileId="${fileId}", status="${parsed.status}", edges=${edgesCount}`);
 
       if (parsed.status === 'error') {
         const errMsg =
