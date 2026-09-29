@@ -11,6 +11,7 @@ import * as fsSync from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { EdgeDistributionService } from './edge-distribution.service';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
 
@@ -100,9 +101,14 @@ describe('AgentSessionChunkingStrategy', () => {
     mockSessionMetadataService = aSessionMetadataService();
     mockMastraChunkingService = aMastraChunkingService();
     mockLogger = aLogger();
+    const mockEdgeDistributionService = {
+      distributeEdges: jest.fn((edges, chunks) => chunks),
+      validateAndRedistribute: jest.fn((chunks) => chunks),
+    };
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastraChunkingService as unknown as MastraChunkingService,
+      mockEdgeDistributionService as unknown as EdgeDistributionService,
       mockLogger,
     );
   });
@@ -121,6 +127,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -158,6 +165,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -185,6 +193,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -215,6 +224,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -257,6 +267,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -285,6 +296,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -314,6 +326,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -347,6 +360,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         emptyMetaService as unknown as SessionMetadataService,
         emptyMastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -388,6 +402,7 @@ describe('AgentSessionChunkingStrategy', () => {
         sut = new AgentSessionChunkingStrategy(
           mockSessionMetadataService as unknown as SessionMetadataService,
           mastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
           mockLogger,
         );
 
@@ -423,6 +438,7 @@ describe('AgentSessionChunkingStrategy', () => {
         sut = new AgentSessionChunkingStrategy(
           mockSessionMetadataService as unknown as SessionMetadataService,
           mastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
           mockLogger,
         );
 
@@ -455,6 +471,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         emptyMastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -484,6 +501,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -508,6 +526,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -539,6 +558,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         multiMastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -591,6 +611,7 @@ describe('AgentSessionChunkingStrategy', () => {
       return new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
     }
@@ -1002,9 +1023,12 @@ describe('AgentSessionChunkingStrategy', () => {
     it('merges companion + cross_reference edges onto every chunk when content references an archived material', async () => {
       testRoot = await createXrefSessionRoot();
       const mastra = aMastraChunkingService([aBodyChunk({ chunkIndex: 0 }), aBodyChunk({ chunkIndex: 1 })]);
+      // Use real edge distribution for this test
+      const edgeDist = new EdgeDistributionService(mockLogger);
       const sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mastra as unknown as MastraChunkingService,
+        edgeDist,
         mockLogger,
       );
       const filePath = path.join(testRoot, 'findings', 'findings.md');
@@ -1029,7 +1053,8 @@ describe('AgentSessionChunkingStrategy', () => {
 
       const archivedTarget = path.join(testRoot, 'materials', 'archive', '260819-0001-materials.md');
 
-      // EVERY chunk (not just the frontmatter chunk) must carry the merged edge array.
+      // Companion edges (parent_child, sibling) are on every chunk.
+      // Cross-reference edges are distributed to chunks based on content.
       for (const chunk of chunks) {
         const edges = chunk.edges;
         expect(edges).toBeDefined();
@@ -1052,15 +1077,15 @@ describe('AgentSessionChunkingStrategy', () => {
           path.join(testRoot, 'plans', 'implementation-plan.md'),
         ].sort();
         expect(siblingTargets).toEqual(expectedSiblings);
-
-        // Cross-reference: → the archived material (strength 0.7, absolute path)
-        const xrefEdge = edges!.find(
-          e => e.relation_type === 'cross_reference' && e.target_path === archivedTarget,
-        );
-        expect(xrefEdge).toBeDefined();
-        expect(xrefEdge!.strength).toBe(0.7);
-        expect(path.isAbsolute(xrefEdge!.target_path)).toBe(true);
       }
+
+      // Cross-reference edge is on at least one chunk (the body chunk that references it)
+      const xrefEdge = chunks[1].edges?.find(
+        e => e.relation_type === 'cross_reference' && e.target_path === archivedTarget,
+      );
+      expect(xrefEdge).toBeDefined();
+      expect(xrefEdge!.strength).toBe(0.7);
+      expect(path.isAbsolute(xrefEdge!.target_path)).toBe(true);
     });
 
     it('degrades to companion-only edges when the cross-ref walk hits an fs error (chunking still succeeds)', async () => {
@@ -1069,6 +1094,7 @@ describe('AgentSessionChunkingStrategy', () => {
       const sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mastra as unknown as MastraChunkingService,
+{ distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
       const filePath = path.join(testRoot, 'findings', 'findings.md');
@@ -1134,6 +1160,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 
@@ -1156,6 +1183,7 @@ describe('AgentSessionChunkingStrategy', () => {
       sut = new AgentSessionChunkingStrategy(
         mockSessionMetadataService as unknown as SessionMetadataService,
         mockMastraChunkingService as unknown as MastraChunkingService,
+        { distributeEdges: jest.fn((e,c) => c), validateAndRedistribute: jest.fn(c => c) } as unknown as EdgeDistributionService,
         mockLogger,
       );
 

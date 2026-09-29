@@ -6,6 +6,7 @@ import { SessionMetadataService } from '@/infrastructure/services/session-metada
 import { aSessionMetadataService } from '@/infrastructure/services/session-metadata.service.test-utils';
 import { Test } from '@nestjs/testing';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { EdgeDistributionService } from './edge-distribution.service';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
 
@@ -27,11 +28,16 @@ describe('AgentSessionChunkingStrategy DI wiring (regression)', () => {
     const mastraChunkingService = aMastraChunkingService([aBodyChunk()]);
     const logger = aLogger();
 
+    const mockEdgeDistributionService = {
+      distributeEdges: jest.fn((edges, chunks) => chunks),
+      validateAndRedistribute: jest.fn((chunks) => chunks),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AgentSessionChunkingStrategy,
         { provide: SessionMetadataService, useValue: sessionMetadataService },
         { provide: MastraChunkingService, useValue: mastraChunkingService },
+        { provide: EdgeDistributionService, useValue: mockEdgeDistributionService },
         { provide: BasePinoLogger, useValue: logger },
       ],
     }).compile();

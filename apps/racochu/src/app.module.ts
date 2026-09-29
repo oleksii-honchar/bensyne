@@ -13,6 +13,7 @@ import { ImportanceScoringService } from './application/services/importance-scor
 import { TagExtractionService } from './application/services/tag-extraction.service';
 import { AgentPersonaChunkingStrategy } from './application/strategies/agent-persona-chunking.strategy';
 import { AgentSessionChunkingStrategy } from './application/strategies/agent-session-chunking.strategy';
+import { EdgeDistributionService } from './application/strategies/edge-distribution.service';
 import { MastraChunkingService } from './application/strategies/mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './application/strategies/obsidian-chunking.strategy';
 import { StrategyRouter } from './application/strategies/strategy-router.service';
@@ -72,6 +73,7 @@ import { UserSourceBootstrapService } from './user-source.bootstrap.service';
     MastraChunkingService,
     AgentPersonaChunkingStrategy,
     AgentSessionChunkingStrategy,
+    EdgeDistributionService,
     ObsidianChunkingStrategy,
     VaultChunkingStrategy,
     StrategyRouter,

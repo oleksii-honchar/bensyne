@@ -11,6 +11,7 @@ import { generateId } from '../../utils/big-endian-id';
 import { Result } from '../../utils/result';
 import { splitFrontmatter } from '../../utils/strategy-utils';
 import { BaseChunkingStrategy, ChunkFileOptions } from './base-chunking-strategy';
+import { EdgeDistributionService } from './edge-distribution.service';
 import { MastraChunkingService } from './mastra-chunking.service';
 
 /** Companion artifact names present in a session root (top-level entries). */
@@ -329,6 +330,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
   constructor(
     private readonly sessionMetadataService: SessionMetadataService,
     private readonly mastraChunkingService: MastraChunkingService,
+    private readonly edgeDistributionService: EdgeDistributionService,
     private readonly logger: BasePinoLogger,
   ) {}
 
@@ -357,7 +359,6 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
     //     cross-ref edges.
     const sessionFiles = await this.listSessionFilesSafe(sessionPath);
     const xrefEdges = await this.buildCrossReferenceEdgesSafe(content, filePath, sessionPath, sessionFiles);
-    const allEdges = [...edges, ...xrefEdges];
 
     // 4. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
@@ -378,19 +379,25 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       : await this.mastraChunkingService.chunkFile(body, filePath, sourceId);
     const bodyChunks = bodyChunksResult.isOk() ? bodyChunksResult.getValue() : [];
 
-    // 7. Enrich all chunks with session metadata and companion edges
+    // 7. Distribute cross-reference edges across chunks (byte-safety)
     const allChunks = [...chunks, ...bodyChunks];
-    const enriched = allChunks.map(chunk =>
-      this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, allEdges),
+    let distributedChunks = this.edgeDistributionService.distributeEdges(xrefEdges, allChunks);
+
+    // 8. Enrich all chunks with session metadata and companion edges (small, safe on all)
+    const enriched = distributedChunks.map(chunk =>
+      this.enrichWithSessionMetadataAndEdges(chunk, sessionMetadata, edges),
     );
 
-    // 8. D41 (clarification A): the strategy composes the final chunk list, so it owns its
-    //    final indices — re-index densely 0..m-1 and set totalChunks = m on every chunk.
-    const finalChunks = enriched.map((chunk, idx) =>
+    // 9. Validate and redistribute to ensure byte safety (8000 bytes)
+    const validatedChunks = this.edgeDistributionService.validateAndRedistribute(enriched);
+
+    // 10. D41 (clarification A): the strategy composes the final chunk list, so it owns its
+    //     final indices — re-index densely 0..m-1 and set totalChunks = m on every chunk.
+    const finalChunks = validatedChunks.map((chunk, idx) =>
       ContentChunk.of({
         ...chunk.toJson(),
         chunkIndex: idx,
-        totalChunks: enriched.length,
+        totalChunks: validatedChunks.length,
       }).getValue(),
     );
 
@@ -467,7 +474,7 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
   private enrichWithSessionMetadataAndEdges(
     chunk: ContentChunk,
     sessionMetadata: SessionMetadata,
-    edges: FileEdge[],
+    companionEdges: FileEdge[],
   ): ContentChunk {
     const existingMeta = chunk.metadata ?? {};
     const enrichedMeta = {
@@ -475,10 +482,15 @@ export class AgentSessionChunkingStrategy implements BaseChunkingStrategy {
       ...formatSessionMetadata(sessionMetadata),
     };
 
+    // Merge companion edges with any cross-reference edges already on the chunk
+    // (distributed by EdgeDistributionService).
+    const chunkEdges = chunk.edges ?? [];
+    const allEdges = [...chunkEdges, ...companionEdges];
+
     return ContentChunk.of({
       ...chunk.toJson(),
       metadata: enrichedMeta,
-      ...(edges.length > 0 && { edges }),
+      edges: allEdges.length > 0 ? allEdges : undefined,
     }).getValue();
   }
 }

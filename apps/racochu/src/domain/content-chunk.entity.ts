@@ -81,6 +81,8 @@ export const contentChunkSchema = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
   /** Typed edges from this chunk's source file to other files */
   edges: z.array(fileEdgeSchema).optional(),
+  /** Cumulative bytes of all cross-refs attached to this chunk (for byte-safety tracking) */
+  edgeBytes: z.number().min(0).int().optional(),
   /** Relevance score (0.0–1.0) assigned by the importance scoring service */
   importance: z.number().min(0).max(1).default(0.5),
   /** Keywords extracted by the tag extraction service */
@@ -116,6 +118,7 @@ export class ContentChunk {
       endLine: this.props.endLine,
       metadata: this.props.metadata,
       ...(this.props.edges !== undefined && { edges: this.props.edges }),
+      ...(this.props.edgeBytes !== undefined && { edgeBytes: this.props.edgeBytes }),
       importance: this.props.importance,
       tags: [...this.props.tags],
       memoryBank: this.props.memoryBank,
@@ -170,6 +173,10 @@ export class ContentChunk {
   /** Typed edges from this chunk's source file to other files */
   get edges(): FileEdge[] | undefined {
     return this.props.edges;
+  }
+  /** Cumulative bytes of all cross-refs attached to this chunk */
+  get edgeBytes(): number {
+    return this.props.edgeBytes ?? 0;
   }
   /** Relevance score (0.0–1.0) assigned by the importance scoring service */
   get importance(): number {

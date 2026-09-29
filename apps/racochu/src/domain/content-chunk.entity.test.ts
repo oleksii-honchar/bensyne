@@ -352,4 +352,43 @@ describe('Chunk', () => {
       ]);
     });
   });
+
+  describe('edgeBytes', () => {
+    it('defaults to 0 when omitted', () => {
+      const chunk = aContentChunk();
+      expect(chunk.edgeBytes).toBe(0);
+    });
+
+    it('accepts explicit edgeBytes value', () => {
+      const chunk = aContentChunk({ edgeBytes: 1500 });
+      expect(chunk.edgeBytes).toBe(1500);
+    });
+
+    it('preserves edgeBytes in toJson round-trip', () => {
+      const chunk = aContentChunk({ edgeBytes: 2500 });
+      const json = chunk.toJson();
+      expect(json.edgeBytes).toBe(2500);
+
+      // Round-trip: parse back
+      const result = ContentChunk.of(json);
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue().edgeBytes).toBe(2500);
+    });
+
+    it('with negative edgeBytes returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edgeBytes: -10,
+      } as never);
+      expect(result.isKo()).toBe(true);
+    });
+
+    it('with non-integer edgeBytes returns ko', () => {
+      const result = ContentChunk.of({
+        ...aContentChunk().toJson(),
+        edgeBytes: 10.5,
+      } as never);
+      expect(result.isKo()).toBe(true);
+    });
+  });
 });

@@ -20,6 +20,7 @@ import { SessionMetadataService } from '../../infrastructure/services/session-me
 import { Result } from '../../utils/result';
 import { AgentPersonaChunkingStrategy } from './agent-persona-chunking.strategy';
 import { AgentSessionChunkingStrategy } from './agent-session-chunking.strategy';
+import { EdgeDistributionService } from './edge-distribution.service';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { ObsidianChunkingStrategy } from './obsidian-chunking.strategy';
 import { StrategyRouter } from './strategy-router.service';
