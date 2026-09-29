@@ -571,22 +571,25 @@ export class BensyneClient implements OnApplicationBootstrap {
    * @param relationTypes - Optional array of relation types to filter by (e.g. ["file_ref"])
    * @returns Result.ok with array of edges; each edge has source_file_id, target_file_id, relation_type
    */
-  async expandFileRelations(
+   async expandFileRelations(
     fileId: string,
     memoryBank: string,
     relationTypes?: string[],
   ): Promise<Result<Array<{ source_file_id: string; target_file_id: string; relation_type: string }>>> {
+    const args: Record<string, unknown> = {
+      file_id: fileId,
+      memory_bank: memoryBank,
+    };
+    if (relationTypes !== undefined) {
+      args.relation_types = relationTypes;
+    }
     const request: McpToolRequest = {
       jsonrpc: '2.0',
       id: this.nextRequestId++,
       method: 'tools/call',
       params: {
         name: 'expandFileRelations',
-        arguments: {
-          file_id: fileId,
-          memory_bank: memoryBank,
-          relation_types: relationTypes,
-        },
+        arguments: args,
       },
     };
 

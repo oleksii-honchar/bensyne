@@ -149,8 +149,7 @@ export class ReprocessEdgesUseCase extends BaseUseCase<ReprocessEdgesParams, Rep
 
     const edgesResult = await this.bensyneClient.expandFileRelations(
       fileId,
-      memoryBank,
-      ['file_ref']
+      memoryBank
     );
 
     if (edgesResult.isKo()) {
