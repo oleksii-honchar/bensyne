@@ -216,7 +216,7 @@ class TestRecallMemoryToolRegistration:
         register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
-        assert len(names) == 16
+        assert len(names) == 17
         assert "getFileChunks" in names
 
 
@@ -501,5 +501,5 @@ class TestFetchFileNeighborParams:
         register_tools(mock_mcp, mock_router, MagicMock())
 
         names = {call.kwargs.get("name") for call in mock_mcp.tool.call_args_list}
-        assert len(names) == 16
+        assert len(names) == 17
         assert "fetchFile" in names

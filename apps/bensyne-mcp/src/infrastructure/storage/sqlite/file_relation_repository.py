@@ -245,3 +245,34 @@ class FileRelationRepository:
             return Result.ko([ErrorWithDetails("RELATION_DELETE_ERROR", {"error": str(e)})])
         finally:
             self._conn_manager.close_session(session)
+
+    def delete_relation_by_pair(
+        self,
+        source_file_id: str,
+        target_file_id: str,
+        relation_type: RelationType | None = None,
+    ) -> Result[bool]:
+        """Delete a relation by source/target pair, optionally by type.
+        
+        If relation_type is specified, deletes only that relation type for the pair.
+        If relation_type is None, deletes all relation types for the pair.
+        Returns Result.ok(True) if at least one row was deleted.
+        """
+        if not self._db_exists():
+            return Result.ok(False)
+        session = self._conn_manager.get_session()
+        try:
+            query = session.query(FileRelationORM).filter(
+                FileRelationORM.source_file_id == source_file_id,
+                FileRelationORM.target_file_id == target_file_id,
+            )
+            if relation_type is not None:
+                query = query.filter(FileRelationORM.relation_type == relation_type.value)
+            deleted = query.delete(synchronize_session=False)
+            session.commit()
+            return Result.ok(deleted > 0)
+        except Exception as e:
+            session.rollback()
+            return Result.ko([ErrorWithDetails("RELATION_DELETE_BY_PAIR_ERROR", {"error": str(e)})])
+        finally:
+            self._conn_manager.close_session(session)

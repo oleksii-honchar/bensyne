@@ -8,6 +8,7 @@ import { Result } from '../utils/result';
 const mockBensyneClient = {
   getFileChunks: jest.fn(),
   expandFileRelations: jest.fn(),
+  prunePhantomEdgeStub: jest.fn(),
 };
 
 // Mock BasePinoLogger
@@ -110,7 +111,7 @@ describe('ReprocessEdgesUseCase', () => {
     expect(mockBensyneClient.expandFileRelations).toHaveBeenCalledWith('file-1', 'test-bank', ['file_ref']);
   });
 
-  it('should detect ghost edges and log them', async () => {
+  it('should detect ghost edges and prune the phantom edge stub', async () => {
     // Mock getFileChunks: file exists, but edge target does not
     mockBensyneClient.getFileChunks.mockResolvedValue(
       Result.ok({
@@ -127,6 +128,65 @@ describe('ReprocessEdgesUseCase', () => {
       Result.ok([
         { source_file_id: 'file-1', target_file_id: 'ghost-file', relation_type: 'file_ref' },
       ])
+    );
+
+    // Prune succeeds
+    mockBensyneClient.prunePhantomEdgeStub.mockResolvedValue(Result.ok(undefined as unknown as void));
+
+    const result = await useCase.execute({
+      sourceId: 'test-source',
+      sources: [
+        {
+          id: 'test-source',
+          path: '/tmp/test',
+          sourceType: 'agent-persona',
+          memoryBank: 'test-bank',
+        },
+      ],
+      filePaths: ['/tmp/test/file1.md'],
+    });
+
+    expect(result.isOk()).toBe(true);
+    const stats = result.getValue();
+    expect(stats.ghostEdgesFound).toBe(1);
+    expect(stats.edgesNeedUpdate).toBe(1);
+    expect(stats.edgesPruned).toBe(1);
+    expect(mockBensyneClient.prunePhantomEdgeStub).toHaveBeenCalledWith(
+      'file-1',
+      'ghost-file',
+      'test-bank',
+      'file_ref'
+    );
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Ghost edge found')
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.stringContaining('Phantom edge stub pruned')
+    );
+  });
+
+  it('should handle prune failures gracefully', async () => {
+    // Mock getFileChunks: file exists, but edge target does not
+    mockBensyneClient.getFileChunks.mockResolvedValue(
+      Result.ok({
+        status: 'present',
+        fileId: 'file-1',
+        chunks: [
+          { chunkIndex: 0, contentHash: 'abc', memoryStatus: 'present' },
+        ],
+      })
+    );
+
+    // Edge points to a file ID that doesn't exist in our map
+    mockBensyneClient.expandFileRelations.mockResolvedValue(
+      Result.ok([
+        { source_file_id: 'file-1', target_file_id: 'ghost-file', relation_type: 'file_ref' },
+      ])
+    );
+
+    // Prune fails
+    mockBensyneClient.prunePhantomEdgeStub.mockResolvedValue(
+      Result.ko([{ message: 'prune failed', name: 'PruneFailed' }])
     );
 
     const result = await useCase.execute({
@@ -146,8 +206,9 @@ describe('ReprocessEdgesUseCase', () => {
     const stats = result.getValue();
     expect(stats.ghostEdgesFound).toBe(1);
     expect(stats.edgesNeedUpdate).toBe(1);
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Ghost edge found')
+    expect(stats.edgesPruned).toBe(0);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to prune phantom edge stub')
     );
   });
 

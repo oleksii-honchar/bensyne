@@ -177,10 +177,24 @@ export async function bootstrap(): Promise<void> {
       await forceReprocessService.forceReprocessAll(sources);
     }
 
-    // If --process-only with --force-reprocess, wait for queue then exit
+    // If --process-only with --force-reprocess, wait for queue
     if (args.processOnly) {
       await processingQueue.waitForEmpty();
-      logger.info('Force reprocessing complete, exiting');
+      logger.info('Force reprocessing complete');
+
+      // If --reprocess-edges is also set, run edge reprocessing before exiting
+      if (args.reprocessEdges) {
+        if (args.source) {
+          logger.info(`Reprocessing edges for source: ${args.source}`);
+          await reprocessEdgesService.reprocessSource(args.source, sources);
+        } else {
+          logger.info('Reprocessing edges for all sources');
+          await reprocessEdgesService.reprocessAll(sources);
+        }
+        await processingQueue.waitForEmpty();
+      }
+
+      logger.info('Exiting');
       await app.close();
       process.exit(0);
     }

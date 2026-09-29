@@ -19,6 +19,7 @@ export interface ReprocessEdgesResult {
   filesProcessed: number;
   ghostEdgesFound: number;
   edgesNeedUpdate: number;
+  edgesPruned: number;
 }
 
 /**
@@ -60,7 +61,7 @@ export class ReprocessEdgesUseCase extends BaseUseCase<ReprocessEdgesParams, Rep
     const source = sources.find((s) => s.id === sourceId);
     if (!source) {
       this.logger.error(`Source not found; id="${sourceId}"`);
-      return Result.ok({ filesProcessed: 0, ghostEdgesFound: 0, edgesNeedUpdate: 0 });
+      return Result.ok({ filesProcessed: 0, ghostEdgesFound: 0, edgesNeedUpdate: 0, edgesPruned: 0 });
     }
 
     const memoryBank = source.memoryBank;
@@ -72,7 +73,7 @@ export class ReprocessEdgesUseCase extends BaseUseCase<ReprocessEdgesParams, Rep
 
     // Pass 2: Check edges for each file
     this.logger.info(`Pass 2: Checking edges for each file`);
-    const stats = { filesProcessed: 0, ghostEdgesFound: 0, edgesNeedUpdate: 0 };
+    const stats = { filesProcessed: 0, ghostEdgesFound: 0, edgesNeedUpdate: 0, edgesPruned: 0 };
 
     for (const filePath of filePaths) {
       stats.filesProcessed++;
@@ -203,6 +204,29 @@ export class ReprocessEdgesUseCase extends BaseUseCase<ReprocessEdgesParams, Rep
     this.logger.warn(
       `Edge needs update; source="${edge.source_file_id}", target="${edge.target_file_id}" — real target not found, update would require bensyne-mcp endpoint`
     );
+
+    // Prune the phantom edge stub
+    this.logger.debug(
+      `Pruning phantom edge stub; source="${edge.source_file_id}", target="${edge.target_file_id}", type="${edge.relation_type}"`
+    );
+    const pruneResult = await this.bensyneClient.prunePhantomEdgeStub(
+      edge.source_file_id,
+      edge.target_file_id,
+      memoryBank,
+      edge.relation_type
+    );
+
+    if (pruneResult.isOk()) {
+      stats.edgesPruned++;
+      this.logger.info(
+        `Phantom edge stub pruned; source="${edge.source_file_id}", target="${edge.target_file_id}"`
+      );
+    } else {
+      const errors = pruneResult.getErrors();
+      this.logger.error(
+        `Failed to prune phantom edge stub; source="${edge.source_file_id}", target="${edge.target_file_id}", errors=${errors.map(e => e.message).join(', ')}`
+      );
+    }
   }
 
   /**

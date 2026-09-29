@@ -698,6 +698,32 @@ class FileService:
             return Result.ko(errors, events=events)  # type: ignore[return-value]
         return Result.ok(payload, events=events)
 
+    def prune_phantom_edge_stub(
+        self,
+        source_file_id: str,
+        target_file_id: str,
+        relation_type: RelationType | None = None,
+    ) -> Result[bool]:
+        """Delete a file relation edge by source/target pair (and optionally type).
+        
+        Public method for racochu to prune ghost edges (relations to files that no
+        longer exist). If relation_type is specified, deletes only that edge type;
+        otherwise deletes all edge types for the pair.
+        
+        Returns Result.ok(True) if at least one relation was deleted, Result.ok(False)
+        if no matching relation existed.
+        """
+        self._log_info(
+            "Pruning phantom edge stub",
+            method="prune_phantom_edge_stub",
+            source_file_id=source_file_id,
+            target_file_id=target_file_id,
+            relation_type=relation_type.value if relation_type is not None else None,
+        )
+        return self.relation_repository.delete_relation_by_pair(
+            source_file_id, target_file_id, relation_type
+        )
+
     def _prune_phantom_edge_stub(self, file_id: str) -> None:
         """Best-effort delete of a phantom PENDING/unknown stub superseded by a real file.
 

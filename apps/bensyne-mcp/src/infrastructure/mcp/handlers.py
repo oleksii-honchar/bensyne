@@ -645,3 +645,36 @@ async def handle_get_persona_entry_node(
     )
     result = use_case.execute({"memory_bank": memory_bank})
     return _raise_on_ko(result, "getPersonaEntryNode")
+
+
+async def handle_prune_phantom_edge_stub(
+    router: MemoryBankRouter, arguments: dict, container: Container | None = None
+) -> dict:
+    """Delete a file relation (edge) by source_file_id and target_file_id.
+    
+    Called by racochu to prune ghost edges (relations to files that no longer
+    exist). Optionally filters by relation_type; without it, all edge types
+    for the pair are deleted.
+    """
+    from src.domain.file_relation_entity import RelationType
+    
+    memory_bank = require_memory_bank(arguments)
+    source_file_id = arguments.get("source_file_id")
+    target_file_id = arguments.get("target_file_id")
+    relation_type_str = arguments.get("relation_type")
+
+    if not source_file_id or not target_file_id:
+        raise ValidationError("source_file_id and target_file_id are required")
+
+    # Resolve relation type if provided
+    relation_type: RelationType | None = None
+    if relation_type_str:
+        relation_type = RelationType(relation_type_str)
+
+    container = _resolve_container(container)
+    bank_dir = router.get_bank_dir(memory_bank)
+    bundle = container.file_metadata_bundle(bank_dir=bank_dir)
+    file_service = container.file_service(bundle=bundle)
+
+    result = file_service.prune_phantom_edge_stub(source_file_id, target_file_id, relation_type)
+    return _raise_on_ko(result, "prune_phantom_edge_stub")

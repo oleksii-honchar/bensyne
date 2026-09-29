@@ -636,6 +636,87 @@ export class BensyneClient implements OnApplicationBootstrap {
   }
 
   /**
+   * Prune a phantom edge stub via the prune_phantom_edge_stub MCP tool.
+   *
+   * When an edge points to a target file that no longer exists (ghost edge),
+   * this tool removes the phantom edge stub from the memory bank.
+   *
+   * @param sourceFileId - The source file ID that has the phantom edge
+   * @param targetFileId - The target file ID that no longer exists
+   * @param memoryBank - The memory bank where the edge resides
+   * @param relationType - Optional relation type to filter by (e.g. "file_ref")
+   * @returns Result.ok on success; Result.ko on error
+   */
+  async prunePhantomEdgeStub(
+    sourceFileId: string,
+    targetFileId: string,
+    memoryBank: string,
+    relationType?: string,
+  ): Promise<Result<void>> {
+    this.ensureConfigLoaded();
+    this.logger.debug(
+      `Pruning phantom edge stub: source="${sourceFileId}", target="${targetFileId}", memoryBank="${memoryBank}"`,
+    );
+
+    const request: McpToolRequest = {
+      jsonrpc: '2.0',
+      id: this.nextRequestId++,
+      method: 'tools/call',
+      params: {
+        name: 'prune_phantom_edge_stub',
+        arguments: {
+          source_file_id: sourceFileId,
+          target_file_id: targetFileId,
+          memory_bank: memoryBank,
+          ...(relationType ? { relation_type: relationType } : {}),
+        },
+      },
+    };
+
+    try {
+      const response = await this.sendRequest(request);
+
+      if (response.error) {
+        const errMsg = `MCP error: ${response.error.message}`;
+        this.logger.warn(`Failed to prune phantom edge stub; source="${sourceFileId}", error="${errMsg}"`);
+        return Result.ko([new ErrorWithDetails(errMsg, 'McpToolError')]);
+      }
+
+      // Parse MCP response — result.content[0].text contains JSON from Mnemosyne
+      const parsed = this.parseMcpResponse(response);
+      if (parsed.status === 'deleted' || parsed.status === 'success') {
+        this.logger.info(`Phantom edge stub pruned: source="${sourceFileId}", target="${targetFileId}"`);
+        return Result.ok(undefined as unknown as void);
+      }
+
+      // If the edge didn't exist, that's also success (idempotent)
+      if (parsed.status === 'not_found' || parsed.status === 'already_deleted') {
+        this.logger.debug(`Phantom edge stub already absent: source="${sourceFileId}", target="${targetFileId}"`);
+        return Result.ok(undefined as unknown as void);
+      }
+
+      const errMsg =
+        typeof parsed.error === 'string'
+          ? parsed.error
+          : JSON.stringify(parsed) || 'Unexpected prune_phantom_edge_stub response';
+      this.logger.warn(`Unexpected prune response: source="${sourceFileId}", response="${errMsg}"`);
+      return Result.ko([new ErrorWithDetails(errMsg, 'UnexpectedMcpResponse')]);
+    } catch (error) {
+      this.logger.error(
+        `Failed to prune phantom edge stub: source="${sourceFileId}", error="${
+          error instanceof Error ? error.message : String(error)
+        }"`,
+      );
+      return Result.ko([
+        new ErrorWithDetails(
+          error instanceof Error ? error.message : String(error),
+          'PrunePhantomEdgeError',
+        ),
+      ]);
+    }
+  }
+
+  /**
    * Register a memory bank with a description via the registerMemoryBank MCP tool.
    *
    * @param name - Memory bank name

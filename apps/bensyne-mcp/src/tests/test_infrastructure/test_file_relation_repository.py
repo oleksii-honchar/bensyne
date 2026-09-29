@@ -390,6 +390,77 @@ class TestDeleteRelation:
 
 
 # ---------------------------------------------------------------------------
+# delete_relation_by_pair
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteRelationByPair:
+    """FileRelationRepository.delete_relation_by_pair prune operations."""
+
+    def test_delete_by_pair_with_relation_type(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        """Delete relation matching source/target/type."""
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        rel = _a_relation(
+            id="pair_rel",
+            source_file_id="f1",
+            target_file_id="f2",
+            relation_type=RelationType.DEPENDENCY,
+        )
+        repo.save_relation(rel)
+
+        delete_result = repo.delete_relation_by_pair("f1", "f2", RelationType.DEPENDENCY)
+        assert delete_result.is_ok is True
+        assert delete_result.value is True
+
+        get_result = repo.get_by_pair("f1", "f2", RelationType.DEPENDENCY)
+        assert get_result.is_ok is True
+        assert get_result.value is None
+
+    def test_delete_by_pair_all_types(
+        self, repo: FileRelationRepository, file_repo: FileRepository
+    ) -> None:
+        """Delete all relation types for a pair when no type specified."""
+        _seed_file(file_repo, "f1")
+        _seed_file(file_repo, "f2")
+        rel1 = _a_relation(
+            id="pair_rel_1",
+            source_file_id="f1",
+            target_file_id="f2",
+            relation_type=RelationType.DEPENDENCY,
+        )
+        rel2 = _a_relation(
+            id="pair_rel_2",
+            source_file_id="f1",
+            target_file_id="f2",
+            relation_type=RelationType.CROSS_REFERENCE,
+        )
+        repo.save_relation(rel1)
+        repo.save_relation(rel2)
+
+        delete_result = repo.delete_relation_by_pair("f1", "f2")
+        assert delete_result.is_ok is True
+        assert delete_result.value is True
+
+        get1 = repo.get_by_pair("f1", "f2", RelationType.DEPENDENCY)
+        get2 = repo.get_by_pair("f1", "f2", RelationType.CROSS_REFERENCE)
+        assert get1.is_ok is True
+        assert get2.is_ok is True
+        assert get1.value is None
+        assert get2.value is None
+
+    def test_delete_by_pair_no_match_returns_false(
+        self, repo: FileRelationRepository
+    ) -> None:
+        """No matching relation returns Result.ok(False)."""
+        delete_result = repo.delete_relation_by_pair("f_nonexistent", "f_other")
+        assert delete_result.is_ok is True
+        assert delete_result.value is False
+
+
+# ---------------------------------------------------------------------------
 # delete_relations_by_file_id
 # ---------------------------------------------------------------------------
 

@@ -1484,3 +1484,76 @@ class TestResolveFileRef:
         assert result.is_ok is True
         assert result.value is None
         file_repo.get_file_by_id.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# prune_phantom_edge_stub
+# ---------------------------------------------------------------------------
+
+
+class TestPrunePhantomEdgeStub:
+    """FileService.prune_phantom_edge_stub — delete a file relation by pair."""
+
+    def test_prunes_edge_by_pair_without_type(
+        self, service: FileService, relation_repo: MagicMock
+    ) -> None:
+        """Prunes all relation types for a pair when no type specified."""
+        relation_repo.delete_relation_by_pair.return_value = Result.ok(True)
+
+        result = service.prune_phantom_edge_stub("f1", "f2")
+
+        assert result.is_ok is True
+        assert result.value is True
+        relation_repo.delete_relation_by_pair.assert_called_once_with("f1", "f2", None)
+
+    def test_prunes_edge_by_pair_with_type(
+        self, service: FileService, relation_repo: MagicMock
+    ) -> None:
+        """Prunes only the specified relation type."""
+        relation_repo.delete_relation_by_pair.return_value = Result.ok(True)
+
+        result = service.prune_phantom_edge_stub("f1", "f2", RelationType.DECISION_NEXT)
+
+        assert result.is_ok is True
+        assert result.value is True
+        relation_repo.delete_relation_by_pair.assert_called_once_with(
+            "f1", "f2", RelationType.DECISION_NEXT
+        )
+
+    def test_prune_returns_false_when_no_match(
+        self, service: FileService, relation_repo: MagicMock
+    ) -> None:
+        """Returns ok(False) when no matching relation existed."""
+        relation_repo.delete_relation_by_pair.return_value = Result.ok(False)
+
+        result = service.prune_phantom_edge_stub("f1", "f2")
+
+        assert result.is_ok is True
+        assert result.value is False
+
+    def test_prune_propagates_repo_errors(
+        self, service: FileService, relation_repo: MagicMock
+    ) -> None:
+        """Propagates repo errors."""
+        relation_repo.delete_relation_by_pair.return_value = Result.ko(
+            [ErrorWithDetails("RELATION_DELETE_BY_PAIR_ERROR", {})]
+        )
+
+        result = service.prune_phantom_edge_stub("f1", "f2")
+
+        assert result.is_ok is False
+        assert result.errors[0].error_code == "RELATION_DELETE_BY_PAIR_ERROR"
+
+    def test_prune_logs_structured_info(
+        self, service: FileService, relation_repo: MagicMock, logger_mock: LoggerMock
+    ) -> None:
+        """Emits structured log."""
+        relation_repo.delete_relation_by_pair.return_value = Result.ok(True)
+
+        service.prune_phantom_edge_stub("f1", "f2", RelationType.DECISION_NEXT)
+
+        info_entries = [e for e in logger_mock.entries if e.get("level") == "info"]
+        prune_log = [e for e in info_entries if e.get("event") == "Pruning phantom edge stub"]
+        assert len(prune_log) == 1
+        assert prune_log[0].get("method") == "prune_phantom_edge_stub"
+        assert prune_log[0].get("service") == "file_service"

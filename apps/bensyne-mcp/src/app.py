@@ -584,6 +584,41 @@ def register_tools(
             router, {"memory_bank": memory_bank}, container
         )
 
+    @mcp.tool(name="prune_phantom_edge_stub")
+    async def prune_phantom_edge_stub(
+        source_file_id: Annotated[
+            str,
+            "Required. The source file id of the edge to delete.",
+        ],
+        target_file_id: Annotated[
+            str,
+            "Required. The target file id of the edge to delete.",
+        ],
+        memory_bank: Annotated[str, _MEMORY_BANK_FILE_DESC],
+        relation_type: Annotated[
+            str | None,
+            "Optional. The relation type to prune (e.g. 'decision_next'). "
+            "If not specified, all relation types for the source/target pair are deleted.",
+        ] = None,
+    ):
+        """Delete a file relation (edge) by source_file_id and target_file_id.
+        
+        When to use: called by racochu to prune ghost edges (relations to files
+        that no longer exist). If the relation_type is specified, only that edge
+        type is deleted; otherwise all edge types for the pair are deleted.
+        
+        Returns True if a relation was deleted, False if no matching relation
+        was found (idempotent).
+        """
+        args = {
+            "source_file_id": source_file_id,
+            "target_file_id": target_file_id,
+            "memory_bank": memory_bank,
+        }
+        if relation_type is not None:
+            args["relation_type"] = relation_type
+        return await handlers.handle_prune_phantom_edge_stub(router, args, container)
+
     @mcp.tool(name="getPersonaEntryNode")
     async def get_persona_entry_node(memory_bank: Annotated[str, _PERSONA_BANK_READ_DESC]):
         """Return a persona bank's decision-tree entry node and its file_id.
