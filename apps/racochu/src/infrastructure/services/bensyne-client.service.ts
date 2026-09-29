@@ -711,13 +711,13 @@ export class BensyneClient implements OnApplicationBootstrap {
 
       // Parse MCP response — result.content[0].text contains JSON from Mnemosyne
       const parsed = this.parseMcpResponse(response);
-      if (parsed.status === 'deleted' || parsed.status === 'success') {
+      if (parsed.success === true) {
         this.logger.info(`Phantom edge stub pruned: source="${sourceFileId}", target="${targetFileId}"`);
         return Result.ok(undefined as unknown as void);
       }
 
       // If the edge didn't exist, that's also success (idempotent)
-      if (parsed.status === 'not_found' || parsed.status === 'already_deleted') {
+      if (parsed.success === false) {
         this.logger.debug(`Phantom edge stub already absent: source="${sourceFileId}", target="${targetFileId}"`);
         return Result.ok(undefined as unknown as void);
       }

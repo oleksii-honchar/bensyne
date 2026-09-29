@@ -607,8 +607,8 @@ def register_tools(
         that no longer exist). If the relation_type is specified, only that edge
         type is deleted; otherwise all edge types for the pair are deleted.
         
-        Returns True if a relation was deleted, False if no matching relation
-        was found (idempotent).
+        Returns {"success": true} if a relation was deleted,
+        {"success": false} if no matching relation was found (idempotent).
         """
         args = {
             "source_file_id": source_file_id,
@@ -617,7 +617,8 @@ def register_tools(
         }
         if relation_type is not None:
             args["relation_type"] = relation_type
-        return await handlers.handle_prune_phantom_edge_stub(router, args, container)
+        result = await handlers.handle_prune_phantom_edge_stub(router, args, container)
+        return {"success": bool(result)}
 
     @mcp.tool(name="getPersonaEntryNode")
     async def get_persona_entry_node(memory_bank: Annotated[str, _PERSONA_BANK_READ_DESC]):
