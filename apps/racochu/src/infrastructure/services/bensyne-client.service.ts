@@ -623,9 +623,8 @@ export class BensyneClient implements OnApplicationBootstrap {
       const parsed = this.parseMcpResponse(response);
 
       this.logger.debug(`expandFileRelations parsed response keys; fileId="${fileId}", keys=${Object.keys(parsed).join(',')}`);
-      const edgesCount = parsed.edges && Array.isArray(parsed.edges) ? parsed.edges.length : 'undefined';
-      this.logger.debug(`expandFileRelations parsed response; fileId="${fileId}", status="${parsed.status}", edges=${edgesCount}`);
 
+      // Check for error status (MCP error format)
       if (parsed.status === 'error') {
         const errMsg =
           (typeof parsed.message === 'string' ? parsed.message : JSON.stringify(parsed.message)) ||
@@ -634,19 +633,23 @@ export class BensyneClient implements OnApplicationBootstrap {
         return Result.ko([new ErrorWithDetails(errMsg, 'ExpandRelationsError')]);
       }
 
-      const rawEdges = parsed.edges ?? [];
+      // The server returns { source_file, related_files } — not { status, edges }
+      const relatedFiles = parsed.related_files ?? [];
       const edges: Array<{ source_file_id: string; target_file_id: string; relation_type: string }> =
-        Array.isArray(rawEdges)
-          ? rawEdges.flatMap((raw): Array<{ source_file_id: string; target_file_id: string; relation_type: string }> => {
+        Array.isArray(relatedFiles)
+          ? relatedFiles.flatMap((raw): Array<{ source_file_id: string; target_file_id: string; relation_type: string }> => {
               if (typeof raw !== 'object' || raw === null) return [];
               const item = raw as Record<string, unknown>;
-              const srcId = item.source_file_id ?? item.source ?? null;
-              const tgtId = item.target_file_id ?? item.target ?? null;
-              const relType = item.relation_type ?? item.type ?? null;
-              if (typeof srcId !== 'string' || typeof tgtId !== 'string' || typeof relType !== 'string') {
+              // Each related file has a nested 'file' object with id, path, relation_type
+              const fileObj = item.file;
+              if (typeof fileObj !== 'object' || fileObj === null) return [];
+              const fileItem = fileObj as Record<string, unknown>;
+              const tgtId = fileItem.id ?? null;
+              const relType = fileItem.relation_type ?? null;
+              if (typeof tgtId !== 'string' || typeof relType !== 'string') {
                 return [];
               }
-              return [{ source_file_id: srcId, target_file_id: tgtId, relation_type: relType }];
+              return [{ source_file_id: fileId, target_file_id: tgtId, relation_type: relType }];
             })
           : [];
 
