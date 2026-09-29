@@ -420,6 +420,135 @@ class TestMaterializeDanglingEdge:
 
 
 # ===================================================================
+# materialize_file_context — edge target resolution (ghost-edge fix)
+# ===================================================================
+
+
+class TestMaterializeEdgeTargetResolution:
+    """Edges whose target_path is a RELATIVE path_handle must resolve to the
+    real (absolute-path-keyed) record, not a phantom PENDING stub (the
+    ghost-edge corruption that broke persona traversal). Absolute target_paths
+    keep the legacy derive-based behavior."""
+
+    ABS_TARGET = "/Users/dev/projects/agent-rules-n-skills/agent-personas/worker/10-understand/10-identify-behaviors.md"
+    REL_TARGET = "worker/10-understand/10-identify-behaviors.md"
+    ABS_SOURCE = "/Users/dev/projects/agent-rules-n-skills/agent-personas/worker/00-entry.md"
+    REL_SOURCE = "worker/00-entry.md"
+
+    def _materialize_real_target(self, service: FileService) -> str:
+        """Ingest the real target under its absolute path, carrying the
+        producer-emitted relative path_handle in metadata."""
+        target_context = _context(
+            path=self.ABS_TARGET,
+            summary="Real target.",
+            edges=[],
+            extra={"path_handle": self.REL_TARGET},
+        )
+        result = service.materialize_file_context(BANK, target_context, "mem_target")
+        assert result.is_ok is True
+        return derive_file_id(BANK, self.ABS_TARGET)
+
+    def _outbound_decision_next(
+        self, service: FileService, source_id: str
+    ) -> list[FileRelation]:
+        relations = service.relation_repository.get_relations_by_file_id(source_id)
+        return [
+            r
+            for r in relations.value  # type: ignore[union-attr]
+            if r.source_file_id == source_id and r.relation_type == RelationType.DECISION_NEXT
+        ]
+
+    def test_relative_handle_edge_resolves_to_real_record_not_ghost(
+        self, service: FileService
+    ) -> None:
+        real_id = self._materialize_real_target(service)
+        ghost_id = derive_file_id(BANK, self.REL_TARGET)
+        assert real_id != ghost_id  # the two id spaces differ — the corruption's basis
+
+        source_context = _context(
+            path=self.ABS_SOURCE,
+            edges=[
+                {
+                    "target_path": self.REL_TARGET,
+                    "relation_type": "decision_next",
+                    "strength": 1,
+                    "description": "task/spec/decisions/plan read",
+                }
+            ],
+            extra={"path_handle": self.REL_SOURCE},
+        )
+        result = service.materialize_file_context(BANK, source_context, "mem_entry")
+        assert result.is_ok is True
+
+        source_id = derive_file_id(BANK, self.ABS_SOURCE)
+        outbound = self._outbound_decision_next(service, source_id)
+        # The edge points at the REAL record, not the phantom relative-derived id.
+        assert len(outbound) == 1
+        assert outbound[0].target_file_id == real_id
+
+        # No phantom PENDING stub exists at the relative-derived id.
+        ghost = service.file_repository.get_file_by_id(ghost_id)
+        assert ghost.is_ok and ghost.value is None
+
+    def test_reingest_repairs_previously_created_ghost_stub(
+        self, service: FileService
+    ) -> None:
+        # Phase 1 — reproduce the corruption: source materialized BEFORE the
+        # target exists, with a relative-handle edge → phantom PENDING stub.
+        source_context = _context(
+            path=self.ABS_SOURCE,
+            edges=[
+                {
+                    "target_path": self.REL_TARGET,
+                    "relation_type": "decision_next",
+                    "strength": 1,
+                    "description": "task/spec/decisions/plan read",
+                }
+            ],
+            extra={"path_handle": self.REL_SOURCE},
+        )
+        assert service.materialize_file_context(BANK, source_context, "mem_entry").is_ok is True
+        ghost_id = derive_file_id(BANK, self.REL_TARGET)
+        ghost = service.file_repository.get_file_by_id(ghost_id)
+        assert ghost.is_ok and ghost.value is not None
+        assert ghost.value.status == FileStatus.PENDING
+        assert ghost.value.source_type == SourceType.UNKNOWN
+
+        # Phase 2 — the real target is ingested on its own materialize.
+        real_id = self._materialize_real_target(service)
+
+        # Phase 3 — re-ingest the source (hash change forces rebuild) with the
+        # same relative-handle edge: the relation must now point at the real
+        # record and the phantom stub must be pruned (DELETED cascade).
+        reingest = _context(
+            path=self.ABS_SOURCE,
+            file_hash=OTHER_HASH,
+            edges=[
+                {
+                    "target_path": self.REL_TARGET,
+                    "relation_type": "decision_next",
+                    "strength": 1,
+                    "description": "task/spec/decisions/plan read",
+                }
+            ],
+            extra={"path_handle": self.REL_SOURCE},
+        )
+        result = service.materialize_file_context(BANK, reingest, "mem_entry_2")
+        assert result.is_ok is True
+        assert result.value["rebuilt"] is True  # type: ignore[index]
+
+        source_id = derive_file_id(BANK, self.ABS_SOURCE)
+        outbound = self._outbound_decision_next(service, source_id)
+        assert len(outbound) == 1
+        assert outbound[0].target_file_id == real_id
+
+        # Phantom stub pruned: gone, or reduced to a DELETED tombstone.
+        ghost_after = service.file_repository.get_file_by_id(ghost_id)
+        assert ghost_after.is_ok
+        assert ghost_after.value is None or ghost_after.value.status == FileStatus.DELETED
+
+
+# ===================================================================
 # materialize_file_context — hash-change rebuild (D5 / spec §4.3)
 # ===================================================================
 

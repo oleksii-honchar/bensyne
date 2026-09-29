@@ -451,15 +451,30 @@ class FileService:
             #     aggregate's chunk list is reset to empty, so subsequent
             #     chunks see len(chunks)==0 and skip the rebuild.
             rebuilt = False
-            if chunks is not None and len(chunks) > 0:
+            # A re-ingest is a HASH CHANGE, not merely "file has chunks": a
+            # dedup-hit re-materialization (identical file_hash) must stay
+            # event-silent (D14) and keep its rows. When the stored or incoming
+            # hash is absent there is nothing to compare — no rebuild.
+            if (
+                chunks is not None
+                and len(chunks) > 0
+                and context.file_hash is not None
+                and file.hash is not None
+                and context.file_hash != file.hash
+            ):
                 # All existing chunks are stale — prune them via rebuild.
                 rebuild_result = self.rebuild_projection(file_id, set())
                 if rebuild_result.is_ko:
                     errors.extend(rebuild_result.errors)
                     return Result.ko(errors, events=events)  # type: ignore[return-value]
                 rebuilt = True
-                # Reset chunks list since rebuild pruned them all.
+                # Reset chunks AND relations — rebuild_projection deleted both
+                # from the DB; the caller recreates them from the incoming
+                # contract data (restoring the stale snapshot here would
+                # resurrect pruned relations, since _persist_relations only
+                # upserts and never prunes stale rows).
                 chunks = []
+                relations = []
 
             # 3a. Resurrect DELETED → INDEXED (D21), or mark PENDING → INDEXED.
             if file.status != FileStatus.INDEXED:
@@ -502,8 +517,17 @@ class FileService:
             file = tags_result.value
             events.extend(tags_result.events)
 
-            chunks = aggregate_loaded.chunks
-            relations = aggregate_loaded.relations
+            # On the NON-rebuild path only, restore the loaded child lists for
+            # in-place updates. After a rebuild both collections were pruned
+            # (rebuild_projection deletes the file's chunks AND relations) and
+            # must stay empty so the caller recreates them from the incoming
+            # contract data — restoring the stale in-memory snapshot here would
+            # resurrect pruned relations (they survive persist because
+            # _persist_relations only upserts, never prunes stale rows),
+            # re-introducing ghost edges after re-ingest.
+            if not rebuilt:
+                chunks = aggregate_loaded.chunks
+                relations = aggregate_loaded.relations
 
         # 4. Upsert the chunk into the aggregate (D19a).
         parent_ref = context.parent_unit.ref if context.parent_unit else None
@@ -537,34 +561,40 @@ class FileService:
         aggregate = upsert_chunk_result.value
         events.extend(upsert_chunk_result.events)
 
-        # 4b. total_chunks is projection state — re-aggregate it from the file's
-        #     actual chunk set (the source of truth), never the producer's
-        #     contract claim. Count from the database, not the in-memory
-        #     aggregate list, because the aggregate list may not include
-        #     chunks that were deduplicated (already in the database).
-        chunk_count_result = self.chunk_repository.get_chunks_by_file_id(file_id)
-        if chunk_count_result.is_ko:
-            errors.extend(chunk_count_result.errors)
-            return Result.ko(errors, events=events)  # type: ignore[return-value]
-        actual_total = len(chunk_count_result.value)
-        if aggregate.file.total_chunks != actual_total:
-            recompute_result = aggregate.file.update_metadata(total_chunks=actual_total)
-            if recompute_result.is_ko:
-                errors.extend(recompute_result.errors)
-                return Result.ko(errors, events=events)  # type: ignore[return-value]
-            aggregate = FileMetadata(
-                file=recompute_result.value,
-                chunks=aggregate.chunks,
-                relations=aggregate.relations,
-            )
-            events.extend(recompute_result.events)
-
-        # 5. Per edge: stub-upsert target File (D4), then upsert relation (D19b).
+        # 5. Per edge: resolve target through the D-2 chain (D-2, spec §4),
+        #    stub-upsert only when unresolved (D4), then upsert relation (D19b).
         relations_created = 0
         for edge in context.edges_list or []:
-            target_file_id = derive_file_id(bank, edge.target_path)
+            # The producer emits edge.target_path as a RELATIVE path_handle
+            # (e.g. "worker/10-understand/10-identify-behaviors.md"), while the
+            # real target file is keyed by its ABSOLUTE path. Deriving from the
+            # raw handle alone hashes to a DIFFERENT id than the real file and
+            # fabricates a phantom PENDING stub (the ghost-edge corruption that
+            # broke persona traversal). Resolve the handle through the D-2 chain
+            # (file_id → path_handle exact → path suffix) BEFORE deriving, so
+            # edges point at the real record. Unresolved targets fall back to
+            # the deterministic derived id — legacy ABSOLUTE target_paths hash
+            # to the real file's id there (real files are keyed by absolute
+            # path), so both producer forms are handled.
+            resolved_target = self.resolve_file_ref(None, edge.target_path)
+            if resolved_target.is_ko:
+                errors.extend(resolved_target.errors)
+                continue
+            real_target = resolved_target.value
+            derived_target_id = derive_file_id(bank, edge.target_path)
+            if real_target is not None:
+                target_file_id = real_target.id
+            else:
+                target_file_id = derived_target_id
 
-            # Stub-upsert: missing targets get a PENDING stub (D4).
+            # Self-healing: when an edge resolves to a real file but a phantom
+            # PENDING/unknown stub was previously fabricated at the derived id,
+            # prune the dead stub (DELETED cascade) so it stops lingering as an
+            # empty record that traversal could otherwise land on.
+            if real_target is not None and target_file_id != derived_target_id:
+                self._prune_phantom_edge_stub(derived_target_id)
+
+            # Stub-upsert: unresolved targets get a PENDING stub (D4).
             stub_read = self.file_repository.get_file_by_id(target_file_id)
             if stub_read.is_ko:
                 errors.extend(stub_read.errors)
@@ -624,6 +654,34 @@ class FileService:
             errors.extend(persist_result.errors)
             return Result.ko(errors, events=events)  # type: ignore[return-value]
 
+        # 6b. total_chunks is projection state — re-aggregate it from the
+        #     file's ACTUAL chunk set (the source of truth) AFTER persist,
+        #     never the producer's contract claim. Counting pre-persist would
+        #     see the pre-write row count (0 on a fresh file) and persist a
+        #     stale total_chunks that the next identical re-materialization
+        #     would then "fix" with a spurious event — breaking the D14
+        #     event-silence contract. Post-persist reconciliation keeps the
+        #     first pass correct and later passes event-silent.
+        chunk_count_result = self.chunk_repository.get_chunks_by_file_id(file_id)
+        if chunk_count_result.is_ko:
+            errors.extend(chunk_count_result.errors)
+            return Result.ko(errors, events=events)  # type: ignore[return-value]
+        actual_total = len(chunk_count_result.value)
+        if aggregate.file.total_chunks != actual_total:
+            recompute_result = aggregate.file.update_metadata(total_chunks=actual_total)
+            if recompute_result.is_ko:
+                errors.extend(recompute_result.errors)
+                return Result.ko(errors, events=events)  # type: ignore[return-value]
+            reconcile_persist = self._persist(
+                FileMetadata(file=recompute_result.value, chunks=[], relations=[]),
+                write_chunks=False,
+                write_relations=False,
+            )
+            if reconcile_persist.is_ko:
+                errors.extend(reconcile_persist.errors)
+                return Result.ko(errors, events=events)  # type: ignore[return-value]
+            events.extend(recompute_result.events)
+
         payload = {
             "file_id": file_id,
             "relations_created": relations_created,
@@ -639,6 +697,31 @@ class FileService:
             )
             return Result.ko(errors, events=events)  # type: ignore[return-value]
         return Result.ok(payload, events=events)
+
+    def _prune_phantom_edge_stub(self, file_id: str) -> None:
+        """Best-effort delete of a phantom PENDING/unknown stub superseded by a real file.
+
+        Called during materialization when an edge target now resolves to a
+        real file but an empty stub was previously fabricated at the derived id
+        (the ghost-edge corruption). Only PENDING/unknown stubs are pruned — a
+        real INDEXED file is never touched. Failures are non-fatal (logged,
+        swallowed): the orphaned stub is harmless once no relation points at it
+        and can be cleaned on a later pass.
+        """
+        read_result = self.file_repository.get_file_by_id(file_id)
+        if read_result.is_ko or read_result.value is None:
+            return
+        stub = read_result.value
+        if stub.status != FileStatus.PENDING or stub.source_type != SourceType.UNKNOWN:
+            return
+        delete_result = self.delete_file(file_id)
+        if delete_result.is_ko:
+            self._log_info(
+                "Failed to prune superseded phantom edge stub",
+                method="_prune_phantom_edge_stub",
+                file_id=file_id,
+                error=[e.error_code for e in delete_result.errors],
+            )
 
     def rebuild_projection(self, file_id: str, keep_memory_ids: set[str]) -> Result[None]:
         """Rebuild a file's projection after a content change (spec §4.3, D5).
