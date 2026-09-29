@@ -22,6 +22,7 @@ import {
 } from './agent-session-chunking.strategy';
 import { MastraChunkingService } from './mastra-chunking.service';
 import { aMastraChunkingService } from './mastra-chunking.service.test-utils';
+import { EdgeDistributionService } from './edge-distribution.service';
 
 /** Creates a file with the given content (mkdirs parents). Returns absolute path. */
 function writeFile(base: string, rel: string, content: string): string {
@@ -504,6 +505,10 @@ describe('buildCrossReferenceEdgesSafe (D42 §2.2 safe wrapper)', () => {
     const sut = new AgentSessionChunkingStrategy(
       aSessionMetadataService() as unknown as SessionMetadataService,
       aMastraChunkingService() as unknown as MastraChunkingService,
+      {
+        distributeEdges: jest.fn((_edges: unknown, chunks: unknown) => chunks),
+        validateAndRedistribute: jest.fn((chunks: unknown) => chunks),
+      } as unknown as EdgeDistributionService,
       aLogger(),
     );
 

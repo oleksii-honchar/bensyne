@@ -15,6 +15,7 @@ import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BensyneRememberDto } from '../infrastructure/dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
+import { RememberRequestSerializer } from '../infrastructure/mnemosyne/remember-request.serializer';
 import { ErrorWithDetails } from '../utils/error-with-details';
 import { Result } from '../utils/result';
 import { ChunkContentParams, ChunkContentUseCase } from './chunk-content.use-case';
@@ -30,6 +31,8 @@ const sha256 = (text: string) => realCrypto.createHash('sha256').update(text).di
 
 const defaultEnhancementConfig: EnhancementConfig = {
   maxCharacters: { prose: 200, code: 400, configuration: 300, documentation: 300 },
+  maxChunkBytes: 8000,
+  serverRequestBodyLimit: 8000,
   importance: {
     enabled: true,
     defaultScore: 0.5,
@@ -1119,6 +1122,88 @@ describe('ChunkContentUseCase', () => {
       expect(chunk.metadata?.fileHash).toBe('file-hash-abc');
       expect(chunk.metadata?.hardwareId).toBe('hw-id');
       expect(chunk.metadata?.chunkHash).toBe(sha256(textA));
+    });
+  });
+
+  describe('byte-safe clamping (serverRequestBodyLimit + edge stripping)', () => {
+    it('splits an oversized chunk but bounds fragments at the configured limit and keeps edges only on the first fragment', async () => {
+      const serializer = new RememberRequestSerializer();
+      const edges: FileEdge[] = [
+        { target_path: 'folder/a.md', relation_type: 'decision_next', strength: 1.0, description: '' },
+        { target_path: 'folder/b.md', relation_type: 'folder_hierarchy', strength: 1.0, description: 'branch' },
+      ];
+      // 5000 Cyrillic chars = 10000 UTF-8 bytes → serialized request well over
+      // the configured serverRequestBodyLimit (8000), forcing the clamp.
+      const bigText = 'Ж'.repeat(5000);
+      const oversized = aContentChunk({
+        text: bigText,
+        edges,
+        metadata: { 'persona.node_id': '00-entry', filePath: '/p/00-entry.md' },
+      });
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok([oversized]));
+
+      const result = await useCase.execute({
+        content: bigText,
+        filePath: '/p/00-entry.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      // Splitting a 10000-byte text at an 8000-byte budget yields a small,
+      // bounded number of fragments — never a per-character explosion.
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks.length).toBeLessThan(20);
+
+      // Every emitted fragment fits the configured wire limit (8000).
+      for (const chunk of chunks) {
+        const bytes = Buffer.byteLength(serializer.buildAndSerialize(chunk), 'utf8');
+        expect(bytes).toBeLessThanOrEqual(8000);
+      }
+
+      // Only the first fragment keeps the node's edges; later fragments are
+      // byte-splits of the same node and must not re-duplicate the envelope.
+      expect(chunks[0].edges).toEqual(edges);
+      for (const chunk of chunks.slice(1)) {
+        expect(chunk.edges).toBeUndefined();
+      }
+
+      // Text is preserved across fragments.
+      expect(chunks.map(c => c.text).join('')).toBe(bigText);
+    });
+
+    it('does not clamp chunks that fit within the configured serverRequestBodyLimit', async () => {
+      const serializer = new RememberRequestSerializer();
+      const edges: FileEdge[] = [
+        { target_path: 'folder/a.md', relation_type: 'decision_next', strength: 1.0, description: '' },
+      ];
+      // Small single-node chunk with a modest envelope — must pass through
+      // unclamped (the pre-fix hardcoded 4000 limit would have split this into
+      // multiple fragments and duplicated the envelope onto each).
+      const smallText = 'Enter the threads operator decision tree.\n'.repeat(20);
+      const chunk = aContentChunk({ text: smallText, edges });
+      mockStrategy.chunkFile.mockResolvedValue(Result.ok([chunk]));
+
+      const result = await useCase.execute({
+        content: smallText,
+        filePath: '/p/00-entry.md',
+        sourceId: 'test-source',
+        memoryBank: 'test-memoryBank',
+        sourceConfig: defaultSourceConfig,
+        skipEnrichment: true,
+      });
+
+      expect(result.isOk()).toBe(true);
+      const chunks = result.getValue();
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].text).toBe(smallText);
+      expect(chunks[0].edges).toEqual(edges);
+      expect(
+        Buffer.byteLength(serializer.buildAndSerialize(chunks[0]), 'utf8'),
+      ).toBeLessThanOrEqual(8000);
     });
   });
 });

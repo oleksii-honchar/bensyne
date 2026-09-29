@@ -182,7 +182,12 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
 
     // Clamp oversized chunks (UTF-8 byte limit for Cyrillic text).
     // Measure the serialized request body size, not just the chunk text.
-    const MAX_REQUEST_BYTES = 4000; // Leave margin for metadata variations
+    // Use the CONFIGURED serverRequestBodyLimit (matches the Mnemosyne wire
+    // limit enforced in bensyne-client.service.ts). The previous hardcoded 4000
+    // sat below the configured 8000 and, combined with the full envelope
+    // (edges + metadata) being duplicated onto every clamp fragment, exploded
+    // small texts into hundreds of near-empty chunks.
+    const MAX_REQUEST_BYTES = enhancementConfig.serverRequestBodyLimit ?? 8000;
     let allChunks: ContentChunk[] = [];
     let chunkIndex = 0;
     for (const chunk of finalChunks) {
@@ -232,6 +237,14 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
    * Clamps a chunk to stay under the request body limit by splitting the text
    * at safe boundaries (paragraph, sentence, or byte) and measuring each split
    * against the actual serialized request body size.
+   *
+   * The clamp splits ONE logical chunk into byte-sized fragments. The edge
+   * envelope (edges describing this node's relations) is kept ONLY on the
+   * first fragment — fragments are pieces of the same node, not independent
+   * nodes, so duplicating the full envelope onto every fragment (previously
+   * the behavior of createClampedChunk copying chunk.toJson()) both wasted
+   * bytes and, with a large envelope, shrunk the text budget to a few
+   * characters per fragment, exploding one chunk into hundreds.
    */
   private clampChunkToRequestBody(chunk: ContentChunk, maxRequestBytes: number): ContentChunk[] {
     const text = chunk.text;
@@ -243,7 +256,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     while (low < high) {
       const mid = Math.floor((low + high + 1) / 2);
       const testContent = text.substring(0, mid);
-      const testChunk = this.createClampedChunk(chunk, testContent);
+      const testChunk = this.createClampedChunk(chunk, testContent, true);
 
       const serialized = this.serializer.buildAndSerialize(testChunk);
       const serializedBytes = Buffer.byteLength(serialized, 'utf8');
@@ -268,16 +281,18 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     const fits = text.substring(0, low);
     const remainder = text.substring(low);
 
-    const chunks: ContentChunk[] = [this.createClampedChunk(chunk, fits)];
+    // First fragment keeps the node's edges; later fragments carry none.
+    const chunks: ContentChunk[] = [this.createClampedChunk(chunk, fits, true)];
 
     // If there's remainder, create a new chunk for it
     if (remainder.length > 0) {
       // Trim leading whitespace from remainder
       const trimmedRemainder = remainder.trimStart();
       if (trimmedRemainder.length > 0) {
-        // Recursively clamp the remainder
+        // Recursively clamp the remainder (edges stripped — already owned by
+        // the first fragment).
         const remainderChunks = this.clampChunkToRequestBody(
-          this.createClampedChunk(chunk, trimmedRemainder),
+          this.createClampedChunk(chunk, trimmedRemainder, false),
           maxRequestBytes,
         );
         chunks.push(...remainderChunks);
@@ -287,12 +302,19 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     return chunks;
   }
 
-  private createClampedChunk(originalChunk: ContentChunk, text: string): ContentChunk {
+  private createClampedChunk(originalChunk: ContentChunk, text: string, keepEdges: boolean): ContentChunk {
     // Copy metadata from original chunk
     const metadata = originalChunk.metadata ? { ...originalChunk.metadata } : {};
     const chunkProps = originalChunk.toJson();
     chunkProps.text = text;
     chunkProps.metadata = metadata;
+    if (!keepEdges) {
+      // Fragments after the first are byte-splits of the same node — the edge
+      // envelope belongs to the node once, on the first fragment. Stripping
+      // here (undefined ⇒ toJson omits the key) prevents the envelope from
+      // being duplicated onto every fragment.
+      chunkProps.edges = undefined;
+    }
     return ContentChunk.of(chunkProps).getValue();
   }
 }

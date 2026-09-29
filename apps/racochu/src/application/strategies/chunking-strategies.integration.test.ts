@@ -282,6 +282,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     extract: jest.MockedFunction<(sessionPath: string) => Promise<MockResult<SessionMetadata>>>;
   };
   let mockMastra: jest.Mocked<MastraChunkingService>;
+  let mockEdgeDistribution: jest.Mocked<EdgeDistributionService>;
   let mockLogger: BasePinoLogger;
 
   const realSessionMetadata: SessionMetadata = {
@@ -293,6 +294,10 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     jest.clearAllMocks();
     mockLogger = createMockLogger();
     mockMastra = createMockMastraChunkingService();
+    mockEdgeDistribution = {
+      distributeEdges: jest.fn((_edges, chunks) => chunks),
+      validateAndRedistribute: jest.fn(chunks => chunks),
+    } as unknown as jest.Mocked<EdgeDistributionService>;
 
     mockSessionMetadataService = {
       extract: jest.fn().mockResolvedValue(okResult(realSessionMetadata)),
@@ -301,6 +306,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
   });
@@ -312,6 +318,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
@@ -342,6 +349,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
@@ -379,6 +387,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
@@ -402,6 +411,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
@@ -423,6 +433,7 @@ describe('AgentSessionChunkingStrategy with real session.md', () => {
     sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
@@ -928,9 +939,13 @@ describe('Cross-file traversal — non-md target integration (all source types)'
     const mockSessionMetadataService = {
       extract: jest.fn().mockResolvedValue(okResult(integrationSessionMetadata)),
     };
+    // Use the REAL EdgeDistributionService so distributed cross_reference edges
+    // actually land on chunks (a pass-through mock would silently drop them).
+    const mockEdgeDistribution = new EdgeDistributionService(mockLogger);
     const sut = new AgentSessionChunkingStrategy(
       mockSessionMetadataService as unknown as SessionMetadataService,
       mockMastra,
+      mockEdgeDistribution,
       mockLogger,
     );
 
