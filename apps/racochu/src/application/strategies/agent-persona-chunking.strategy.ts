@@ -271,6 +271,7 @@ export function formatPersonaNodeMetadata(meta: PersonaNodeMetadata): Record<str
     'persona.entry': String(meta.entry),
     'persona.conditions': JSON.stringify(meta.conditions),
     'persona.veto': JSON.stringify(meta.veto),
+    'persona.edges': JSON.stringify(meta.edges),
   };
   if (meta.created !== undefined) {
     result['persona.created'] = meta.created;
