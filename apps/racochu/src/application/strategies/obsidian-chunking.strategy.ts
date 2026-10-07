@@ -188,7 +188,10 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     // 1. Split frontmatter from body
     const { frontmatter, body } = splitFrontmatter(content);
 
-    // 2. Extract wikilinks from body (body-derived, independent of frontmatter)
+    // 2. Derive note title from filename (for FTS5 searchability via tags)
+    const noteTitle = path.basename(filePath).replace(/\.md$/i, '');
+
+    // 3. Extract wikilinks from body (body-derived, independent of frontmatter)
     const wikilinks = extractWikilinks(body);
 
     // 3. Resolve wikilinks to existence-gated backlink edges against the watch-source root (ADR-T4)
@@ -201,7 +204,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     const chunks: ContentChunk[] = [];
     if (frontmatter !== null) {
       // noteMetadata is non-null here because frontmatter exists
-      chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, noteMetadata!));
+      chunks.push(this.createFrontmatterChunk(frontmatter, filePath, sourceId, noteMetadata!, noteTitle));
     }
 
     // 6. Chunk body with Mastra. The optional `options` override (at least
@@ -217,7 +220,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     // 7. Enrich all chunks with note metadata and merge tags
     const allChunks = [...chunks, ...bodyChunks];
     const enriched = noteMetadata
-      ? allChunks.map(chunk => this.enrichWithNoteMetadata(chunk, noteMetadata))
+      ? allChunks.map(chunk => this.enrichWithNoteMetadata(chunk, noteMetadata, noteTitle))
       : allChunks;
 
     // 8. Attach wikilinks (legacy key) + resolved edges to all chunks (only when non-empty)
@@ -244,6 +247,7 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
     filePath: string,
     sourceId: string,
     noteMetadata: NoteMetadata,
+    noteTitle: string,
   ): ContentChunk {
     return ContentChunk.of({
       id: generateId(),
@@ -260,21 +264,21 @@ export class ObsidianChunkingStrategy implements BaseChunkingStrategy {
         ...formatNoteMetadata(noteMetadata),
       },
       importance: 0.9,
-      tags: ['frontmatter', 'metadata', 'obsidian-note', ...noteMetadata.tags],
+      tags: ['frontmatter', 'metadata', 'obsidian-note', noteTitle, ...noteMetadata.tags],
       memoryBank: 'default',
     }).getValue();
   }
 
-  private enrichWithNoteMetadata(chunk: ContentChunk, noteMetadata: NoteMetadata): ContentChunk {
+  private enrichWithNoteMetadata(chunk: ContentChunk, noteMetadata: NoteMetadata, noteTitle: string): ContentChunk {
     const existingMeta = chunk.metadata ?? {};
     const enrichedMeta = {
       ...existingMeta,
       ...formatNoteMetadata(noteMetadata),
     };
 
-    // Merge note tags into chunk tags, avoiding duplicates
+    // Merge note title + note tags into chunk tags, avoiding duplicates
     const existingTags = chunk.tags ?? [];
-    const mergedTags = [...new Set([...existingTags, ...noteMetadata.tags])];
+    const mergedTags = [...new Set([noteTitle, ...existingTags, ...noteMetadata.tags])];
 
     return ContentChunk.of({
       ...chunk.toJson(),

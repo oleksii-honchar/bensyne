@@ -1422,3 +1422,109 @@ describe('ObsidianChunkingStrategy.chunkFile with ADR-T4 existence-gated edges',
     }
   });
 });
+
+describe('ObsidianChunkingStrategy note title in tags (FTS5 searchability)', () => {
+  let fixture: ObsidianVaultFixture;
+  let sut: ObsidianChunkingStrategy;
+  let mockLogger: BasePinoLogger;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fixture = createObsidianVaultFixture();
+    mockLogger = aLogger();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it('adds note title (filename without .md) to frontmatter chunk tags', async () => {
+    const root = fixture.root;
+    const bodyChunk = aBodyChunk();
+    const mockMastra = aMastraChunkingService([bodyChunk]);
+    sut = new ObsidianChunkingStrategy(mockMastra as unknown as MastraChunkingService, mockLogger);
+
+    const result = await sut.chunkFile(
+      'Test content',
+      path.join(root, 'Mammoth PC.md'),
+      'test-source',
+      aWatchSourceConfig({
+        id: 'test-source',
+        path: root,
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'obsidian',
+      }),
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunks = result.getValue();
+    expect(chunks.length).toBe(2);
+
+    // Frontmatter chunk should have note title in tags
+    expect(chunks[0].tags).toContain('Mammoth PC');
+    expect(chunks[0].tags).toContain('frontmatter');
+    expect(chunks[0].tags).toContain('metadata');
+    expect(chunks[0].tags).toContain('obsidian-note');
+
+    // Body chunk should also have note title in tags
+    expect(chunks[1].tags).toContain('Mammoth PC');
+  });
+
+  it('adds note title to tags even when frontmatter has no title field', async () => {
+    const root = fixture.root;
+    const bodyChunk = aBodyChunk();
+    const mockMastra = aMastraChunkingService([bodyChunk]);
+    sut = new ObsidianChunkingStrategy(mockMastra as unknown as MastraChunkingService, mockLogger);
+
+    // No frontmatter at all
+    const result = await sut.chunkFile(
+      'Just plain text content with no frontmatter.',
+      path.join(root, 'My Important Note.md'),
+      'test-source',
+      aWatchSourceConfig({
+        id: 'test-source',
+        path: root,
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'obsidian',
+      }),
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunks = result.getValue();
+
+    // All chunks should have the note title in tags
+    for (const chunk of chunks) {
+      expect(chunk.tags).toContain('My Important Note');
+    }
+  });
+
+  it('merges note title with existing frontmatter tags without duplicates', async () => {
+    const root = fixture.root;
+    const bodyChunk = aBodyChunk();
+    const mockMastra = aMastraChunkingService([bodyChunk]);
+    sut = new ObsidianChunkingStrategy(mockMastra as unknown as MastraChunkingService, mockLogger);
+
+    const result = await sut.chunkFile(
+      'Content with existing tags.',
+      path.join(root, 'Hardware Setup Guide.md'),
+      'test-source',
+      aWatchSourceConfig({
+        id: 'test-source',
+        path: root,
+        memoryBank: 'test-source',
+        exclude: ['**/node_modules/**'],
+        sourceType: 'obsidian',
+      }),
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunks = result.getValue();
+
+    // Verify tags are merged, title is first
+    for (const chunk of chunks) {
+      expect(chunk.tags).toContain('Hardware Setup Guide');
+    }
+  });
+});
