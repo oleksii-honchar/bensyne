@@ -2,7 +2,7 @@
 type: index
 title: "Specifications"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-31T14:57:53Z"
+updatedAt: "2026-10-08T20:33:16Z"
 ---
 
 # Specifications
@@ -26,3 +26,4 @@ Technical specifications. Grouped by `system` frontmatter.
 
 - [[0008-forgetfile-contract-fix]] — Fix Racochu forgetByFile FILE_NOT_FOUND Contract Mismatch
 - [[0009-path-handle-file-reference]] — Persona Path Handles + FILE_NOT_FOUND Robustness
+- [[0010-session-bank-cleanup-repair]] — Session-Bank Cleanup Repair C1–C4 (active — deploy pending)

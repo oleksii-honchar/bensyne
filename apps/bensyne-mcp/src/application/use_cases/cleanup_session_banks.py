@@ -3,26 +3,30 @@
 Identifies, evaluates eligibility, and optionally deletes old agent session
 banks. Banks are eligible if:
 - Their name matches the session bank pattern (default: agent-session-ses_*)
-- They are older than the TTL (default 30 days)
+- Their age is known and older than the TTL (default 30 days). Age is resolved
+  via a durable chain (DEC-A2): ``.bank_created`` marker → filesystem birth
+  time (statx, Linux) → unknown (never eligible, counted separately).
 - They are not currently active in the router's instance pool
 - Their directory exists on the filesystem
 
 Three phases:
 1. Identification: scan all banks, filter by pattern
-2. Eligibility: check age, active status, filesystem existence
+2. Eligibility: resolve age, check active status and filesystem existence
 3. Execution: delete eligible banks (unless dry_run=True)
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from src.infrastructure.bank.birth_time import get_birth_time
+from src.infrastructure.bank.router import BANK_CREATED_MARKER
 from src.utils.structured_logging import get_logger
 
 if TYPE_CHECKING:
@@ -37,7 +41,7 @@ DEFAULT_TTL_DAYS = 30
 DEFAULT_PATTERN = "agent-session-ses_"
 
 # Compile the regex once
-_SESSION_BANK_RE = re.compile(r"^agent-sessions?-ses_[a-z0-9]+$")
+_SESSION_BANK_RE = re.compile(r"^agent-sessions?[-_]ses_[A-Za-z0-9]+$")
 
 
 def cleanup_session_banks(
@@ -76,6 +80,7 @@ def cleanup_session_banks(
         "banks_eligible": 0,
         "banks_deleted": 0,
         "banks_skipped_active": 0,
+        "banks_skipped_unknown_age": 0,
         "banks_errored": 0,
         "errors": [],
         "candidates": [],
@@ -122,21 +127,53 @@ def cleanup_session_banks(
             )
             continue
 
-        # Check age via directory mtime
+        # Resolve age via the durable chain (DEC-A2):
+        # 1) .bank_created marker  2) filesystem birth time (statx)  3) unknown
+        age_seconds: float | None = None
+        age_source = "unknown"
+
+        marker_path = bank_path / BANK_CREATED_MARKER
         try:
-            dir_mtime = os.path.getmtime(bank_path)
-            age_seconds = now - dir_mtime
-            age_days = age_seconds / 86400.0
-        except OSError as e:
-            report["banks_errored"] += 1
-            report["errors"].append(f"Could not stat {bank_name}: {e}")
-            logger.error(
-                "Bank stat failed",
+            if marker_path.is_file():
+                created = datetime.fromisoformat(
+                    marker_path.read_text(encoding="utf-8").strip()
+                )
+                age_seconds = now - created.timestamp()
+                age_source = "marker"
+        except (OSError, ValueError, TypeError) as e:
+            # Corrupt/unreadable marker → treat as absent, fall through.
+            logger.debug(
+                "Marker unreadable, falling through to birth time",
                 memory_bank=bank_name,
                 error=str(e),
             )
+
+        if age_seconds is None:
+            try:
+                born = get_birth_time(bank_path)
+            except OSError as e:
+                report["banks_errored"] += 1
+                report["errors"].append(f"Could not stat {bank_name}: {e}")
+                logger.error(
+                    "Bank stat failed",
+                    memory_bank=bank_name,
+                    error=str(e),
+                )
+                continue
+            if born is not None:
+                age_seconds = now - born
+                age_source = "birth_time"
+
+        if age_seconds is None:
+            # Unknown age → never eligible, never deleted (fail-safe, DEC-A2).
+            report["banks_skipped_unknown_age"] += 1
+            logger.debug(
+                "Bank skipped (age unknown)",
+                memory_bank=bank_name,
+            )
             continue
 
+        age_days = age_seconds / 86400.0
         if age_seconds < ttl_seconds:
             logger.debug(
                 "Bank skipped (too recent)",
@@ -148,28 +185,30 @@ def cleanup_session_banks(
 
         # Eligible for cleanup
         report["banks_eligible"] += 1
-        eligible_banks.append((bank_name, bank_path, age_days))
+        eligible_banks.append((bank_name, bank_path, age_days, age_source))
         logger.debug(
             "Bank eligible for cleanup",
             memory_bank=bank_name,
             age_days=round(age_days, 1),
+            age_source=age_source,
         )
 
     # Phase 3: Execution — delete eligible banks (unless dry_run)
     if dry_run:
         # Build candidate details for dry run
-        for bank_name, bank_path, age_days in eligible_banks:
+        for bank_name, bank_path, age_days, age_source in eligible_banks:
             report["candidates"].append({
                 "name": bank_name,
                 "path": str(bank_path),
                 "age_days": round(age_days, 1),
+                "age_source": age_source,
             })
         logger.info(
             "Cleanup dry run complete; no banks deleted",
             eligible=len(eligible_banks),
         )
     else:
-        for bank_name, bank_path, age_days in eligible_banks:
+        for bank_name, bank_path, age_days, age_source in eligible_banks:
             try:
                 shutil.rmtree(bank_path)
                 report["banks_deleted"] += 1
@@ -177,6 +216,7 @@ def cleanup_session_banks(
                     "Session bank deleted",
                     memory_bank=bank_name,
                     age_days=round(age_days, 1),
+                    age_source=age_source,
                     path=str(bank_path),
                 )
             except OSError as e:
@@ -195,6 +235,7 @@ def cleanup_session_banks(
         eligible=report["banks_eligible"],
         deleted=report["banks_deleted"],
         skipped_active=report["banks_skipped_active"],
+        skipped_unknown_age=report["banks_skipped_unknown_age"],
         errored=report["banks_errored"],
         dry_run=dry_run,
     )

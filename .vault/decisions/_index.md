@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-28T18:47:00Z"
+updatedAt: "2026-10-08T20:33:16Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). From filename 0111 onward the offset ends: filenames and DEC ids match 1:1. For the 2026-10-08 session-bank-cleanup repair set: filenames 0115–0117 carry DEC-0115..0117 (no offset). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -60,6 +60,9 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0112-use-client-side-remember-episodic]] — Use Client-Side `_remember_episodic()` Instead of Library's `remember_episodic()` (DEC-0112)
 - [[0113-file-chunks-reingest-index-fix]] — Fix file_chunks Index Management During Re-ingest (DEC-0113)
 - [[0114-verify-source-consistency-beam]] — Update verify-source-consistency.mjs for BEAM Architecture (DEC-0114)
+- [[0115-session-bank-regex-mixed-case]] — Session-Bank Cleanup Regex — Mixed-Case Base62 + Separator Variants (DEC-0115)
+- [[0116-session-bank-age-durable-signal]] — Session-Bank Age from Durable Metadata — Creation Marker + ext4 Birth Time (DEC-0116)
+- [[0117-cron-log-path-fail-loud]] — Cleanup Cron — Deployment-Local Log Path + Fail-Loud No-Op Detection (DEC-0117)
 
 ### racochu
 

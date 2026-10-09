@@ -283,6 +283,89 @@ class TestRouterPathAuthority:
         assert "read" in docstring_lower or "no mkdir" in docstring_lower
 
 
+# ---------------------------------------------------------------------------
+# .bank_created marker (DEC-A2 / C2a) — written once at directory creation
+# ---------------------------------------------------------------------------
+
+
+class TestBankCreatedMarker:
+    """get_bank_dir writes .bank_created exactly once, only on directory creation.
+
+    Behavioral tests only (file existence/content) — never logger calls.
+    The marker is the durable age signal for session-bank cleanup (DEC-A2).
+    """
+
+    MARKER_NAME = ".bank_created"  # literal on purpose: pins the on-disk contract
+
+    def test_marker_constant_defined_in_router_module(self) -> None:
+        """router.py exposes BANK_CREATED_MARKER = '.bank_created' (single source of truth for Task 3)."""
+        from src.infrastructure.bank import router as router_module
+
+        assert router_module.BANK_CREATED_MARKER == self.MARKER_NAME
+
+    def test_new_bank_dir_writes_marker_with_iso8601_utc(self, tmp_path: Path) -> None:
+        """First get_bank_dir for a new bank creates dir AND marker; content is single-line ISO-8601 UTC."""
+        from datetime import datetime, timezone
+
+        router = _make_router(tmp_path)
+        bank_dir = router.get_bank_dir("marker-bank")
+
+        assert bank_dir.is_dir()
+        marker = bank_dir / self.MARKER_NAME
+        assert marker.is_file()
+
+        lines = marker.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1, f"marker must be a single line, got {len(lines)}"
+
+        ts = datetime.fromisoformat(lines[0])
+        assert ts.tzinfo is not None, "marker timestamp must be timezone-aware"
+        assert ts.utcoffset().total_seconds() == 0, "marker timestamp must be UTC"
+        # Sanity: timestamp is plausibly 'now' (not garbage from the past)
+        assert abs((datetime.now(timezone.utc) - ts).total_seconds()) < 300
+
+    def test_marker_not_rewritten_on_repeated_get_bank_dir(self, tmp_path: Path) -> None:
+        """Repeated get_bank_dir calls (dir already exists) never rewrite the marker."""
+        router = _make_router(tmp_path)
+        bank_dir = router.get_bank_dir("stable-bank")
+        marker = bank_dir / self.MARKER_NAME
+        assert marker.is_file()
+
+        first_content = marker.read_text(encoding="utf-8")
+        first_mtime_ns = marker.stat().st_mtime_ns
+
+        router.get_bank_dir("stable-bank")
+        router.get_bank_dir("stable-bank")
+
+        assert marker.read_text(encoding="utf-8") == first_content
+        assert marker.stat().st_mtime_ns == first_mtime_ns
+
+    def test_marker_written_exactly_once_via_repeated_get_bank_db_path(self, tmp_path: Path) -> None:
+        """get_bank_db_path (which calls get_bank_dir) writes the marker exactly once."""
+        router = _make_router(tmp_path)
+        db_path = router.get_bank_db_path("db-bank")
+        marker = db_path.parent / self.MARKER_NAME
+        assert marker.is_file()
+
+        first_content = marker.read_text(encoding="utf-8")
+        first_mtime_ns = marker.stat().st_mtime_ns
+
+        router.get_bank_db_path("db-bank")
+        router.get_bank_db_path("db-bank")
+
+        assert marker.read_text(encoding="utf-8") == first_content
+        assert marker.stat().st_mtime_ns == first_mtime_ns
+
+    def test_pre_existing_dir_without_marker_gets_no_marker(self, tmp_path: Path) -> None:
+        """A bank dir that already exists (created before this feature) gets NO marker — age falls back to birth time (Task 3)."""
+        (tmp_path / "banks" / "legacy-bank").mkdir(parents=True)
+        router = _make_router(tmp_path)
+
+        bank_dir = router.get_bank_dir("legacy-bank")
+
+        assert bank_dir.is_dir()
+        assert not (bank_dir / self.MARKER_NAME).exists()
+
+
 class TestRouterListBankDirs:
     """list_bank_dirs is a read-only scan of <data_dir>/banks/."""
 

@@ -2,7 +2,7 @@
 type: index
 title: "Runbooks"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-16"
+updatedAt: "2026-10-08T20:33:16Z"
 tags: []
 ---
 
@@ -27,3 +27,4 @@ Operational runbooks. Grouped by `system` frontmatter.
 
 - [[0008-bank-description-backfill]] — Bank Description Backfill
 - [[0009-delete-redundant-memory-bank]] — Delete a Redundant Memory Bank
+- [[0010-session-bank-cleanup-verification]] — Session-Bank Cleanup — Deploy & Verify on puma.lan

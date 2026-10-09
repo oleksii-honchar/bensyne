@@ -4,13 +4,16 @@ id: DEC-0111
 title: "Ephemeral Session Bank Cleanup via HTTP Endpoint"
 status: accepted
 createdAt: "2026-09-27T18:20:00Z"
-updatedAt: "2026-09-27T18:20:00Z"
+updatedAt: "2026-10-08T20:33:16Z"
 tags: [bensyne-mcp, session-management, cleanup, ttl]
 system: bensyne-mcp
 supersedes: []
 superseded_by: []
 see_also:
   - "decisions/0108-per-session-memory-banks.decision.md"
+  - "decisions/0115-session-bank-regex-mixed-case.decision.md"
+  - "decisions/0116-session-bank-age-durable-signal.decision.md"
+  - "decisions/0117-cron-log-path-fail-loud.decision.md"
 deprecated:
   date: null
   reason: null
@@ -57,3 +60,13 @@ The endpoint returns structured JSON with cleanup statistics (banks scanned, mat
 - **Negative:** New ephemeral bank naming patterns require code update to the pattern
 - **Negative:** Disk usage continues to grow during the 30-day retention window
 - **Neutral:** No change to MCP tool surface; relies on naming discipline already established in codebase
+
+## Amendment (2026-10-08)
+
+The mechanism was repaired without touching this decision's safety properties (HTTP-only surface, `dry_run=True` default, 30-day TTL, active-pool skip, dir-exists check):
+
+- Identification regex corrected by [[0115-session-bank-regex-mixed-case]] — the pattern quoted above (`^agent-session(-s)?_ses_[a-z0-9]+$`) was found to match **0 real banks** (production IDs are mixed-case base62).
+- Age signal replaced by [[0116-session-bank-age-durable-signal]] (creation marker + filesystem crtime; dir mtime proven unreliable).
+- Cron wiring and observability hardened by [[0117-cron-log-path-fail-loud]].
+
+This ADR remains the record of the original design choices (HTTP-only surface, no MCP tool, hard delete); it is **not superseded**.

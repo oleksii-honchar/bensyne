@@ -2,12 +2,12 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-09-07T13:05:59Z"
+updatedAt: "2026-10-08T20:33:16Z"
 ---
 
 # Memories
 
-Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0028). Grouped by `system` frontmatter.
+Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0029). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -27,6 +27,7 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0028). 
 - [[0007-on-conflict-do-update]] — Safe File Upserts — session.merge() over INSERT OR REPLACE
 - [[0025-channel-weighting-makes-description-backfill-load-bearing]] — Channel Weighting Makes Description Backfill Load-Bearing
 - [[0028-dedup-content-sync-gotcha]] — Hash-Dedup Hits Keep Stale Memory Content
+- [[0029-bank-dir-mtime-refreshed-by-server-activity]] — Bank Dir Mtime Refreshed by Normal Server Activity — Never Use It for TTL
 
 ### racochu
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,10 @@ from src.utils.result import ErrorWithDetails, Result
 from src.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Marker file written once when a bank directory is newly created (DEC-A2).
+# Single source of truth — the cleanup age chain reads this name (Task 3).
+BANK_CREATED_MARKER = ".bank_created"
 
 
 class MemoryBankRouter:
@@ -137,9 +142,18 @@ class MemoryBankRouter:
         """Return the bank directory {data_dir}/banks/{memory_bank} (write path).
 
         Creates the directory (mkdir -p) so write callers can drop files.
+        When the directory is NEWLY created, writes a one-time `.bank_created`
+        marker (single-line ISO-8601 UTC) as the durable age signal for
+        session-bank cleanup (DEC-A2). The marker is NEVER rewritten for an
+        existing directory; pre-existing dirs get no marker.
         """
         path = self._banks_root() / memory_bank
-        path.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            marker = path / BANK_CREATED_MARKER
+            marker.write_text(
+                datetime.now(timezone.utc).isoformat() + "\n", encoding="utf-8"
+            )
         return path
 
     def get_bank_db_path(self, memory_bank: str) -> Path:
