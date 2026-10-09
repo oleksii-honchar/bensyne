@@ -71,17 +71,40 @@ def get_birth_time(path: str | Path) -> float | None:
         buf = _Statx()
         libc = ctypes.CDLL(None, use_errno=True)
         if hasattr(libc, "statx"):
+            # Explicit marshalling: without argtypes ctypes mis-reads the
+            # path pointer and statx stats the WRONG inode (Task 5 defect).
+            libc.statx.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+                ctypes.c_uint,
+                ctypes.POINTER(_Statx),
+            ]
+            libc.statx.restype = ctypes.c_int
             ret = libc.statx(
-                AT_FDCWD, target, AT_EMPTY_PATH, STX_BTIME, ctypes.byref(buf)
+                AT_FDCWD,
+                os.fsencode(target),
+                AT_EMPTY_PATH,
+                STX_BTIME,
+                ctypes.byref(buf),
             )
         else:
             syscall_no = _SYS_STATX.get(platform.machine())
             if syscall_no is None:
                 return None
+            libc.syscall.argtypes = [
+                ctypes.c_long,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+                ctypes.c_uint,
+                ctypes.POINTER(_Statx),
+            ]
+            libc.syscall.restype = ctypes.c_int
             ret = libc.syscall(
                 ctypes.c_long(syscall_no),
                 AT_FDCWD,
-                target,
+                os.fsencode(target),
                 ctypes.c_uint(AT_EMPTY_PATH),
                 ctypes.c_uint(STX_BTIME),
                 ctypes.byref(buf),
