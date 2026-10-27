@@ -191,7 +191,22 @@ class MemoryBankRouter:
                 [ErrorWithDetails("MEMORY_BANK_DB_NOT_FOUND", {"bank": memory_bank})]
             )
         client = self._create_instance(memory_bank)  # transient — NOT pooled
-        return client.get_stats()
+        try:
+            return client.get_stats()
+        finally:
+            # Transient clients must not leak connections: a stats walk over
+            # many banks would otherwise hold one open sqlite set per bank at
+            # once (FD-exhaustion incident, 2026-10).
+            close = getattr(client, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:  # noqa: BLE001 - stats result takes precedence
+                    logger.warning(
+                        "Transient stats client close() failed",
+                        memory_bank=memory_bank,
+                        exc_info=True,
+                    )
 
     def get_file_metadata_path(self, memory_bank: str) -> Path:
         """Return the file metadata db path (read-side, NO mkdir)."""

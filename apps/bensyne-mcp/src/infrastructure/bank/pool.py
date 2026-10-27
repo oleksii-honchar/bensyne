@@ -37,5 +37,16 @@ def evict_if_over_limit(
             break
 
         target = min(non_default.keys(), key=lambda k: non_default[k].created_at)
-        del instances[target]
+        evicted = instances.pop(target)
+        # Close before dropping the reference: the library keeps connections
+        # alive wherever they were opened, and dropping the wrapper alone
+        # leaks sqlite fds (bounded-FD invariant = max_instances × conn).
+        close = getattr(evicted, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - eviction must never fail on teardown
+                logger.warning(
+                    "Evicted instance close() failed", memory_bank=target, exc_info=True
+                )
         logger.info("Evicted oldest instance", memory_bank=target)

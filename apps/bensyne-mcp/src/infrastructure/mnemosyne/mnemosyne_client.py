@@ -8,6 +8,7 @@ DATABASE_ERROR.
 from __future__ import annotations
 
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -68,6 +69,61 @@ class MnemosyneClient:
 
         logger.info("Initializing MnemosyneClient", memory_bank=memory_bank, db_path=str(db_path))
         return Mnemosyne(bank=memory_bank, db_path=str(db_path))
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Release the sqlite connection held by the underlying library instance.
+
+        The ``mnemosyne`` library never closes connections — they are replaced
+        in a thread-local cache slot — so every evicted or transient client
+        leaks file descriptors until the process hits its nofile ulimit
+        (FD-exhaustion incident, 2026-10). A future library version with a
+        real teardown (``close``/``shutdown``/``dispose``) is preferred when
+        present; otherwise we close its ``conn`` attribute directly and
+        compare-and-clear the cached thread-local slot so later callers are
+        never handed a closed connection.
+        """
+        instance = getattr(self, "_instance", None)
+        if instance is None:
+            return
+
+        for teardown_attr in ("close", "shutdown", "dispose"):
+            teardown = getattr(instance, teardown_attr, None)
+            if callable(teardown):
+                try:
+                    teardown()
+                except Exception:  # noqa: BLE001 - teardown is best-effort
+                    logger.warning(
+                        "Mnemosyne instance teardown failed",
+                        memory_bank=self.memory_bank,
+                        exc_info=True,
+                    )
+                return
+
+        conn = getattr(instance, "conn", None)
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 - teardown is best-effort
+            logger.warning(
+                "Mnemosyne connection close failed",
+                memory_bank=self.memory_bank,
+                exc_info=True,
+            )
+            return
+
+        # Compare-and-clear the library's thread-local slot only when it still
+        # points at the connection we just closed.
+        module = sys.modules.get("mnemosyne.core.memory")
+        thread_local = getattr(module, "_thread_local", None) if module is not None else None
+        if thread_local is not None and getattr(thread_local, "conn", None) is conn:
+            thread_local.conn = None
+            if hasattr(thread_local, "db_path"):
+                thread_local.db_path = None
 
     # ------------------------------------------------------------------
     # Domain repository interface (called by use cases)
