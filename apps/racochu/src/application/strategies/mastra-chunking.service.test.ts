@@ -2761,6 +2761,7 @@ Do not include any other text, explanations, or markdown formatting.`,
     const skipSourceConfig: WatchSourceConfig = {
       id: 'test-source',
       path: '/test/path',
+      resolvedPaths: ['/test/path'],
       memoryBank: 'test-memoryBank',
       exclude: [],
       debounceMs: 3000,

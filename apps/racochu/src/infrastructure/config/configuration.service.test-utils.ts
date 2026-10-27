@@ -16,9 +16,10 @@ const DEFAULT_CHUNKING: ChunkingConfig = {
 };
 
 export function aSourceConfig(overrides?: Partial<WatchSourceConfig>): WatchSourceConfig {
-  return {
+  const defaults: WatchSourceConfig = {
     id: 'test-source',
     path: '/test/path',
+    resolvedPaths: ['/test/path'],
     memoryBank: 'test-memoryBank',
     sourceType: SOURCE_TYPES.VAULT,
     description: '',
@@ -26,7 +27,14 @@ export function aSourceConfig(overrides?: Partial<WatchSourceConfig>): WatchSour
     debounceMs: 3000,
     contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
     autoPopulate: true,
+  };
+  return {
+    ...defaults,
     ...overrides,
+    // Keep resolvedPaths coupled to the declared single root unless a test
+    // explicitly declares roots via `resolvedPaths` (multi-root fixtures).
+    resolvedPaths:
+      overrides?.resolvedPaths ?? (overrides?.path !== undefined ? [overrides.path] : defaults.resolvedPaths),
   };
 }
 

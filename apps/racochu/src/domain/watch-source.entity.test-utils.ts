@@ -22,6 +22,8 @@ export function aWatchSource(overrides?: Partial<WatchSourceProps>): WatchSource
 export interface WatchSourceConfigOverrides {
   id?: string;
   path?: string;
+  // Multi-root sources (ADR-8): declared roots; defaults to [path].
+  resolvedPaths?: string[];
   memoryBank?: string;
   description?: string;
   exclude?: string[];
@@ -34,9 +36,11 @@ export interface WatchSourceConfigOverrides {
 export function aWatchSourceConfig(overrides?: WatchSourceConfigOverrides): WatchSourceConfig {
   const id = overrides?.id ?? 'watch-source';
   const memoryBank = overrides?.memoryBank ?? id;
+  const path = overrides?.path ?? faker.system.filePath();
   return {
     id,
-    path: overrides?.path ?? faker.system.filePath(),
+    path,
+    resolvedPaths: overrides?.resolvedPaths ?? [path],
     memoryBank,
     description: overrides?.description,
     exclude: overrides?.exclude ?? [`**/${faker.lorem.word()}/**`],

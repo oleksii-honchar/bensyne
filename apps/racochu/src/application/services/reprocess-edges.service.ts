@@ -78,20 +78,55 @@ export class ReprocessEdgesService {
     }
   }
 
+  /**
+   * R1: enumerate ALL declared roots of the source (`resolvedPaths`; a
+   * single-`path` source carries the normalized `[path]` shape and stays
+   * byte-identical). Union in declared-root order, de-duplicated by resolved
+   * absolute path.
+   */
   private async getFiles(source: WatchSourceConfig): Promise<string[]> {
-    const resolvedPath = this.resolvePath(source.path);
+    const merged: string[] = [];
+    const seen = new Set<string>();
 
+    for (const rootPath of this.declaredRoots(source)) {
+      const rootFiles = await this.scanRoot(rootPath, source);
+      for (const file of rootFiles) {
+        const key = path.resolve(file);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(file);
+        }
+      }
+    }
+
+    return merged;
+  }
+
+  /** Resolved, de-duplicated root paths in declared order. */
+  private declaredRoots(source: WatchSourceConfig): string[] {
+    const declared = source.resolvedPaths ?? [source.path];
+    const roots: string[] = [];
+    for (const rootPath of declared) {
+      const resolved = this.resolvePath(rootPath);
+      if (!roots.includes(resolved)) {
+        roots.push(resolved);
+      }
+    }
+    return roots;
+  }
+
+  private async scanRoot(resolvedRoot: string, source: WatchSourceConfig): Promise<string[]> {
     try {
-      const stats = await fs.stat(resolvedPath);
+      const stats = await fs.stat(resolvedRoot);
       if (!stats.isDirectory()) {
-        this.logger.warn(`Source path is not a directory; "${resolvedPath}"`);
+        this.logger.warn(`Source path is not a directory; "${resolvedRoot}"`);
         return [];
       }
 
-      return this.scanDirectory(resolvedPath, source);
+      return this.scanDirectory(resolvedRoot, source, resolvedRoot);
     } catch (error) {
       this.logger.error(
-        `Failed to stat source path: "${resolvedPath}", error="${
+        `Failed to stat source path: "${resolvedRoot}", error="${
           error instanceof Error ? error.message : String(error)
         }"`,
       );
@@ -99,12 +134,15 @@ export class ReprocessEdgesService {
     }
   }
 
-  private async scanDirectory(dirPath: string, source: WatchSourceConfig): Promise<string[]> {
+  private async scanDirectory(
+    dirPath: string,
+    source: WatchSourceConfig,
+    sourceRoot: string,
+  ): Promise<string[]> {
     const files: string[] = [];
 
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      const sourceRoot = this.resolvePath(source.path);
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
@@ -115,7 +153,7 @@ export class ReprocessEdgesService {
           if (source.exclude && source.exclude.length > 0) {
             // Simplified exclude check
           }
-          const subFiles = await this.scanDirectory(fullPath, source);
+          const subFiles = await this.scanDirectory(fullPath, source, sourceRoot);
           files.push(...subFiles);
         } else if (entry.isFile()) {
           files.push(fullPath);

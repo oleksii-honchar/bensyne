@@ -201,34 +201,75 @@ export class ForceReprocessService {
     }
   }
 
+  /**
+   * R1: enumerate ALL declared roots of the source (`resolvedPaths`; a
+   * single-`path` source carries the normalized `[path]` shape, so its file
+   * set and order are identical to before). Union across roots, declared-root
+   * order, de-duplicated by resolved absolute path — same-named files under
+   * DIFFERENT roots stay distinct entries.
+   */
   private async getFiles(source: WatchSourceConfig): Promise<string[]> {
-    const resolvedPath = this.resolvePath(source.path);
+    const merged: string[] = [];
+    const seen = new Set<string>();
 
+    for (const rootPath of this.declaredRoots(source)) {
+      const rootFiles = await this.scanRoot(rootPath, source);
+      for (const file of rootFiles) {
+        const key = path.resolve(file);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(file);
+        }
+      }
+    }
+
+    return merged;
+  }
+
+  /** Resolved, de-duplicated root paths in declared order. */
+  private declaredRoots(source: WatchSourceConfig): string[] {
+    const declared = source.resolvedPaths ?? [source.path];
+    const roots: string[] = [];
+    for (const rootPath of declared) {
+      const resolved = this.resolvePath(rootPath);
+      if (!roots.includes(resolved)) {
+        roots.push(resolved);
+      }
+    }
+    return roots;
+  }
+
+  private async scanRoot(resolvedRoot: string, source: WatchSourceConfig): Promise<string[]> {
     try {
-      const stats = await fs.stat(resolvedPath);
+      const stats = await fs.stat(resolvedRoot);
       if (!stats.isDirectory()) {
-        this.logger.warn(`Source path is not a directory; "${resolvedPath}"`);
+        this.logger.warn(`Source path is not a directory; "${resolvedRoot}"`);
         return [];
       }
 
-      return this.scanDirectory(resolvedPath, source);
+      return this.scanDirectory(resolvedRoot, source, resolvedRoot);
     } catch (error) {
       this.logger.error(
-        `Failed to stat source path: "${resolvedPath}", error="${error instanceof Error ? error.message : String(error)}"`,
+        `Failed to stat source path: "${resolvedRoot}", error="${error instanceof Error ? error.message : String(error)}"`,
       );
       return [];
     }
   }
 
-  private async scanDirectory(dirPath: string, source: WatchSourceConfig): Promise<string[]> {
+  private async scanDirectory(
+    dirPath: string,
+    source: WatchSourceConfig,
+    sourceRoot: string,
+  ): Promise<string[]> {
     const files: string[] = [];
 
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      const sourceRoot = this.resolvePath(source.path);
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
+        // Exclude globs match per-root relative paths — the same semantics a
+        // single-root source gets today, applied independently to each root.
         const relPath = path.relative(sourceRoot, fullPath);
 
         if (entry.isDirectory()) {
@@ -236,7 +277,7 @@ export class ForceReprocessService {
           if (isPathExcluded(relPath, source.exclude)) {
             continue;
           }
-          const subFiles = await this.scanDirectory(fullPath, source);
+          const subFiles = await this.scanDirectory(fullPath, source, sourceRoot);
           files.push(...subFiles);
         } else if (entry.isFile()) {
           if (!isPathExcluded(relPath, source.exclude)) {

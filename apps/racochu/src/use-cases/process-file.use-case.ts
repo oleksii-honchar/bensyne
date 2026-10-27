@@ -10,7 +10,7 @@ import {
   FileChangedEvent,
   FileDeletedEvent,
 } from '../domain/events/file-events';
-import { WatchSourceConfig, watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
+import { WatchSourceConfig, resolvedWatchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
@@ -30,7 +30,9 @@ const processFileParamsSchema = z.object({
   eventType: z.enum([FILE_OPERATIONS.ADD, FILE_OPERATIONS.CHANGE, FILE_OPERATIONS.DELETE]),
   sourceId: z.string().min(1),
   memoryBank: z.string().min(1),
-  sourceConfig: watchSourceConfigSchema,
+  // R1: internal seam — validate the NORMALIZED shape (resolvedPaths
+  // required, no operator key-XOR); the entry gate lives in config loading.
+  sourceConfig: resolvedWatchSourceConfigSchema,
 });
 
 export type ProcessFileParams = z.infer<typeof processFileParamsSchema>;
@@ -42,6 +44,7 @@ export interface IngestFileResult {
 const defaultSourceConfig = (): WatchSourceConfig => ({
   id: 'default',
   path: '',
+  resolvedPaths: [''],
   sourceType: SOURCE_TYPES.VAULT,
   memoryBank: 'default',
   description: '',

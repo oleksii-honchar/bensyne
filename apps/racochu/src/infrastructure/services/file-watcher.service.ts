@@ -116,8 +116,39 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     await this.stop();
   }
 
+  /**
+   * ADR-8: one source fans out ONE chokidar watcher per declared root
+   * (`resolvedPaths`; single-`path` sources carry the normalized
+   * `[path]` shape, so their behavior is byte-identical). The source stays
+   * ONE source — `registerBanks()` registers its memory bank exactly once,
+   * independent of the number of roots.
+   */
   private async startWatchingSource(source: WatchSourceConfig): Promise<Result<void>> {
-    const resolvedPath = this.resolvePath(source.path);
+    const declaredRoots = source.resolvedPaths ?? [source.path];
+    const errors: ErrorWithDetails[] = [];
+    let startedRoots = 0;
+
+    for (let rootIndex = 0; rootIndex < declaredRoots.length; rootIndex++) {
+      const rootResult = await this.startWatchingRoot(source, declaredRoots[rootIndex], rootIndex);
+      if (rootResult.isOk()) {
+        startedRoots += 1;
+      } else {
+        errors.push(...rootResult.getErrors());
+      }
+    }
+
+    if (startedRoots === 0 && errors.length > 0) {
+      return Result.ko(errors);
+    }
+    return Result.ok(undefined as unknown as void);
+  }
+
+  private async startWatchingRoot(
+    source: WatchSourceConfig,
+    declaredPath: string,
+    rootIndex: number,
+  ): Promise<Result<void>> {
+    const resolvedPath = this.resolvePath(declaredPath);
     this.logger.info(`Watching source; id="${source.id}", path="${resolvedPath}"`);
 
     // Compile the shared exclude patterns into regexes once per source. The
@@ -173,7 +204,13 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
       this.logger.info(`Watcher ready; source="${source.id}", path="${normalizedRoot}"`);
     });
 
-    this.watchers.set(source.id, { watcher, sourceId: source.id, sourcePath: resolvedPath });
+    // Multi-root sources are tracked per root; `${id}#${index}` keeps every
+    // root watcher addressable (stop() above is generic over all keys).
+    this.watchers.set(`${source.id}#${rootIndex}`, {
+      watcher,
+      sourceId: source.id,
+      sourcePath: resolvedPath,
+    });
     return Result.ok(undefined as unknown as void);
   }
 

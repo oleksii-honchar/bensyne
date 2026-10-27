@@ -9,7 +9,7 @@ import { BaseChunkingStrategy } from '../application/strategies/base-chunking-st
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
 import { FileEdge } from '../domain/content-chunk.entity';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
-import { EnhancementConfig, WatchSourceConfig } from '../infrastructure/config/config-schemas';
+import { EnhancementConfig, WatchSourceConfig, watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
 import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BensyneRememberDto } from '../infrastructure/dto/bensyne-remember.dto';
@@ -50,6 +50,7 @@ const defaultEnhancementConfig: EnhancementConfig = {
 const defaultSourceConfig: WatchSourceConfig = {
   id: 'test-source',
   path: '/test/path',
+  resolvedPaths: ['/test/path'],
   memoryBank: 'test-memoryBank',
   exclude: [],
   debounceMs: 3000,
@@ -1205,5 +1206,54 @@ describe('ChunkContentUseCase', () => {
         Buffer.byteLength(serializer.buildAndSerialize(chunks[0]), 'utf8'),
       ).toBeLessThanOrEqual(8000);
     });
+  });
+});
+
+describe('R1 defect — normalized multi-root source at the chunk seam', () => {
+  // The same XOR-refined schema guards chunkContentParamsSchema.sourceConfig;
+  // a config-normalized multi-root source must pass it (watcher-ingested
+  // files flow process-file → chunk-content, so both seams are on the live
+  // path). Driven through the REAL normalize function of config-schemas.
+  let useCase: ChunkContentUseCase;
+  let mockChunkFile: jest.Mock;
+
+  beforeEach(() => {
+    mockChunkFile = jest.fn();
+    const mockStrategyRouter = {
+      selectStrategy: jest.fn().mockReturnValue({ chunkFile: mockChunkFile }),
+    };
+    useCase = new ChunkContentUseCase(
+      mockStrategyRouter as unknown as StrategyRouter,
+      {
+        enhance: jest.fn().mockImplementation(cs => Promise.resolve(Result.ok(cs))),
+      } as unknown as EnhancementPipelineService,
+      { getEnhancementConfig: jest.fn(() => defaultEnhancementConfig) } as unknown as ConfigurationService,
+      aLogger() as unknown as BasePinoLogger,
+    );
+    mockedCreateHash.mockImplementation(realCrypto.createHash);
+    mockChunkFile.mockResolvedValue(
+      Result.ok([aContentChunk({ text: 'node body', sourceId: 'agent-persona_simple-session' })]),
+    );
+  });
+
+  it('accepts a config-normalized two-root sourceConfig (parsed by the real schema)', async () => {
+    const normalized = watchSourceConfigSchema.parse({
+      id: 'agent-persona_simple-session',
+      paths: ['/live/simple-session', '/live/shared'],
+      exclude: [],
+      sourceType: SOURCE_TYPES.AGENT_PERSONA,
+    });
+
+    const result = await useCase.execute({
+      content: '---\nid: 00-entry\n---\nGreet and assess.',
+      filePath: '/live/simple-session/00-entry.md',
+      sourceId: 'agent-persona_simple-session',
+      memoryBank: 'agent-persona_simple-session',
+      sourceConfig: normalized,
+    });
+
+    expect(result.isOk()).toBe(true);
+    const errorMessage = result.isKo() ? result.getErrors().map(e => e.message).join('|') : '';
+    expect(errorMessage).not.toContain('both are set');
   });
 });

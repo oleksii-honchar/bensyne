@@ -6,6 +6,7 @@ import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/services/content-
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { FileAddedEvent, FileChangedEvent, FileDeletedEvent } from '../domain/events/file-events';
 import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';
+import { watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
@@ -1339,5 +1340,97 @@ describe('ProcessFileUseCase', () => {
 
       expect(mockProcessingQueue.addToQueue).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('R1 defect — normalized sources at the params seam (live 14/14 rejection)', () => {
+  // Live defect (b1b-reprocess-error.txt): the config normalization emits a
+  // back-compat `path` ALONGSIDE `paths`; that normalized object flows as
+  // sourceConfig into processFileParamsSchema, which re-applied the
+  // operator-facing XOR refine → "Watch source must define exactly one of
+  // 'path' or 'paths' (both are set)" rejected EVERY file of a two-root
+  // source. These tests drive the REAL normalize function, then the REAL
+  // params validation, and assert processing proceeds.
+  let useCase: ProcessFileUseCase;
+  let mockChunkContentUseCase: ReturnType<typeof aChunkContentUseCase>;
+  let mockIngestChunkUseCase: ReturnType<typeof aIngestChunkUseCase>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockChunkContentUseCase = aChunkContentUseCase();
+    mockIngestChunkUseCase = aIngestChunkUseCase();
+    const mockProcessingQueue = aFileProcessingQueueService();
+    mockProcessingQueue.addToQueue.mockImplementation((task: () => Promise<unknown>) => task());
+
+    useCase = new ProcessFileUseCase(
+      mockChunkContentUseCase as unknown as ChunkContentUseCase,
+      mockIngestChunkUseCase as unknown as IngestChunkUseCase,
+      mockProcessingQueue as unknown as FileProcessingQueue,
+      aFileMemoryTrackerService() as unknown as FileMemoryTrackerService,
+      aBensyneClientService() as unknown as BensyneClient,
+      { compute: jest.fn().mockResolvedValue('hash') } as unknown as FileHasherService,
+      { getHardwareId: jest.fn().mockResolvedValue('hw') } as unknown as HardwareIdDetectorService,
+      aLogger() as unknown as never,
+    );
+
+    (fs.readFile as jest.Mock).mockResolvedValue('content');
+    mockChunkContentUseCase.execute.mockResolvedValue(Result.ok([]));
+    mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: [] }));
+  });
+
+  const errorText = (result: Result<unknown>): string =>
+    result.isKo() ? result.getErrors().map(e => e.message).join('|') : '';
+
+  it('accepts a config-normalized TWO-ROOT source (parsed through the real schema)', async () => {
+    const normalized = watchSourceConfigSchema.parse({
+      id: 'agent-persona_simple-session',
+      paths: ['/live/simple-session', '/live/shared'],
+      exclude: [],
+    });
+
+    const result = await useCase.execute({
+      filePath: '/live/simple-session/90-ask/10-surface.md',
+      eventType: 'add',
+      sourceId: 'agent-persona_simple-session',
+      memoryBank: 'agent-persona_simple-session',
+      sourceConfig: normalized,
+    });
+
+    // Exactly the live error must NOT occur…
+    expect(errorText(result)).not.toContain('both are set');
+    // …and the file must process.
+    expect(result.isOk()).toBe(true);
+    expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filePath: '/live/simple-session/90-ask/10-surface.md',
+        sourceConfig: expect.objectContaining({
+          resolvedPaths: ['/live/simple-session', '/live/shared'],
+        }),
+      }),
+    );
+  });
+
+  it('accepts a legacy single-path config parsed through the same real schema (unchanged)', async () => {
+    const normalized = watchSourceConfigSchema.parse({
+      id: 'agent-sessions',
+      path: '/live/agent-sessions',
+      exclude: [],
+    });
+
+    const result = await useCase.execute({
+      filePath: '/live/agent-sessions/session.md',
+      eventType: 'add',
+      sourceId: 'agent-sessions',
+      memoryBank: 'agent-sessions',
+      sourceConfig: normalized,
+    });
+
+    expect(result.isOk()).toBe(true);
+    expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceConfig: expect.objectContaining({ resolvedPaths: ['/live/agent-sessions'] }),
+      }),
+    );
   });
 });

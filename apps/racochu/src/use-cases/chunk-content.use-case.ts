@@ -6,7 +6,7 @@ import { EnhancementPipelineService } from '../application/services/enhancement-
 import { BaseChunkingStrategy } from '../application/strategies/base-chunking-strategy';
 import { StrategyRouter } from '../application/strategies/strategy-router.service';
 import { ContentChunk } from '../domain/content-chunk.entity';
-import { watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
+import { resolvedWatchSourceConfigSchema } from '../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../infrastructure/config/configuration.service';
 import { SOURCE_TYPES } from '../infrastructure/config/source-types';
 import { BasePinoLogger } from '../infrastructure/logging/base-pino-logger';
@@ -23,7 +23,8 @@ const chunkContentParamsSchema = z.object({
   maxTokens: z.number().positive().optional(),
   overlapTokens: z.number().nonnegative().optional(),
   hardCapTokens: z.number().positive().optional(),
-  sourceConfig: watchSourceConfigSchema.optional(),
+  // R1: internal seam — normalized shape only (see process-file.use-case).
+  sourceConfig: resolvedWatchSourceConfigSchema.optional(),
   fileHash: z.string().optional(),
   hardwareId: z.string().optional(),
   skipEnrichment: z.boolean().optional(),
@@ -70,6 +71,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
       : this.strategyRouter.selectStrategy({
           id: params.sourceId,
           path: params.filePath,
+          resolvedPaths: [params.filePath],
           memoryBank: params.memoryBank,
           exclude: [],
           debounceMs: 3000,
@@ -95,6 +97,7 @@ export class ChunkContentUseCase extends BaseUseCase<ChunkContentParams, Content
     const effectiveSourceConfig = params.sourceConfig ?? {
       id: params.sourceId,
       path: params.filePath,
+      resolvedPaths: [params.filePath],
       memoryBank: params.memoryBank,
       exclude: [],
       debounceMs: 3000,

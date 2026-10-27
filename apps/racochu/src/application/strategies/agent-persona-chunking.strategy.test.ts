@@ -556,3 +556,164 @@ describe('AgentPersonaChunkingStrategy.chunkFile — path_handle (D-1 canonical 
     expect(extra!['path_handle']).toBe(`${agentName}/00-entry.md`);
   });
 });
+
+describe('AgentPersonaChunkingStrategy.chunkFile — multi-root sources (ADR-8 merged file index)', () => {
+  // Sibling roots under one parent (agent-personas/<persona> + agent-personas/shared):
+  // the file index used for edge gating merges ALL roots of the source, while
+  // path_handle derivation, entry flags and folder_hierarchy stay root-local.
+  let parentDir: string;
+  let personaRoot: string;
+  let sharedRoot: string;
+  let entryPath: string;
+  let sharedPath: string;
+
+  beforeEach(async () => {
+    parentDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'persona-multiroot-'));
+    personaRoot = path.join(parentDir, 'persona-x');
+    sharedRoot = path.join(parentDir, 'shared');
+    fsSync.mkdirSync(path.join(personaRoot, '10-flow'), { recursive: true });
+    fsSync.mkdirSync(sharedRoot, { recursive: true });
+    entryPath = path.join(personaRoot, '00-entry.md');
+    sharedPath = path.join(sharedRoot, '90-archive-latest.md');
+    fsSync.writeFileSync(
+      entryPath,
+      [
+        '---',
+        'id: 00-entry',
+        'title: Entry',
+        'entry: true',
+        'edges:',
+        '  - target: 10-flow/10-step.md',
+        '    when: flow continues',
+        '  - target: ../shared/90-archive-latest.md',
+        '    when: writing artifacts',
+        '---',
+        'Greet and assess.',
+      ].join('\n'),
+    );
+    fsSync.writeFileSync(
+      path.join(personaRoot, '10-flow/10-step.md'),
+      '---\nid: 10-step\ntitle: Step\n---\nDo the step.',
+    );
+    fsSync.writeFileSync(
+      sharedPath,
+      '---\nid: 90-archive-latest\ntitle: Archive latest\nentry: false\n---\nArchive before writing.',
+    );
+  });
+
+  afterEach(async () => {
+    await fsp.rm(parentDir, { recursive: true, force: true });
+  });
+
+  const buildStrategy = () => new AgentPersonaChunkingStrategy(aLogger());
+
+  const buildMultiRootConfig = (roots: string[]) =>
+    aSourceConfig({
+      id: 'persona-x',
+      path: roots[0],
+      resolvedPaths: roots,
+      sourceType: 'agent-persona',
+    });
+
+  it('resolves a cross-root decision_next edge (../shared/…) against the merged index', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildMultiRootConfig([personaRoot, sharedRoot]);
+
+    const result = await strategy.chunkFile(
+      fsSync.readFileSync(entryPath, 'utf-8'),
+      entryPath,
+      'persona-x',
+      sourceConfig,
+    );
+
+    expect(result.isOk()).toBe(true);
+    const edges = result.getValue()[0].edges ?? [];
+    const decisionNext = edges.filter(e => e.relation_type === 'decision_next');
+
+    // Plain-relative cross-root target hits the merged index — NO resolver branch.
+    expect(decisionNext.find(e => e.target_path === 'shared/90-archive-latest.md')).toEqual({
+      target_path: 'shared/90-archive-latest.md',
+      relation_type: 'decision_next',
+      strength: 1.0,
+      description: 'writing artifacts',
+    });
+    // Persona-local edge keeps working unchanged.
+    expect(decisionNext.find(e => e.target_path === 'persona-x/10-flow/10-step.md')).toBeDefined();
+  });
+
+  it('ingests shared-root files with handles relative to the shared root (derivation unchanged)', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildMultiRootConfig([personaRoot, sharedRoot]);
+
+    const result = await strategy.chunkFile(
+      fsSync.readFileSync(sharedPath, 'utf-8'),
+      sharedPath,
+      'persona-x',
+      sourceConfig,
+    );
+
+    expect(result.isOk()).toBe(true);
+    const metadata = result.getValue()[0].metadata ?? {};
+    // Sibling root under the parent → natural "shared/…" handle.
+    expect(metadata['path_handle']).toBe('shared/90-archive-latest.md');
+    expect(metadata['persona.entry']).toBe('false');
+  });
+
+  it('entry-node election unaffected: persona entry keeps entry=true and its own handle next to a second root', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildMultiRootConfig([personaRoot, sharedRoot]);
+
+    const result = await strategy.chunkFile(
+      fsSync.readFileSync(entryPath, 'utf-8'),
+      entryPath,
+      'persona-x',
+      sourceConfig,
+    );
+
+    expect(result.isOk()).toBe(true);
+    const chunk = result.getValue()[0];
+    const metadata = chunk.metadata ?? {};
+    expect(metadata['persona.entry']).toBe('true');
+    expect(metadata['path_handle']).toBe('persona-x/00-entry.md');
+    expect(chunk.tags).toEqual(['persona-node', '00-entry']);
+  });
+
+  it('absent second root: clean start, cross-root edge dropped without error, local edges preserved', async () => {
+    const strategy = buildStrategy();
+    const missingRoot = path.join(parentDir, 'no-such-shared-root');
+    const sourceConfig = buildMultiRootConfig([personaRoot, missingRoot]);
+
+    const result = await strategy.chunkFile(
+      fsSync.readFileSync(entryPath, 'utf-8'),
+      entryPath,
+      'persona-x',
+      sourceConfig,
+    );
+
+    expect(result.isOk()).toBe(true);
+    const edges = result.getValue()[0].edges ?? [];
+    const decisionNext = edges.filter(e => e.relation_type === 'decision_next');
+    // Missing target → edge dropped (today's dangling-target semantics), no crash.
+    expect(decisionNext.find(e => e.target_path.startsWith('no-such-shared-root'))).toBeUndefined();
+    // …persona-local edges are unaffected.
+    expect(decisionNext.find(e => e.target_path === 'persona-x/10-flow/10-step.md')).toBeDefined();
+  });
+
+  it('merged index does not bleed into the persona root folder_hierarchy edges', async () => {
+    const strategy = buildStrategy();
+    const sourceConfig = buildMultiRootConfig([personaRoot, sharedRoot]);
+
+    const result = await strategy.chunkFile(
+      fsSync.readFileSync(entryPath, 'utf-8'),
+      entryPath,
+      'persona-x',
+      sourceConfig,
+    );
+
+    const edges = result.getValue()[0].edges ?? [];
+    const hierarchy = edges.filter(e => e.relation_type === 'folder_hierarchy');
+    // Only the persona root's own branches — the shared root stays out of the
+    // persona tree's folder structure (hierarchy is rooted at the file's treeRoot).
+    expect(hierarchy.map(e => e.target_path)).toEqual(['persona-x/10-flow/10-step.md']);
+  });
+});

@@ -315,13 +315,22 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
     sourceConfig: WatchSourceConfig,
     _options?: ChunkFileOptions,
   ): Promise<Result<ContentChunk[]>> {
-    const treeRoot = path.resolve(expandHome(sourceConfig.path));
+    // ADR-8: a source may declare several roots (normalized to
+    // `resolvedPaths` by the config schema; `path` remains the single-root
+    // shape). The file's OWN root is its treeRoot — so `path_handle =
+    // relative(dirname(treeRoot), file)` is unchanged and sibling roots under
+    // `agent-personas/` yield their natural `simple-session/…` / `shared/…`
+    // handles. Every root of the source feeds ONE merged file index, which is
+    // what edge gating resolves against — plain-relative cross-root targets
+    // (`../shared/<node>.md`) hit the merged index with NO resolver branch.
     const selfPath = path.resolve(filePath);
+    const treeRoots = this.treeRootsFor(sourceConfig);
+    const treeRoot = this.owningTreeRoot(selfPath, treeRoots);
     const pathHandle = path.relative(path.dirname(treeRoot), selfPath).split(path.sep).join('/');
     const { frontmatter, body } = splitFrontmatter(content);
     const meta = extractPersonaNodeMetadata(frontmatter, filePath);
 
-    const fileIndex = await this.listFilesSafe(treeRoot);
+    const fileIndex = await this.listMergedFileIndex(treeRoots);
 
     const decisionEdges = buildPersonaDecisionEdges(meta, treeRoot, selfPath, fileIndex);
     this.logDanglingTargets(meta, treeRoot, selfPath, fileIndex, decisionEdges);
@@ -408,6 +417,48 @@ export class AgentPersonaChunkingStrategy implements BaseChunkingStrategy {
       return [];
     }
     return hubNode.children.map(child => hierarchyEdge(treeRoot, hubNode.hub, child));
+  }
+
+  /** Declared roots of the source, resolved to absolute paths (deduped). */
+  private treeRootsFor(sourceConfig: WatchSourceConfig): string[] {
+    const declared = sourceConfig.resolvedPaths ?? [sourceConfig.path];
+    const roots: string[] = [];
+    for (const rootPath of declared) {
+      const resolved = path.resolve(expandHome(rootPath));
+      if (!roots.includes(resolved)) {
+        roots.push(resolved);
+      }
+    }
+    return roots;
+  }
+
+  /**
+   * The root that owns the file (exact or prefix containment). Files outside
+   * every declared root fall back to the first one — today's single-root
+   * behavior for stray paths, byte-identical.
+   */
+  private owningTreeRoot(selfPath: string, treeRoots: string[]): string {
+    const owner = treeRoots.find(root => selfPath === root || selfPath.startsWith(root + path.sep));
+    return owner ?? treeRoots[0];
+  }
+
+  /**
+   * File index merged across ALL roots of the source (deduped by resolved
+   * path). Used for decision_next edge gating only — folder_hierarchy stays
+   * rooted at the file's own treeRoot, so foreign roots never join it.
+   */
+  private async listMergedFileIndex(treeRoots: string[]): Promise<string[]> {
+    const merged = new Map<string, string>();
+    for (const treeRoot of treeRoots) {
+      const files = await this.listFilesSafe(treeRoot);
+      for (const file of files) {
+        const key = path.resolve(file);
+        if (!merged.has(key)) {
+          merged.set(key, file);
+        }
+      }
+    }
+    return Array.from(merged.values());
   }
 
   /** Bounded recursive walk of the persona tree; fs errors degrade to []. */

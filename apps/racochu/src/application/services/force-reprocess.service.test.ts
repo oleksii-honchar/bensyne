@@ -861,4 +861,107 @@ describe('ForceReprocessService', () => {
       });
     });
   });
+
+  describe('multi-root enumeration over resolvedPaths (R1)', () => {
+    // The live defect made --force-reprocess/--resume enumerate ONLY
+    // source.path (root 0), which is why the shared root was never reached.
+    // Enumeration must cover ALL declared roots: union in declared order.
+
+    const aTwoRootSource = (overrides?: { resolvedPaths?: string[]; exclude?: string[] }) =>
+      aWatchSourceConfig({
+        id: 'agent-persona_simple-session',
+        path: '/multi/persona',
+        resolvedPaths: overrides?.resolvedPaths ?? ['/multi/persona', '/multi/shared'],
+        exclude: overrides?.exclude ?? [],
+      });
+
+    it('enumerates the union of both roots in declared order', async () => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('entry.md', false), mockDirent('10-flow', true)])
+        .mockResolvedValueOnce([mockDirent('10-step.md', false)])
+        .mockResolvedValueOnce([mockDirent('90-archive-latest.md', false)]);
+
+      await service.forceReprocessAll([aTwoRootSource()]);
+
+      const processed = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(processed).toEqual([
+        '/multi/persona/entry.md',
+        '/multi/persona/10-flow/10-step.md',
+        '/multi/shared/90-archive-latest.md',
+      ]);
+    });
+
+    it('keeps same-named files from different roots as separate entries (no name-clash dedup)', async () => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('x.md', false)]);
+
+      await service.forceReprocessAll([aTwoRootSource({ resolvedPaths: ['/r/one', '/r/two'] })]);
+
+      const processed = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(processed).toEqual(['/r/one/x.md', '/r/two/x.md']);
+    });
+
+    it('de-duplicates the same root declared twice (identical absolute paths process once)', async () => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('once.md', false)]);
+
+      await service.forceReprocessAll([
+        aTwoRootSource({ resolvedPaths: ['/dup', '/dup/'] }),
+      ]);
+
+      const processed = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(processed).toEqual(['/dup/once.md']);
+      expect(fsMock.readdir).toHaveBeenCalledTimes(1);
+    });
+
+    it('matches exclude globs relative to EACH root (root-relative semantics preserved per root)', async () => {
+      // Anchored pattern: matches only root-relative paths. If the scanner
+      // (wrongly) computed relPath against root 0 for root 1's entries,
+      // '../shared/.skip' would not match and the directory WOULD be read
+      // (third readdir call) and its file processed — the expectations below
+      // fail only under that bug.
+      const source = aTwoRootSource({ exclude: ['.skip/**'] });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        // root 0: a kept file; its top-level excluded dir is never read.
+        .mockResolvedValueOnce([mockDirent('keep.md', false), mockDirent('.skip', true)])
+        // root 1: same shape relative to root 1 — the excluded dir must be
+        // recognized against root 1's own relative paths.
+        .mockResolvedValueOnce([mockDirent('share-note.md', false), mockDirent('.skip', true)])
+        .mockResolvedValueOnce([mockDirent('hidden-under-root0-relative-bug.md', false)]);
+
+      await service.forceReprocessAll([source]);
+
+      const processed = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(processed).toEqual(['/multi/persona/keep.md', '/multi/shared/share-note.md']);
+      expect(fsMock.readdir).toHaveBeenCalledTimes(2);
+    });
+
+    it('single-path sources enumerate exactly as before (back-compat literal expectation)', async () => {
+      const source = aWatchSourceConfig({ id: 'sessions', path: '/legacy/one-root' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('a.md', false), mockDirent('sub', true)])
+        .mockResolvedValueOnce([mockDirent('b.md', false)]);
+
+      await service.forceReprocessAll([source]);
+
+      const processed = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(processed).toEqual(['/legacy/one-root/a.md', '/legacy/one-root/sub/b.md']);
+      expect(fsMock.readdir).toHaveBeenCalledTimes(2);
+    });
+  });
 });

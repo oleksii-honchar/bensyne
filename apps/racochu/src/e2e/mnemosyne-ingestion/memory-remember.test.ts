@@ -20,6 +20,7 @@ describe('[E2E] Chunking and Mnemosyne Ingestion Flow', () => {
   const TEST_SOURCE_CONFIG: WatchSourceConfig = {
     id: TEST_SOURCE_ID,
     path: '',
+    resolvedPaths: [''],
     memoryBank: TEST_SOURCE_ID,
     sourceType: SOURCE_TYPES.VAULT,
     description: '',

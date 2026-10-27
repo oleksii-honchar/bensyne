@@ -174,6 +174,7 @@ describe('AgentPersonaChunkingStrategy through real ChunkContentUseCase — sing
     const sourceConfig: WatchSourceConfig = {
       id: 'agent-persona_threads-operator',
       path: PERSONA_FIXTURE_DIR,
+      resolvedPaths: [PERSONA_FIXTURE_DIR],
       memoryBank: 'agent-persona_threads-operator',
       exclude: [],
       debounceMs: 3000,

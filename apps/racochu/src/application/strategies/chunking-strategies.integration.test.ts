@@ -95,6 +95,7 @@ const createMockMastraChunkingService = (chunks: ContentChunk[] = []): jest.Mock
 const createObsidianSourceConfig = (): WatchSourceConfig => ({
   id: 'obsidian-vault',
   path: '/obsidian/vault',
+  resolvedPaths: ['/obsidian/vault'],
   memoryBank: 'obsidian',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
@@ -106,6 +107,7 @@ const createObsidianSourceConfig = (): WatchSourceConfig => ({
 const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
   id: 'agent-sessions',
   path: '/agent-sessions',
+  resolvedPaths: ['/agent-sessions'],
   memoryBank: 'agent-sessions',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
@@ -117,6 +119,7 @@ const createAgentSessionsSourceConfig = (): WatchSourceConfig => ({
 const createContentAwareSourceConfig = (): WatchSourceConfig => ({
   id: 'general',
   path: '/general',
+  resolvedPaths: ['/general'],
   memoryBank: 'general',
   exclude: ['**/node_modules/**'],
   debounceMs: 3000,
@@ -700,6 +703,7 @@ describe('VaultChunkingStrategy with a real tmp/vault fixture', () => {
   const vaultSourceConfig = (): WatchSourceConfig => ({
     id: 'vault-source',
     path: vaultRoot,
+    resolvedPaths: [vaultRoot],
     memoryBank: 'vault',
     exclude: ['**/node_modules/**'],
     debounceMs: 3000,
@@ -996,6 +1000,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
     const sourceConfig: WatchSourceConfig = {
       id: 'vault-source',
       path: vaultRoot,
+      resolvedPaths: [vaultRoot],
       memoryBank: 'vault',
       exclude: ['**/node_modules/**'],
       debounceMs: 3000,
@@ -1043,6 +1048,7 @@ describe('Cross-file traversal — non-md target integration (all source types)'
     const sourceConfig: WatchSourceConfig = {
       id: 'obsidian-vault',
       path: vaultRoot,
+      resolvedPaths: [vaultRoot],
       memoryBank: 'obsidian',
       exclude: ['**/node_modules/**'],
       debounceMs: 3000,

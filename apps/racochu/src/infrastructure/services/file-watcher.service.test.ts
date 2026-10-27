@@ -622,4 +622,104 @@ describe('FileWatcherService', () => {
       expect(mockBensyneClient.registerBank).not.toHaveBeenCalled();
     });
   });
+
+  describe('multi-root sources (paths fan-out, ADR-8)', () => {
+    // A source declaring several roots fans out one watcher per root while
+    // staying ONE source: a single memory-bank registration, and every root
+    // watcher tracked individually so stop() closes all of them.
+    const aMultiRootSource = () => ({
+      ...aWatchSourceConfig({
+        id: 'persona-multi',
+        memoryBank: 'persona-multi',
+        path: '~/multi-root/persona',
+        description: 'Persona tree plus shared conformance root',
+      }),
+      resolvedPaths: ['~/multi-root/persona', '~/multi-root/shared'],
+    });
+
+    it('starts one chokidar watcher per declared root', async () => {
+      configService.getWatchSources.mockReturnValue([aMultiRootSource()]);
+
+      const result = await service.start();
+
+      expect(result.isOk()).toBe(true);
+      expect(mockWatchFn).toHaveBeenCalledTimes(2);
+      const watchedPaths = mockWatchFn.mock.calls.map(call => call[0]);
+      expect(watchedPaths).toContain(path.join(os.homedir(), 'multi-root/persona'));
+      expect(watchedPaths).toContain(path.join(os.homedir(), 'multi-root/shared'));
+    });
+
+    it('registers the memory bank exactly once per multi-root source', async () => {
+      configService.getWatchSources.mockReturnValue([aMultiRootSource()]);
+      mockBensyneClient.registerBank.mockResolvedValue(Result.ok(undefined as unknown as void));
+
+      await service.onApplicationBootstrap();
+
+      expect(mockBensyneClient.registerBank).toHaveBeenCalledTimes(1);
+      expect(mockBensyneClient.registerBank).toHaveBeenCalledWith(
+        'persona-multi',
+        'Persona tree plus shared conformance root',
+      );
+      // …while both roots are watched: one source, one bank, N roots.
+      expect(mockWatchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('tracks each root watcher separately so stop() closes all of them', async () => {
+      const watchers = [
+        mockWatcher,
+        {
+          on: jest.fn().mockReturnThis(),
+          close: jest.fn().mockResolvedValue(undefined),
+        } as unknown as jest.Mocked<chokidar.FSWatcher>,
+      ];
+      let nextWatcher = 0;
+      mockWatchFn.mockImplementation(() => watchers[nextWatcher++]);
+
+      configService.getWatchSources.mockReturnValue([aMultiRootSource()]);
+
+      await service.start();
+      const result = await service.stop();
+
+      expect(result.isOk()).toBe(true);
+      expect(watchers[0].close).toHaveBeenCalledTimes(1);
+      expect(watchers[1].close).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards file events from any root watcher to ProcessFileUseCase with the same memoryBank', async () => {
+      const secondWatcher = {
+        on: jest.fn().mockReturnThis(),
+        close: jest.fn().mockResolvedValue(undefined),
+      } as unknown as jest.Mocked<chokidar.FSWatcher>;
+      let nextWatcher = 0;
+      mockWatchFn.mockImplementation(() => (nextWatcher++ === 0 ? mockWatcher : secondWatcher));
+
+      configService.getWatchSources.mockReturnValue([aMultiRootSource()]);
+
+      await service.start();
+
+      // Wire the ADD handler on each root's watcher and fire a file event.
+      const firstAdd = mockWatcher.on.mock.calls.find(call => call[0] === 'add')?.[1] as
+        ((filePath: string) => void) | undefined;
+      const secondAdd = secondWatcher.on.mock.calls.find(call => call[0] === 'add')?.[1] as
+        ((filePath: string) => void) | undefined;
+      expect(firstAdd).toBeDefined();
+      expect(secondAdd).toBeDefined();
+
+      firstAdd?.(path.join(os.homedir(), 'multi-root/persona/00-entry.md'));
+      secondAdd?.(path.join(os.homedir(), 'multi-root/shared/90-archive-latest.md'));
+
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: path.join(os.homedir(), 'multi-root/persona/00-entry.md'),
+          memoryBank: 'persona-multi',
+        }),
+      );
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: path.join(os.homedir(), 'multi-root/shared/90-archive-latest.md'),
+          memoryBank: 'persona-multi',
+        }),
+      );
+    });
+  });
 });

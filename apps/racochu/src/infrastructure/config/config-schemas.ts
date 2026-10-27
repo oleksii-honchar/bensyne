@@ -12,32 +12,95 @@ export const contentFilterConfigSchema = z.object({
   minTokenDiversity: z.number().min(0).max(1).default(DEFAULT_CONTENT_FILTER_OPTIONS.minTokenDiversity),
 });
 
-export const watchSourceConfigSchema = z
-  .object({
-    id: z.string(),
-    path: z.string(),
-    memoryBank: z.string().optional(),
-    description: z.string().optional(),
-    // Optional per-source retention (days) for the TTL sweep.
-    // Absent = no TTL (opt-in, never defaulted).
-    ttlDays: z.number().int().positive().optional(),
-    exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
-    debounceMs: z.number().positive().default(3000),
-    // Optional content-classifier config; defaults are conservative (see
-    // content-classifier.service.ts). Absent = classifier enabled with defaults.
-    contentFilter: contentFilterConfigSchema.optional().default(DEFAULT_CONTENT_FILTER_OPTIONS),
-    // D29: the field IS the source type (default vault, the content-aware
-    // successor). `unknown` is the wire-side fallback only.
-    sourceType: z
-      .enum(Object.values(SOURCE_TYPES) as [string, ...string[]])
-      .optional()
-      .default(SOURCE_TYPES.VAULT),
-    autoPopulate: z.boolean().default(true),
-  })
-  .transform(data => ({
+/**
+ * ADR-8: a watch source declares exactly ONE root via `path` (legacy shape)
+ * or several roots via `paths` — never both, never neither. Parsing is
+ * back-compatible in the strong sense: every config that parses today parses
+ * to the same `path` value, and the transform additionally normalizes BOTH
+ * shapes into `resolvedPaths: string[]` — the single array shape every
+ * multi-root-aware consumer uses (file-watcher fan-out, persona tree roots).
+ * `path` stays populated for single-root consumers (for `paths` sources it
+ * carries the first declared root).
+ *
+ * R1 (live defect b1b): the XOR gate is an OPERATOR-ENTRY rule about the
+ * declared keys — the normalized output legitimately carries both `path`
+ * (legacy echo) and `paths` (raw echo). Feeding that internal object back
+ * through the entry gate made every per-file consumer reject multi-root
+ * sources ("both are set"). Hence the decomposition below: ONE shared shape
+ * and ONE shared normalization; the XOR refine attaches to the entry schema
+ * ONLY. Internal seams validate against `resolvedWatchSourceConfigSchema`
+ * (`resolvedPaths` required, XOR absent) — structurally impossible to drift
+ * from the entry schema.
+ */
+const watchSourceShape = z.object({
+  id: z.string(),
+  path: z.string().optional(),
+  paths: z.array(z.string()).min(1).optional(),
+  memoryBank: z.string().optional(),
+  description: z.string().optional(),
+  // Optional per-source retention (days) for the TTL sweep.
+  // Absent = no TTL (opt-in, never defaulted).
+  ttlDays: z.number().int().positive().optional(),
+  exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
+  debounceMs: z.number().positive().default(3000),
+  // Optional content-classifier config; defaults are conservative (see
+  // content-classifier.service.ts). Absent = classifier enabled with defaults.
+  contentFilter: contentFilterConfigSchema.optional().default(DEFAULT_CONTENT_FILTER_OPTIONS),
+  // D29: the field IS the source type (default vault, the content-aware
+  // successor). `unknown` is the wire-side fallback only.
+  sourceType: z
+    .enum(Object.values(SOURCE_TYPES) as [string, ...string[]])
+    .optional()
+    .default(SOURCE_TYPES.VAULT),
+  autoPopulate: z.boolean().default(true),
+});
+
+type RawWatchSource = z.infer<typeof watchSourceShape>;
+
+/**
+ * Shared normalization (idempotent on its own output, which is what makes
+ * the internal-seam schema safe to re-validate already-normalized objects).
+ */
+const normalizeWatchSource = (data: RawWatchSource) => {
+  // For entry-schema inputs the XOR is enforced by the refine; internal-seam
+  // inputs arrive fully normalized and re-normalize to themselves.
+  const declaredRoots = data.paths ?? (data.path !== undefined ? [data.path] : []);
+  const primaryRoot = data.path ?? declaredRoots[0] /* unreachable after refine */ ?? '';
+  return {
     ...data,
+    path: primaryRoot,
+    resolvedPaths: declaredRoots,
     memoryBank: data.memoryBank ?? data.id,
-  }));
+  };
+};
+
+/** Operator-facing config-entry gate: declares the keys, enforces the XOR. */
+export const watchSourceConfigSchema = watchSourceShape
+  .superRefine((data, ctx) => {
+    const hasPath = data.path !== undefined;
+    const hasPaths = data.paths !== undefined;
+    let message: string | undefined;
+    if (hasPath && hasPaths) {
+      message = "Watch source must define exactly one of 'path' or 'paths' (both are set)";
+    } else if (!hasPath && !hasPaths) {
+      message = "Watch source must define exactly one of 'path' or 'paths' (neither is set)";
+    }
+    if (message !== undefined) {
+      // Both issues so the error names both keys, whichever the caller reads.
+      ctx.addIssue({ code: 'custom', message, path: ['path'] });
+      ctx.addIssue({ code: 'custom', message, path: ['paths'] });
+    }
+  })
+  .transform(normalizeWatchSource);
+
+/**
+ * Internal per-file seam schema (R1): accepts the NORMALIZED shape produced
+ * by `watchSourceConfigSchema` (`resolvedPaths` required; no operator-facing
+ * key-XOR). Use this for use-case/params validation — never the entry schema.
+ */
+export const resolvedWatchSourceConfigSchema = watchSourceShape
+  .extend({ resolvedPaths: z.array(z.string()).min(1) })
+  .transform((data: RawWatchSource) => normalizeWatchSource(data));
 
 export const importanceFactorConfigSchema = z.object({
   name: z.string(),

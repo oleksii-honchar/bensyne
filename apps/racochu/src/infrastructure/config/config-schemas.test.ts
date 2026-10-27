@@ -327,6 +327,106 @@ describe('config-schemas', () => {
         expect(result.success).toBe(false);
       });
     });
+
+    describe('path/paths XOR (ADR-8 multi-root sources)', () => {
+      // Behavior: the parser normalizes either accepted key shape into one
+      // internal `resolvedPaths` array shape; the XOR gate rejects every
+      // ambiguous or empty combination. No logger assertions.
+
+      it('accepts path-only config and normalizes resolvedPaths to the single root', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          path: '/roots/a',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.path).toBe('/roots/a');
+          expect(result.data.resolvedPaths).toEqual(['/roots/a']);
+        }
+      });
+
+      it('accepts paths-only config, preserving declared order, and exposes first root as path', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          paths: ['/roots/a', '/roots/b'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.resolvedPaths).toEqual(['/roots/a', '/roots/b']);
+          // Single-root consumers (logs, reprocess) keep seeing a valid root.
+          expect(result.data.path).toBe('/roots/a');
+        }
+      });
+
+      it('paths-only receives the same defaults as path-only (memoryBank→id, sourceType→vault, exclude)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          paths: ['/roots/a', '/roots/b'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.memoryBank).toBe('multi-root');
+          expect(result.data.sourceType).toBe('vault');
+          expect(result.data.exclude).toEqual([
+            '.git/**',
+            '**/.git/**',
+            'node_modules/**',
+            '**/node_modules/**',
+          ]);
+        }
+      });
+
+      it('rejects BOTH path and paths, and the error names both keys', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          path: '/roots/a',
+          paths: ['/roots/b'],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          const namedKeys = new Set(result.error.issues.flatMap(issue => issue.path.map(String)));
+          expect(namedKeys.has('path')).toBe(true);
+          expect(namedKeys.has('paths')).toBe(true);
+        }
+      });
+
+      it('rejects NEITHER path nor paths, and the error names both keys', () => {
+        const result = watchSourceConfigSchema.safeParse({ id: 'multi-root' });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          const namedKeys = new Set(result.error.issues.flatMap(issue => issue.path.map(String)));
+          expect(namedKeys.has('path')).toBe(true);
+          expect(namedKeys.has('paths')).toBe(true);
+        }
+      });
+
+      it('rejects paths: [] (empty array names the paths key)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          paths: [],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          const namedKeys = new Set(result.error.issues.flatMap(issue => issue.path.map(String)));
+          expect(namedKeys.has('paths')).toBe(true);
+        }
+      });
+
+      it('rejects non-string elements inside paths', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'multi-root',
+          paths: ['/roots/a', 123],
+        });
+
+        expect(result.success).toBe(false);
+      });
+    });
   });
 
   describe('enhancementConfigSchema', () => {
