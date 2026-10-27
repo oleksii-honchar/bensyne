@@ -206,7 +206,11 @@ class SearchMemoryBankUseCase(BaseUseCase[dict, dict]):
             agent_id=agent_id,
         )
 
-        # 1. Get the merged bank listing (filesystem ∪ pool ∪ registry).
+        # 1. Get the merged bank listing (filesystem ∪ pool ∪ registry) as a
+        # cheap SKELETON (Plan 8): scoring below reads only name + description,
+        # so the per-bank live-count walk must NOT run here — it would make
+        # discovery O(all banks) (measured ~20 s at ~900 banks). Live counts
+        # for the RETURNED matches only are added in step 6.
         self.logger.debug(
             "execute:list_banks:start",
             use_case="search_memory_bank",
@@ -217,7 +221,7 @@ class SearchMemoryBankUseCase(BaseUseCase[dict, dict]):
             router=self.router,
             logger=self.logger,
         )
-        list_result = list_use_case.execute({})
+        list_result = list_use_case.execute({"enrich": False})
         if list_result.is_ko:
             # Honest fallback (per ADR-7 / ListBanksUseCase): warn and
             # continue with an empty universe. Matches are empty, total 0.
@@ -313,6 +317,26 @@ class SearchMemoryBankUseCase(BaseUseCase[dict, dict]):
         # 5. Truncate to limit; total reflects pre-truncation count.
         total = len(scored)
         matches = [entry for _, entry in scored[:limit]]
+
+        # 6. Live-enrich ONLY the returned matches (bounded by limit ≤ MAX_LIMIT,
+        # same ADR-7 honest fallback as ListBanksUseCase step 4). Wire shape is
+        # unchanged — memory_count stays the live value for returned entries.
+        for entry in matches:
+            if entry["status"] == "active":
+                continue
+            stats_result = self.router.get_stats_for(entry["name"])
+            if stats_result.is_ok and stats_result.value is not None:
+                entry["memory_count"] = stats_result.value.get(
+                    "total_memories", entry["memory_count"]
+                )
+            else:
+                self.logger.warning(
+                    "Could not read live memory count; keeping stored value",
+                    use_case="search_memory_bank",
+                    method="execute_internal",
+                    memory_bank=entry["name"],
+                    errors=stats_result.get_formatted_errors(),
+                )
         self.logger.debug(
             "execute:truncate:ok",
             use_case="search_memory_bank",

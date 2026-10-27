@@ -169,7 +169,32 @@ class TestListRegisterToolClosures:
             result = asyncio.run(tool_fn())
 
         assert result == {"banks": []}
-        mock_handle.assert_awaited_once_with(mock_router, mock_service, {})
+        # Plan 8: the tool supplies pagination defaults.
+        mock_handle.assert_awaited_once_with(
+            mock_router, mock_service, {"limit": 200, "offset": 0}
+        )
+
+    def test_list_banks_closure_passes_pagination(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        mock_mcp = MagicMock()
+        mock_router = MagicMock()
+        mock_service = MagicMock()
+
+        from src.app import register_tools
+
+        with patch(
+            "src.infrastructure.mcp.handlers.handle_list_banks",
+            new=AsyncMock(return_value={"banks": [], "total": 0}),
+        ) as mock_handle:
+            register_tools(mock_mcp, mock_router, mock_service)
+            tool_fn = self._capture_tool_fn(mock_mcp, "listMemoryBanks")
+            asyncio.run(tool_fn(limit=50, offset=100))
+
+        mock_handle.assert_awaited_once_with(
+            mock_router, mock_service, {"limit": 50, "offset": 100}
+        )
 
     def test_register_bank_closure_invokes_service_backed_handler(self) -> None:
         import asyncio

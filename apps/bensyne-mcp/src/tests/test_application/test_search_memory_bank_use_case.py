@@ -896,3 +896,76 @@ class TestUnderlyingListBanksFailure:
             assert result.value["total"] == 0
         else:
             assert result.errors[0].error_code == "MEMORY_BANK_DB_NOT_FOUND"
+
+
+class TestSearchEnrichmentBounded:
+    """Plan 8: discovery must not pay the full-bank live-count walk.
+
+    The merged listing is consumed as a cheap skeleton (enrich=False);
+    live ``get_stats_for`` runs at most once per RETURNED match (≤ limit),
+    so latency is O(limit), not O(all banks). (findings §10-A/B)
+    """
+
+    def _matching_service(self):
+        banks = [
+            _bank(f"vault-docs-{i}", description="vault knowledge", memory_count=i)
+            for i in range(5)
+        ]
+        return _service(banks)
+
+    def test_live_counts_enriched_only_for_returned_matches(self) -> None:
+        from src.application.use_cases.search_memory_bank_use_case import (
+            SearchMemoryBankUseCase,
+        )
+
+        logger = LoggerMock()
+        router = _router()
+        router.get_stats_for.return_value = Result.ok({"total_memories": 99})
+        use_case = SearchMemoryBankUseCase(
+            memory_bank_service=self._matching_service(), router=router, logger=logger
+        )
+
+        result = use_case.execute({"query": "vault", "limit": 2})
+
+        assert result.is_ok is True
+        assert result.value["total"] == 5
+        returned = [m["name"] for m in result.value["matches"]]
+        assert len(returned) == 2
+        called = [c.args[0] for c in router.get_stats_for.call_args_list]
+        # Enrichment bounded: only the returned matches, never the whole universe.
+        assert set(called) == set(returned)
+        assert len(called) <= 2
+        for m in result.value["matches"]:
+            assert m["memory_count"] == 99  # live count preserved in wire shape
+
+    def test_underlying_listing_requested_without_enrichment(self) -> None:
+        """Skeleton consumption: enrichment must not run during ranking."""
+        from src.application.use_cases.list_banks_use_case import ListBanksUseCase
+        from src.application.use_cases.search_memory_bank_use_case import (
+            SearchMemoryBankUseCase,
+        )
+
+        logger = LoggerMock()
+        router = _router()
+        router.get_stats_for.return_value = Result.ok({"total_memories": 99})
+
+        list_view_calls: list[dict] = []
+        real_list_execute = ListBanksUseCase.execute
+
+        def spy_execute(self, parameters):  # capture params passed by search
+            list_view_calls.append(dict(parameters))
+            return real_list_execute(self, parameters)
+
+        import unittest.mock as um
+
+        with um.patch.object(ListBanksUseCase, "execute", spy_execute):
+            use_case = SearchMemoryBankUseCase(
+                memory_bank_service=self._matching_service(),
+                router=router,
+                logger=logger,
+            )
+            result = use_case.execute({"query": "vault", "limit": 5})
+
+        assert result.is_ok is True
+        assert list_view_calls, "search must consume ListBanksUseCase"
+        assert all(c.get("enrich") is False for c in list_view_calls)

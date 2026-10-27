@@ -354,3 +354,112 @@ class TestListBanksStatsConsumption:
 
         bank = result.value["banks"][0]
         assert bank["memory_count"] == 0
+
+
+class TestListBanksPaginationEnrichment:
+    """Plan 8: pagination + slice-bound live enrichment (findings §10-A/B).
+
+    The per-bank ``get_stats_for`` walk is the ~20 s slow path; it must run
+    ONLY for entries actually returned (page slice), never for the whole
+    bank universe.
+    """
+
+    BANKS = ["b1", "b2", "b3", "b4", "b5"]
+
+    @pytest.fixture
+    def router(self) -> MagicMock:
+        router = MagicMock()
+        router.instances = {}
+        router.list_bank_dirs.return_value = list(self.BANKS)
+        router.get_stats_for.return_value = Result.ok({"total_memories": 7})
+        return router
+
+    @pytest.fixture
+    def memory_bank_service(self) -> MagicMock:
+        service = MagicMock()
+        service.list_memory_banks.return_value = Result.ok([])
+        return service
+
+    @pytest.fixture
+    def logger(self) -> LoggerMock:
+        return LoggerMock()
+
+    @pytest.fixture
+    def use_case(self, memory_bank_service, router, logger) -> ListBanksUseCase:
+        return ListBanksUseCase(
+            memory_bank_service=memory_bank_service,
+            router=router,
+            logger=logger,
+        )
+
+    # -- Pagination --
+
+    def test_limit_returns_first_page_with_total(self, use_case) -> None:
+        """limit=2 returns the first 2 sorted banks; total reports the full count."""
+        result = use_case.execute({"limit": 2})
+
+        assert result.is_ok is True
+        assert [b["name"] for b in result.value["banks"]] == ["b1", "b2"]
+        assert result.value["total"] == 5
+
+    def test_offset_pages_forward(self, use_case) -> None:
+        """offset=3 limit=2 returns the last 2 banks."""
+        result = use_case.execute({"limit": 2, "offset": 3})
+
+        assert result.is_ok is True
+        assert [b["name"] for b in result.value["banks"]] == ["b4", "b5"]
+        assert result.value["total"] == 5
+
+    def test_no_params_keeps_full_listing_plus_total(self, use_case) -> None:
+        """Backward compat: empty params = full enumeration; total added."""
+        result = use_case.execute({})
+
+        assert result.is_ok is True
+        assert [b["name"] for b in result.value["banks"]] == self.BANKS
+        assert result.value["total"] == 5
+
+    # -- Enrichment bound to the returned page --
+
+    def test_live_enrichment_only_for_returned_page(self, router, use_case) -> None:
+        """get_stats_for is called ONLY for the returned slice (b1, b2)."""
+        result = use_case.execute({"limit": 2})
+
+        assert result.is_ok is True
+        called = [c.args[0] for c in router.get_stats_for.call_args_list]
+        assert called == ["b1", "b2"]
+        for bank in result.value["banks"]:
+            assert bank["memory_count"] == 7
+
+    def test_enrich_false_skips_all_live_counts(self, router, use_case) -> None:
+        """enrich=False returns the cheap skeleton — zero get_stats_for calls."""
+        result = use_case.execute({"enrich": False})
+
+        assert result.is_ok is True
+        router.get_stats_for.assert_not_called()
+        for bank in result.value["banks"]:
+            assert bank["memory_count"] == 0
+
+    def test_page_entries_keep_canonical_shape(self, use_case) -> None:
+        """Paged entries keep {name, bank, description, memory_count, status}."""
+        result = use_case.execute({"limit": 3, "offset": 1})
+
+        required = {"name", "bank", "description", "memory_count", "status"}
+        for bank in result.value["banks"]:
+            assert set(bank.keys()) == required
+
+    # -- Validation --
+
+    @pytest.mark.parametrize("bad_limit", [0, -1, 1001, True, "10"])
+    def test_invalid_limit_rejected(self, use_case, bad_limit) -> None:
+        result = use_case.validate_params({"limit": bad_limit})
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "INVALID_LIMIT"
+
+    @pytest.mark.parametrize("bad_offset", [-1, "0", True])
+    def test_invalid_offset_rejected(self, use_case, bad_offset) -> None:
+        result = use_case.validate_params({"offset": bad_offset})
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "INVALID_OFFSET"
+
+    def test_none_limit_and_offset_accepted(self, use_case) -> None:
+        assert use_case.validate_params({"limit": None, "offset": None}).is_ok is True

@@ -72,15 +72,27 @@ _mcp_call() {
   echo "$resp" | jq -r '.result.structuredContent // .result'
 }
 
-# Get the live description for a bank via listMemoryBanks. Returns "" if
-# the bank does not exist yet.
+# Get the live description for a bank via listMemoryBanks (paginated, Plan 8).
+# Returns "" if the bank does not exist yet.
 _get_existing_description() {
   local name="$1"
-  local raw
-  raw=$(_mcp_call "tools/call" '{"name":"listMemoryBanks","arguments":{}}' 1)
-  echo "$raw" | jq -r --arg n "$name" \
-    '.content[0].text | fromjson | .banks[] | select(.name == $n) | .description // ""' \
-    2>/dev/null || echo ""
+  local offset=0
+  local page=1000
+  while :; do
+    local raw
+    raw=$(_mcp_call "tools/call" "{\"name\":\"listMemoryBanks\",\"arguments\":{\"limit\":${page},\"offset\":${offset}}}" 1)
+    local desc
+    desc=$(echo "$raw" | jq -r --arg n "$name" \
+      '.content[0].text | fromjson | .banks[] | select(.name == $n) | .description // ""' \
+      2>/dev/null || echo "")
+    if [[ -n "$desc" ]]; then echo "$desc"; return 0; fi
+    local count
+    count=$(echo "$raw" | jq -r '.content[0].text | fromjson | .banks | length' 2>/dev/null || echo 0)
+    offset=$((offset + page))
+    # Stop when this page was short (last page) or empty (guard).
+    if [[ "${count:-0}" -lt "$page" ]]; then break; fi
+  done
+  echo ""
 }
 
 # Register a bank. Returns 0 on success, 1 on MCP error.

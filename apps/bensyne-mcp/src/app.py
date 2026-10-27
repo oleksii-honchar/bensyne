@@ -301,20 +301,31 @@ def register_tools(
         return await handlers.handle_stats(router, {"memory_bank": memory_bank})
 
     @mcp.tool(name="listMemoryBanks")
-    async def list_banks():
-        """List all available memory banks (diagnostic / full enumeration).
+    async def list_banks(
+        limit: Annotated[
+            int, "Optional. Max banks to return (1-1000). Default 200."
+        ] = 200,
+        offset: Annotated[int, "Optional. Index into the sorted list. Default 0."] = 0,
+    ):
+        """List available memory banks (diagnostic enumeration, paginated).
 
         When to use: diagnostics, full enumeration, or when searchMemoryBank
         returns no useful matches. For routine discovery, prefer searchMemoryBank
         with a short task query — it ranks banks by relevance and is faster than
         scanning this list manually.
 
+        Paginated: returns up to ``limit`` entries (sorted by name, starting at
+        ``offset``) plus ``total`` (the full count) — page with offset += limit
+        until you have seen ``total`` banks.
+
         Banks typically include 'user_<id>' (the user profile bank, writable) plus
         Racochu-managed source banks 'agent-sessions_{user_id}', 'vault', 'obsidian' (recall-only).
         An empty bank means 'no context yet' — confirm with searchMemoryBank before
         concluding nothing exists.
         """
-        return await handlers.handle_list_banks(router, memory_bank_service, {})  # type: ignore[arg-type]
+        return await handlers.handle_list_banks(
+            router, memory_bank_service, {"limit": limit, "offset": offset}  # type: ignore[arg-type]
+        )  # type: ignore[arg-type]
 
     @mcp.tool(name="searchMemoryBank")
     async def search_memory_bank(

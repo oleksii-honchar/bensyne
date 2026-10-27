@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import structlog.stdlib
 from src.application.use_cases.base_use_case import BaseUseCase
-from src.utils.result import Result
+from src.utils.result import ErrorWithDetails, Result
 
 if TYPE_CHECKING:
     from src.application.services.memory_bank_service import MemoryBankService
@@ -37,9 +37,42 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
         self.memory_bank_service = memory_bank_service
         self.router = router
 
+    MAX_LIMIT: int = 1000
+
     def validate_params(self, parameters: dict) -> Result[dict]:
-        """ListBanksUseCase requires no parameters."""
-        return Result.ok(parameters)
+        """Validate optional pagination/enrichment parameters.
+
+        - ``limit``: optional int 1..1000 (None/absent = full enumeration).
+        - ``offset``: optional int >= 0 (default 0).
+        - ``enrich``: optional bool (default True). ``False`` returns the
+          cheap merged skeleton WITHOUT the per-bank live-count walk — used
+          by discovery (SearchMemoryBankUseCase) which ranks on name +
+          description only.
+        """
+        limit = parameters.get("limit")
+        if limit is not None and (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or limit < 1
+            or limit > self.MAX_LIMIT
+        ):
+            return Result.ko([ErrorWithDetails("INVALID_LIMIT", {"limit": limit})])
+
+        offset = parameters.get("offset", 0)
+        if offset is None:
+            offset = 0
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            return Result.ko([ErrorWithDetails("INVALID_OFFSET", {"offset": offset})])
+
+        enrich = parameters.get("enrich", True)
+        if not isinstance(enrich, bool):
+            return Result.ko([ErrorWithDetails("INVALID_ENRICH", {"enrich": enrich})])
+
+        merged = dict(parameters)
+        merged["limit"] = limit
+        merged["offset"] = offset
+        merged["enrich"] = enrich
+        return Result.ok(merged)
 
     def _entry(self, name: str, description: str, memory_count: int, status: str) -> dict:
         """Build a list entry in the canonical shape (name == bank)."""
@@ -95,31 +128,48 @@ class ListBanksUseCase(BaseUseCase[dict, dict]):
             description = existing["description"] if existing else ""
             banks[bank_name] = self._entry(bank_name, description, memory_count, "active")
 
-        # 4. Non-active (non-pooled) entries — live count via router.get_stats_for
-        # (R6: the router resolves the memory entity from the incoming bank name).
-        # On ko (missing/corrupt db) keep the stored value (ADR-7 honest fallback).
-        for bank_name, entry in banks.items():
-            if entry["status"] == "active":
-                continue
-            stats_result = self.router.get_stats_for(bank_name)
-            if stats_result.is_ok and stats_result.value is not None:
-                entry["memory_count"] = stats_result.value.get("total_memories", 0)
-            else:
-                self.logger.warning(
-                    "Could not read live memory count; keeping stored value",
-                    use_case="list_banks",
-                    method="execute_internal",
-                    memory_bank=bank_name,
-                    errors=stats_result.get_formatted_errors(),
-                )
+        # 4. Slice-BOUND live enrichment (Plan 8): the merged view above is the
+        # cheap skeleton; the per-bank router.get_stats_for walk (transient
+        # full client per bank — the measured ~20 s path at ~900 banks) runs
+        # ONLY for entries actually returned. With ``enrich=False`` the
+        # skeleton is returned as-is (discovery ranks on name + description).
+        # (R6: the router resolves the memory entity from the incoming bank
+        # name.) On ko (missing/corrupt db) keep the stored value (ADR-7
+        # honest fallback).
+        names = sorted(banks)
+        total = len(names)
+        offset: int = parameters.get("offset", 0)
+        limit: int | None = parameters.get("limit")
+        page = names[offset : offset + limit] if limit is not None else names[offset:]
 
-        result = [banks[name] for name in sorted(banks)]
+        if parameters.get("enrich", True):
+            for bank_name in page:
+                entry = banks[bank_name]
+                if entry["status"] == "active":
+                    continue
+                stats_result = self.router.get_stats_for(bank_name)
+                if stats_result.is_ok and stats_result.value is not None:
+                    entry["memory_count"] = stats_result.value.get("total_memories", 0)
+                else:
+                    self.logger.warning(
+                        "Could not read live memory count; keeping stored value",
+                        use_case="list_banks",
+                        method="execute_internal",
+                        memory_bank=bank_name,
+                        errors=stats_result.get_formatted_errors(),
+                    )
+
+        result = [banks[name] for name in page]
 
         self.logger.info(
             "Banks listed",
             use_case="list_banks",
             method="execute_internal",
             banks_count=len(result),
+            total=total,
+            offset=offset,
+            limit=limit,
+            enriched=parameters.get("enrich", True),
         )
 
-        return Result.ok({"banks": result})
+        return Result.ok({"banks": result, "total": total})
