@@ -1,10 +1,13 @@
 import { Injectable, OnApplicationShutdown } from '@nestjs/common';
+import * as fs from 'fs/promises';
+import { FileMemoryTracker } from '../../domain/file-memory-tracker.aggregate';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
+import { IsPastDueInput, isPastDue } from '../../utils/ttl-activity';
 import { FORCE_FORGET_ENV_VAR, MASS_FORGET_THRESHOLD } from '../mass-forget-guard';
 
 const MS_PER_DAY = 86_400_000;
@@ -15,8 +18,8 @@ const DAILY_SWEEP_INTERVAL_MS = MS_PER_DAY;
  * Outcome of a single TTL sweep run.
  *
  * - sourcesChecked: watch sources with a ttlDays that were iterated over.
- * - expired: trackers initially matched as TTL-expired (counted before the
- *   mass-forget guard, per source).
+ * - expired: trackers the activity clock judged past due at sweep time (counted
+ *   before the mass-forget guard, per source).
  * - wouldForget: trackers that would be forgotten (dry-run only).
  * - forgotten: trackers for which forgetByFile returned ok AND the racochu
  *   tracker rows were deleted successfully.
@@ -39,9 +42,12 @@ export interface TtlSweepSummary {
 /**
  * TTL reconciliation for watch sources with a `ttlDays` retention.
  *
- * Per source with a ttlDays configured, the service forgets files whose
- * tracker was created strictly before `now - ttlDays` (cutoff) through the
- * bensyne MCP `forgetFile` tool, then deletes the racochu tracker rows.
+ * Per source with a ttlDays configured, the service derives which tracked files
+ * are past due from the activity clock (spec §3.1, ADR-8/ADR-9): a file's last
+ * activity is its fs mtime when present, the row's timestamps when it is not;
+ * past due means `now − clock > ttlDays`, evaluated via the shared isPastDue
+ * helper with a single `now` per run. Past-due files are forgotten through the
+ * bensyne MCP `forgetFile` tool, then the racochu tracker rows are deleted.
  *
  * Semantics (AD-6), mirroring ExcludeReconciliationService:
  * - Non-fatal: a single file/source failure never blocks the sweep — it is
@@ -96,6 +102,9 @@ export class TtlReconciliationService implements OnApplicationShutdown {
       return summary;
     }
 
+    // One clock read per run feeds every isPastDue decision (never re-read per row).
+    const now = Date.now();
+
     // Only sources with a ttlDays are eligible; scope by sourceId when provided.
     const eligibleSources = sources.filter(source => {
       if (source.ttlDays === undefined) {
@@ -107,7 +116,7 @@ export class TtlReconciliationService implements OnApplicationShutdown {
     for (const source of eligibleSources) {
       summary.sourcesChecked += 1;
       try {
-        await this.sweepSource(source, summary, dryRun);
+        await this.sweepSource(source, summary, dryRun, now);
       } catch (error) {
         // A broken source must not block the sweep of the others.
         this.logger.error(
@@ -163,32 +172,57 @@ export class TtlReconciliationService implements OnApplicationShutdown {
     source: WatchSourceConfig,
     summary: TtlSweepSummary,
     dryRun: boolean,
+    now: number,
   ): Promise<void> {
     const ttlDays = source.ttlDays as number;
-    const cutoff = new Date(Date.now() - ttlDays * MS_PER_DAY);
-    const trackers = await this.fileMemoryTrackerService.findExpiredBySourceId(source.id, cutoff);
     const memoryBank = source.memoryBank ?? source.id;
 
-    // Count expired BEFORE the mass-forget guard (per the spec).
-    summary.expired += trackers.length;
+    // B14(b): the expired set is DERIVED from the activity clock (spec §3.1,
+    // ADR-8/ADR-9) — never from the old SQL createdAt-age predicate. The set:
+    // all tracked rows probed per file (fs mtime authoritative when present);
+    // an ENOENT file falls back to its row timestamps (the helper's precedence;
+    // the FileMemoryTracker aggregate is timestamp-free and the in-scope
+    // row-activity channel is getTrackerCreatedAt → rowCreatedAt, the last
+    // observable row activity available here). The helper's verdict with the
+    // run's single `now` is the ONLY input to this list.
+    const rows = await this.fileMemoryTrackerService.findBySourceId(source.id);
+    const expired: FileMemoryTracker[] = [];
+    for (const row of rows) {
+      const rowCreatedAt = await this.fileMemoryTrackerService.getTrackerCreatedAt(row.filePath);
+      if (rowCreatedAt === null) {
+        // Row vanished since enumeration — nothing to forget (liveness guard,
+        // kept from the pre-forget re-check; the removed part is its clock rule).
+        continue;
+      }
+      const probe = await this.probeFileMtime(row.filePath);
+      if (probe.kind === 'unavailable') {
+        // Activity not observable (non-ENOENT stat error): never a forget candidate.
+        continue;
+      }
+      const clockInput: IsPastDueInput =
+        probe.kind === 'present'
+          ? { mtimeMs: probe.mtimeMs, rowCreatedAt, ttlDays }
+          : { rowCreatedAt, ttlDays };
+      if (isPastDue(clockInput, now)) {
+        expired.push(row);
+      }
+    }
 
-    if (trackers.length > this.massForgetThreshold && !this.forceForget) {
+    // Count expired BEFORE the mass-forget guard (per the spec).
+    summary.expired += expired.length;
+
+    if (expired.length > this.massForgetThreshold && !this.forceForget) {
       summary.refusedMassForget += 1;
       this.logger.warn(
-        `MASS-FORGET REFUSED: source="${source.id}", expired=${trackers.length}, ` +
+        `MASS-FORGET REFUSED: source="${source.id}", expired=${expired.length}, ` +
           `threshold=${this.massForgetThreshold}. Set ${FORCE_FORGET_ENV_VAR}=1 to bypass this safeguard.`,
       );
       return;
     }
 
-    for (const tracker of trackers) {
-      // Re-read the tracker immediately before forgetting: the aggregate is
-      // timestamp-free, so re-fetch createdAt from the repository and re-check
-      // expiry. Skip if it no longer exists or is no longer expired.
-      const createdAt = await this.fileMemoryTrackerService.getTrackerCreatedAt(tracker.filePath);
-      if (createdAt === null || !(createdAt.getTime() < cutoff.getTime())) {
-        continue;
-      }
+    for (const tracker of expired) {
+      // No per-forget clock re-check: membership in the derived set above is the
+      // single decision (never double-clock; ADR-9).
 
       if (dryRun) {
         summary.wouldForget += 1;
@@ -224,6 +258,26 @@ export class TtlReconciliationService implements OnApplicationShutdown {
             `error="${(error as Error).message}"`,
         );
       }
+    }
+  }
+
+  /**
+   * Activity probe for the B14(b) derivation. `present` carries the authoritative
+   * file mtime; `absent` (ENOENT) triggers the helper's row-timestamp fallback;
+   * `unavailable` (any other stat error) means activity cannot be observed, and
+   * the caller must NOT treat the file as a forget candidate. Performs no clock
+   * comparison — the rule lives only in isPastDue.
+   */
+  private async probeFileMtime(
+    filePath: string,
+  ): Promise<{ kind: 'present'; mtimeMs: number } | { kind: 'absent' } | { kind: 'unavailable' }> {
+    try {
+      const stat = await fs.stat(filePath);
+      return { kind: 'present', mtimeMs: stat.mtimeMs };
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? { kind: 'absent' }
+        : { kind: 'unavailable' };
     }
   }
 

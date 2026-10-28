@@ -166,8 +166,33 @@ The TTL sweep runs:
 > acknowledge the mass-forget and let the sweep proceed.
 >
 > **Safety notes:** the sweep only touches sources with `ttlDays` set; expiry is
-> measured from first ingest (`FileTracker.createdAt`); the source files
-> themselves are never deleted from disk — only their memories and trackers.
+> measured by the activity clock (see [Forget & activity semantics](#forget--activity-semantics));
+> the source files themselves are never deleted from disk — only their memories
+> and trackers.
+
+### Forget & activity semantics
+
+When a source has `ttlDays` set, "past due" is always measured from a file's
+**last activity** — one rule, implemented once in `src/utils/ttl-activity.ts`
+and shared verbatim by the TTL sweep, `--resume`, and startup auto-population:
+
+- Last activity is the file's mtime first; only when the file is gone from
+  disk does its tracker row's `updatedAt ?? createdAt` stand as the last known
+  activity. A file is past due when `now − last activity > ttlDays` —
+  strictly older than the window; a file exactly at the boundary is still
+  active. `FileTracker.createdAt` by itself is audit-only.
+- `ttlDays` is strictly **opt-in per source**. A source that omits it (e.g.
+  permanent material like an obsidian bank) has no age gate anywhere and is
+  never swept.
+- Explicit intent is **never gated**: `--force-reprocess` (all, one source, or
+  one file), watch `add`/`change` events, `--recover`, and re-embed all act on
+  a past-due file exactly as before. A file coming back through one of those
+  doors is ingested with a fresh tracker row and a fresh retention period.
+- There are deliberately **no "do not re-ingest" markers**: a genuine update
+  (a real mtime change) re-arms the file by design, and the next batch pass
+  treats it as eligible again. Batch skipping is re-derived every pass and
+  behaves identically for never-tracked, already-forgotten, and still-tracked
+  files.
 
 ## CLI Modes
 

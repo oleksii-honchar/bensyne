@@ -10,6 +10,7 @@ import { FileMemoryTrackerService } from '../../infrastructure/services/file-mem
 import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
 import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
 import { isPathExcluded } from '../glob-matcher';
+import { isPastDue } from '../../utils/ttl-activity';
 
 @Injectable()
 export class ForceReprocessService {
@@ -103,6 +104,16 @@ export class ForceReprocessService {
         const file = files[i];
         const position = i + 1;
 
+        // B14(a) activity gate (opt-in per source, spec §3.1): a past-due file
+        // is not eligible for batch paths at all — skip before any
+        // getMemoryIds/verify/ingest work, tracked or never-tracked alike.
+        if (source.ttlDays != null && (await this.isFilePastDue(file, source.ttlDays))) {
+          this.logger.info(
+            `Skipping activity-expired file [${position}/${totalFilesInQueue}]: path="${file}"`,
+          );
+          continue;
+        }
+
         let memoryIds: string[];
         try {
           memoryIds = await this.fileMemoryTrackerService.getMemoryIds(file);
@@ -160,6 +171,24 @@ export class ForceReprocessService {
       this.logger.error(
         `Failed to resume source: id="${source.id}", error="${error instanceof Error ? error.message : String(error)}"`,
       );
+    }
+  }
+
+  /**
+   * B14(a) gate call for one enumerated file. A successful stat makes mtime the
+   * authoritative activity clock, which short-circuits the helper's required
+   * row fields (the placeholder is never read) — so the same call shape is
+   * correct for tracked and never-tracked files (OD-5 uniformity). The clock
+   * rule lives ONLY in isPastDue. A stat error means activity is not
+   * observable here: treat as not past due and fall through to today's path.
+   */
+  private async isFilePastDue(filePath: string, ttlDays: number): Promise<boolean> {
+    try {
+      const stat = await fs.stat(filePath);
+      const now = Date.now();
+      return isPastDue({ mtimeMs: stat.mtimeMs, rowCreatedAt: new Date(now), ttlDays }, now);
+    } catch {
+      return false;
     }
   }
 

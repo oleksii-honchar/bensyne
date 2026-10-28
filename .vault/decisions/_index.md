@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-10-08T20:33:16Z"
+updatedAt: "2026-10-28T18:22:10Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). From filename 0111 onward the offset ends: filenames and DEC ids match 1:1. For the 2026-10-08 session-bank-cleanup repair set: filenames 0115–0117 carry DEC-0115..0117 (no offset). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). From filename 0111 onward the offset ends: filenames and DEC ids match 1:1. For the 2026-10-08 session-bank-cleanup repair set: filenames 0115–0117 carry DEC-0115..0117 (no offset). For the 2026-10-28 TTL activity-clock promotion: filename 0118 carries DEC-0118 (1:1 continues). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -119,11 +119,12 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0071-transient-entity-resolution-router]] — Transient Entity Resolution on Router — get_stats_for, Never Pooled
 - [[0072-keep-registry-memory-count-column]] — Keep Registry memory_count Column — No Event Wiring, No Migration
 - [[0073-ttl-sweep-racochu-side]] — TTL Sweep Executes on Racochu Side, Deletion via Bensyne MCP forgetFile
-- [[0074-ttl-clock-filetracker-created-at]] — TTL Clock Is FileTracker.createdAt (First Ingest), Not updatedAt
-- [[0075-ttl-config-ttl-days]] — Config Shape Is watchSources[].ttlDays (Optional Positive Int)
+- [[0074-ttl-clock-filetracker-created-at]] — TTL Clock Is FileTracker.createdAt (First Ingest), Not updatedAt (carries DEC-0075; SUPERSEDED by DEC-0118, 2026-10-28)
+- [[0075-ttl-config-ttl-days]] — Config Shape Is watchSources[].ttlDays (Optional Positive Int) (carries DEC-0076; semantics: days of inactivity since DEC-0118)
 - [[0076-ttl-sweep-cadence]] — TTL Sweep Cadence: Startup (All Modes) + Daily Interval (Watch Mode) + --ttl-sweep CLI
 - [[0077-ttl-mass-forget-guard]] — Reuse Mass-Forget Guard (MASS_FORGET_THRESHOLD=20 + RACOCHU_RECONCILE_FORCE_FORGET=1)
 - [[0078-ttl-tombstone-acceptance]] — Accept Bensyne DELETED Tombstones (No Purge in TTL Scope)
+- [[0118-ttl-activity-clock-gate]] — TTL Anti-Re-Ingestion Is a Stateless Activity-Clock Gate (carries DEC-0118; supersedes DEC-0075 — file 0074)
 - [[0080-recover-skipenrichment-chunking]] — Enrichment-Free Chunking via Explicit skipEnrichment Flag
 - [[0081-recover-exiting-cli-mode]] — --recover as an Exiting CLI Mode with --source Support
 - [[0082-recover-additive-recovery-change-semantics]] — Recovery Is Additive; Changed Files Use Existing Change Semantics

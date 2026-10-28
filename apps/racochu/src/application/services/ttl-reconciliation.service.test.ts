@@ -1,3 +1,5 @@
+import type { Stats } from 'fs';
+import * as fsPromises from 'fs/promises';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { aConfigService, aSourceConfig } from '../../infrastructure/config/configuration.service.test-utils';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
@@ -13,7 +15,21 @@ import { ErrorWithDetails } from '../../utils/error-with-details';
 import { Result } from '../../utils/result';
 import { TtlReconciliationService } from './ttl-reconciliation.service';
 
+jest.mock('fs/promises');
+const fsMock = fsPromises as jest.Mocked<typeof fsPromises>;
+
 const MS_PER_DAY = 86_400_000;
+
+// Fixed system time for the activity-clock matrix (exact-boundary control).
+const FIXED_NOW = Date.parse('2026-10-28T12:00:00.000Z');
+
+function aFileStatWithMtimeMs(mtimeMs: number): Stats {
+  return { mtimeMs, isFile: () => true, isDirectory: () => false } as unknown as Stats;
+}
+
+function aStatError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`stat failed; code=${code}`) as NodeJS.ErrnoException, { code });
+}
 
 describe('TtlReconciliationService', () => {
   let service: TtlReconciliationService;
@@ -27,6 +43,7 @@ describe('TtlReconciliationService', () => {
     mockBensyneClient = aBensyneClientService();
     mockConfigurationService = aConfigService();
     mockProcessingQueue = aFileProcessingQueueService();
+    fsMock.stat.mockReset();
 
     service = new TtlReconciliationService(
       mockFileMemoryTrackerService as unknown as FileMemoryTrackerService,
@@ -38,12 +55,13 @@ describe('TtlReconciliationService', () => {
   });
 
   describe('source selection', () => {
-    it('never touches a source without ttlDays (findExpiredBySourceId not called, no forgets)', async () => {
+    it('never touches a source without ttlDays (findBySourceId/stat not called, no forgets)', async () => {
       mockConfigurationService.getWatchSources.mockReturnValue([aSourceConfig({ id: 'src-no-ttl' })]);
 
       const summary = await service.run();
 
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.findBySourceId).not.toHaveBeenCalled();
+      expect(fsMock.stat).not.toHaveBeenCalled();
       expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
       expect(summary.sourcesChecked).toBe(0);
       expect(summary.expired).toBe(0);
@@ -55,22 +73,24 @@ describe('TtlReconciliationService', () => {
         aSourceConfig({ id: 'src-no-ttl' }),
         aSourceConfig({ id: 'src-ttl', ttlDays: 365 }),
       ]);
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockImplementation(sourceId =>
+      mockFileMemoryTrackerService.findBySourceId.mockImplementation(sourceId =>
         Promise.resolve(
           sourceId === 'src-ttl' ? [aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' })] : [],
         ),
       );
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
-        new Date(Date.now() - 400 * MS_PER_DAY),
+        new Date(FIXED_NOW - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 400 * MS_PER_DAY));
 
+      jest.useFakeTimers();
+      jest.setSystemTime(FIXED_NOW);
       const summary = await service.run();
+      jest.useRealTimers();
 
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).toHaveBeenCalledTimes(1);
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).toHaveBeenCalledWith(
-        'src-ttl',
-        expect.any(Date),
-      );
+      // No SQL cutoff: the sweep enumerates ALL rows of the source and derives expiry itself.
+      expect(mockFileMemoryTrackerService.findBySourceId).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.findBySourceId).toHaveBeenCalledWith('src-ttl');
       expect(summary.sourcesChecked).toBe(1);
     });
 
@@ -79,64 +99,184 @@ describe('TtlReconciliationService', () => {
         aSourceConfig({ id: 'src-a', ttlDays: 100 }),
         aSourceConfig({ id: 'src-b', ttlDays: 200 }),
       ]);
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockImplementation(sourceId =>
+      mockFileMemoryTrackerService.findBySourceId.mockImplementation(sourceId =>
         Promise.resolve(
           sourceId === 'src-b' ? [aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-b' })] : [],
         ),
       );
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
-        new Date(Date.now() - 300 * MS_PER_DAY),
+        new Date(FIXED_NOW - 300 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 300 * MS_PER_DAY));
 
+      jest.useFakeTimers();
+      jest.setSystemTime(FIXED_NOW);
       await service.run(false, 'src-b');
+      jest.useRealTimers();
 
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).toHaveBeenCalledTimes(1);
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).toHaveBeenCalledWith(
-        'src-b',
-        expect.any(Date),
-      );
+      expect(mockFileMemoryTrackerService.findBySourceId).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.findBySourceId).toHaveBeenCalledWith('src-b');
     });
   });
 
-  describe('cutoff computation', () => {
-    it('computes cutoff from ttlDays (before cutoff expired, after cutoff not)', async () => {
-      mockConfigurationService.getWatchSources.mockReturnValue([
-        aSourceConfig({ id: 'src-ttl', memoryBank: 'bank-ttl', ttlDays: 365 }),
-      ]);
-      // One tracker returned by the repo (mocked as expired); we verify the cutoff
-      // passed to findExpiredBySourceId is ~now - 365 days.
-      const oldTracker = aFileMemoryTracker({ filePath: '/repo/old.md', sourceId: 'src-ttl' });
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue([oldTracker]);
-      const beforeCall = Date.now();
-      mockFileMemoryTrackerService.getTrackerCreatedAt.mockImplementation(filePath => {
-        // Return a createdAt strictly before the cutoff so it is forgotten.
-        return Promise.resolve(new Date(beforeCall - 400 * MS_PER_DAY));
-      });
+  // ============================================================================
+  // SUPERSEDES the old `cutoff computation` and `re-check before forget` pins of
+  // this file (the `createdAt`-cutoff / `getTrackerCreatedAt` re-check assertions
+  // at ~lines 60–200 of the pre-Task-3 version). Per spec §3.4 item 4 the pin
+  // file the spec names (`src/application/services/ttl-clock-safety.spec.ts`) does
+  // not exist at d2e3797 — verified drift, see parent-session
+  // decomp-plan-rationale.md §1; the real old-contract pins were the ones here.
+  // Rewritten to the activity contract per ADR-8 (clock = mtime, row.updatedAt ??
+  // row.createdAt fallback only when the file is absent; strictly greater than
+  // ttlDays = past due) as made the whole design by ADR-9 (gate-only).
+  // Old→new coverage map (none silently deleted):
+  // - "computes cutoff from ttlDays (before cutoff expired …)"      → 'forgets a present
+  //   file with an old mtime …' + 'row old = now − ttlDays exactly … not past due' +
+  //   'one millisecond past the boundary …' (strict-greater boundary now pinned directly).
+  // - "does NOT forget a tracker whose createdAt is at/after cutoff" → 'does NOT forget …
+  //   old createdAt but recent mtime' + 'absent file … recent row activity'.
+  // - "re-reads the tracker and skips if no longer expired"          → the same two cases:
+  //   with single-clock derivation such a row never enters the expired set. INTENTIONALLY
+  //   REMOVED by ADR-9: the "initially SQL-expired → still counted in summary.expired"
+  //   artifact of the double-clock design — summary.expired is exactly the activity-derived
+  //   set now.
+  // - "re-reads the tracker and skips if no longer exists"           → 'vanishes from the
+  //   store mid-run (null row timestamps) is skipped, never forgotten' (liveness guard
+  //   kept; the expired-count attribution above is intentionally removed).
+  // - "recent updatedAt + old createdAt survives" (absent file): the rowUpdatedAt branch
+  //   is not reachable through this service — the FileMemoryTracker aggregate is
+  //   timestamp-free and the only in-scope row-activity channel is getTrackerCreatedAt
+  //   (createdAt). updatedAt-beats-createdAt precedence stays pinned at the helper
+  //   (ttl-activity.test.ts, Task 1); through here the row's observable activity is createdAt.
+  // ============================================================================
+  describe('activity-clock expiry derivation (B14b)', () => {
+    const TRACKER = { id: 'src-ttl', memoryBank: 'bank-ttl', ttlDays: 365 };
 
-      await service.run();
-
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).toHaveBeenCalledTimes(1);
-      const cutoffArg = mockFileMemoryTrackerService.findExpiredBySourceId.mock.calls[0][1] as Date;
-      const expectedApprox = beforeCall - 365 * MS_PER_DAY;
-      // Allow tolerance for a few ms.
-      expect(Math.abs(cutoffArg.getTime() - expectedApprox)).toBeLessThan(1000);
-      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith('/repo/old.md', 'bank-ttl');
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(FIXED_NOW);
+      mockConfigurationService.getWatchSources.mockReturnValue([aSourceConfig(TRACKER)]);
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 400 * MS_PER_DAY),
+      );
     });
 
-    it('does NOT forget a tracker whose createdAt is at/after the cutoff (re-check skips it)', async () => {
-      mockConfigurationService.getWatchSources.mockReturnValue([
-        aSourceConfig({ id: 'src-ttl', memoryBank: 'bank-ttl', ttlDays: 365 }),
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    const oneTrackedRow = (filePath: string) => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath, sourceId: TRACKER.id }),
       ]);
-      const freshTracker = aFileMemoryTracker({ filePath: '/repo/fresh.md', sourceId: 'src-ttl' });
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue([freshTracker]);
-      // Re-check: createdAt is recent (not expired).
-      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(new Date(Date.now()));
+    };
+
+    it('does NOT forget a tracked file with old createdAt but recent mtime (active file never prematurely forgotten)', async () => {
+      oneTrackedRow('/repo/active.md');
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 700 * MS_PER_DAY),
+      );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 1 * MS_PER_DAY));
 
       const summary = await service.run();
 
       expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(summary.expired).toBe(0);
       expect(summary.forgotten).toBe(0);
+    });
+
+    it('forgets a present file with an old mtime and hard-deletes the row via the unchanged guard/forget path', async () => {
+      oneTrackedRow('/repo/stale.md');
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 400 * MS_PER_DAY));
+
+      const summary = await service.run();
+
+      expect(fsMock.stat).toHaveBeenCalledWith('/repo/stale.md');
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith('/repo/stale.md', 'bank-ttl');
+      // Terminal operation unchanged (B1): bensyne forget success → deleteByFilePath.
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith('/repo/stale.md');
+      expect(summary.expired).toBe(1);
+      expect(summary.forgotten).toBe(1);
+    });
+
+    it('absent file (ENOENT) with recent row activity survives (row-metadata fallback clock)', async () => {
+      oneTrackedRow('/repo/gone-recent.md');
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 1 * MS_PER_DAY),
+      );
+      fsMock.stat.mockRejectedValue(aStatError('ENOENT'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(summary.expired).toBe(0);
+      expect(summary.forgotten).toBe(0);
+    });
+
+    it('absent file (ENOENT) with old row activity is expired and forgotten (fallback clock clears the row)', async () => {
+      oneTrackedRow('/repo/gone-stale.md');
+      fsMock.stat.mockRejectedValue(aStatError('ENOENT'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith('/repo/gone-stale.md', 'bank-ttl');
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith('/repo/gone-stale.md');
+      expect(summary.expired).toBe(1);
+      expect(summary.forgotten).toBe(1);
+    });
+
+    it('row last active exactly ttlDays ago (now − clock == ttlDays) is NOT past due (strict boundary)', async () => {
+      oneTrackedRow('/repo/boundary-exact.md');
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 365 * MS_PER_DAY),
+      );
+      fsMock.stat.mockRejectedValue(aStatError('ENOENT'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(summary.expired).toBe(0);
+    });
+
+    it('one millisecond past the boundary (now − clock > ttlDays) is past due and forgotten', async () => {
+      oneTrackedRow('/repo/boundary-plus-1ms.md');
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 365 * MS_PER_DAY - 1),
+      );
+      fsMock.stat.mockRejectedValue(aStatError('ENOENT'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith('/repo/boundary-plus-1ms.md', 'bank-ttl');
+      expect(summary.expired).toBe(1);
+      expect(summary.forgotten).toBe(1);
+    });
+
+    it('non-ENOENT stat error makes activity unobservable: the row is skipped, never forgotten', async () => {
+      oneTrackedRow('/repo/unreadable.md');
+      fsMock.stat.mockRejectedValue(aStatError('EACCES'));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(summary.expired).toBe(0);
       expect(summary.failed).toBe(0);
+      expect(summary.forgotten).toBe(0);
+    });
+
+    it('a row that vanishes from the store mid-run (null row timestamps) is skipped, never forgotten', async () => {
+      oneTrackedRow('/repo/vanished.md');
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(null);
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 400 * MS_PER_DAY));
+
+      const summary = await service.run();
+
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(summary.forgotten).toBe(0);
     });
   });
 
@@ -149,10 +289,11 @@ describe('TtlReconciliationService', () => {
         aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' }),
         aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-ttl' }),
       ];
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
 
       const summary = await service.run(true);
 
@@ -173,10 +314,11 @@ describe('TtlReconciliationService', () => {
         aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' }),
         aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-ttl' }),
       ];
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
 
       const summary = await service.run();
 
@@ -198,10 +340,11 @@ describe('TtlReconciliationService', () => {
         aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' }),
         aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-ttl' }),
       ];
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
       mockBensyneClient.forgetByFile.mockResolvedValueOnce(
         Result.ko([new ErrorWithDetails('FORGET_FAILED', 'Bensyne unreachable')]),
       );
@@ -222,10 +365,11 @@ describe('TtlReconciliationService', () => {
         aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' }),
         aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-ttl' }),
       ];
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
       mockFileMemoryTrackerService.deleteByFilePath.mockRejectedValueOnce(new Error('DB locked'));
 
       await expect(service.run()).resolves.not.toThrow();
@@ -241,10 +385,11 @@ describe('TtlReconciliationService', () => {
         aFileMemoryTracker({ filePath: '/repo/a.md', sourceId: 'src-ttl' }),
         aFileMemoryTracker({ filePath: '/repo/b.md', sourceId: 'src-ttl' }),
       ];
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
       mockBensyneClient.forgetByFile.mockResolvedValueOnce(
         Result.ko([new ErrorWithDetails('FORGET_FAILED', 'Bensyne unreachable')]),
       );
@@ -254,41 +399,6 @@ describe('TtlReconciliationService', () => {
       expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(2);
       expect(mockBensyneClient.forgetByFile).toHaveBeenNthCalledWith(1, '/repo/a.md', 'bank-ttl');
       expect(mockBensyneClient.forgetByFile).toHaveBeenNthCalledWith(2, '/repo/b.md', 'bank-ttl');
-    });
-  });
-
-  describe('re-check before forget', () => {
-    it('re-reads the tracker and skips if no longer expired (createdAt at/after cutoff)', async () => {
-      mockConfigurationService.getWatchSources.mockReturnValue([
-        aSourceConfig({ id: 'src-ttl', memoryBank: 'bank-ttl', ttlDays: 365 }),
-      ]);
-      const tracker = aFileMemoryTracker({ filePath: '/repo/x.md', sourceId: 'src-ttl' });
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue([tracker]);
-      // Re-check returns a fresh createdAt -> no longer expired.
-      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(new Date(Date.now()));
-
-      const summary = await service.run();
-
-      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
-      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
-      expect(summary.forgotten).toBe(0);
-      // The tracker was initially expired, so it's counted in expired.
-      expect(summary.expired).toBe(1);
-    });
-
-    it('re-reads the tracker and skips if no longer exists (null createdAt)', async () => {
-      mockConfigurationService.getWatchSources.mockReturnValue([
-        aSourceConfig({ id: 'src-ttl', memoryBank: 'bank-ttl', ttlDays: 365 }),
-      ]);
-      const tracker = aFileMemoryTracker({ filePath: '/repo/y.md', sourceId: 'src-ttl' });
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue([tracker]);
-      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(null);
-
-      const summary = await service.run();
-
-      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
-      expect(summary.forgotten).toBe(0);
-      expect(summary.expired).toBe(1);
     });
   });
 
@@ -329,13 +439,14 @@ describe('TtlReconciliationService', () => {
       );
       const smallTrackers = [aFileMemoryTracker({ filePath: '/repo/small/a.md', sourceId: 'src-small' })];
 
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockImplementation(sourceId => {
+      mockFileMemoryTrackerService.findBySourceId.mockImplementation(sourceId => {
         if (sourceId === 'src-big') return Promise.resolve(bigTrackers);
         return Promise.resolve(smallTrackers);
       });
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
 
       const summary = await testService.run();
 
@@ -353,6 +464,40 @@ describe('TtlReconciliationService', () => {
       expect(summary.forgotten).toBe(1);
     });
 
+    it('derives guard counts from the NEW activity set: 21 tracked but 10 expired is NOT refused', async () => {
+      // The mass-forget threshold must compare the activity-derived expired set,
+      // not the raw tracked-row count (B1: guard flow unchanged; B14b: input set changed).
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createService();
+
+      const source = aSourceConfig({ id: 'src-mixed', memoryBank: 'bank-mixed', ttlDays: 365 });
+      mockConfigurationService.getWatchSources.mockReturnValue([source]);
+
+      const rows = Array.from({ length: 21 }, (_, i) =>
+        aFileMemoryTracker({ filePath: `/repo/mixed/file-${i}.md`, sourceId: 'src-mixed' }),
+      );
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(rows);
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(Date.now() - 400 * MS_PER_DAY),
+      );
+      fsMock.stat.mockImplementation(async filePath => {
+        const index = Number(String(filePath).match(/file-(\d+)\.md$/)?.[1] ?? -1);
+        const ageMs = index < 10 ? 400 * MS_PER_DAY : 1 * MS_PER_DAY;
+        return aFileStatWithMtimeMs(Date.now() - ageMs);
+      });
+
+      const summary = await testService.run();
+
+      expect(summary.refusedMassForget).toBe(0);
+      expect(summary.expired).toBe(10);
+      expect(summary.forgotten).toBe(10);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(10);
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalledWith(
+        expect.stringContaining('/repo/mixed/file-15.md'),
+        'bank-mixed',
+      );
+    });
+
     it('OVERRIDE bypass: force-forget enabled → mass-forget proceeds', async () => {
       process.env.RACOCHU_RECONCILE_FORCE_FORGET = '1';
       const testService = createService();
@@ -363,10 +508,11 @@ describe('TtlReconciliationService', () => {
       const trackers = Array.from({ length: 25 }, (_, i) =>
         aFileMemoryTracker({ filePath: `/repo/forced/file-${i}.md`, sourceId: 'src-forced' }),
       );
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockResolvedValue(trackers);
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(trackers);
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
 
       const summary = await testService.run();
 
@@ -390,23 +536,24 @@ describe('TtlReconciliationService', () => {
       expect(summary.sourcesChecked).toBe(0);
       expect(summary.expired).toBe(0);
       expect(summary.forgotten).toBe(0);
-      expect(mockFileMemoryTrackerService.findExpiredBySourceId).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.findBySourceId).not.toHaveBeenCalled();
     });
   });
 
   describe('per-source error isolation', () => {
-    it('continues processing remaining sources when findExpiredBySourceId fails for one', async () => {
+    it('continues processing remaining sources when findBySourceId fails for one', async () => {
       mockConfigurationService.getWatchSources.mockReturnValue([
         aSourceConfig({ id: 'src-bad', memoryBank: 'bank-bad', ttlDays: 365 }),
         aSourceConfig({ id: 'src-good', memoryBank: 'bank-good', ttlDays: 365 }),
       ]);
-      mockFileMemoryTrackerService.findExpiredBySourceId.mockImplementation(sourceId => {
+      mockFileMemoryTrackerService.findBySourceId.mockImplementation(sourceId => {
         if (sourceId === 'src-bad') return Promise.reject(new Error('DB down'));
         return Promise.resolve([aFileMemoryTracker({ filePath: '/repo/good.md', sourceId: 'src-good' })]);
       });
       mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
         new Date(Date.now() - 400 * MS_PER_DAY),
       );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(Date.now() - 400 * MS_PER_DAY));
 
       await expect(service.run()).resolves.not.toThrow();
 

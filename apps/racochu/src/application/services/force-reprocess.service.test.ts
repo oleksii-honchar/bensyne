@@ -964,4 +964,135 @@ describe('ForceReprocessService', () => {
       expect(fsMock.readdir).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('activity gate in the resume loop (B14a)', () => {
+    // Spec §3.3 B14(a): for ttlDays-configured sources each enumerated file is
+    // activity-checked BEFORE any getMemoryIds/verify/ingest work; past-due
+    // files are skipped with a single notice. ttlDays absent → gate never entered.
+    const DAY_MS = 86_400_000;
+
+    // aWatchSourceConfig has no ttlDays override on purpose (Absent = no TTL,
+    // config-schemas opt-in); the spread adds the per-source retention directly.
+    const aTtlSource = () => ({
+      ...aWatchSourceConfig({ id: 'ttl-source', path: '/tmp/ttl-source' }),
+      ttlDays: 30,
+    });
+
+    // Root stat → directory; enumerated file paths → Stats with the given mtime
+    // (the activity clock the gate reads).
+    const stubFileMtimes = (mtimes: Map<string, number>): void => {
+      fsMock.stat.mockImplementation(async p => {
+        const mtimeMs = mtimes.get(String(p));
+        if (mtimeMs === undefined) {
+          return mockDirStats();
+        }
+        return { ...mockFileStats(), mtimeMs };
+      });
+    };
+
+    it('skips a past-due never-tracked file with zero verify/ingest work and a skip notice', async () => {
+      const source = aTtlSource();
+      stubFileMtimes(new Map([['/tmp/ttl-source/stale.md', Date.now() - 40 * DAY_MS]]));
+      fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
+      // Never-tracked: no rows — yet row presence must not matter (OD-5):
+      // the gate precedes the tracker lookup entirely.
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      // The contracted observable for B14: the skip notice naming the path.
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(/Skipping activity-expired file.*stale\.md/),
+      );
+    });
+
+    it('skips a past-due file whose previously-forgotten row is absent (row presence irrelevant)', async () => {
+      const source = aTtlSource();
+      const forgottenFile = '/tmp/ttl-source/forgotten.md';
+      stubFileMtimes(new Map([[forgottenFile, Date.now() - 90 * DAY_MS]]));
+      fsMock.readdir.mockResolvedValue([mockDirent('forgotten.md', false)]);
+      // Pre-hard-deleted (forgotten) tracker row: getMemoryIds reads → [] when
+      // consulted. The gate must skip before it is ever consulted.
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalledWith(forgottenFile);
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(/Skipping activity-expired file.*forgotten\.md/),
+      );
+    });
+
+    it('processes a file with recent mtime normally — row age alone never triggers the skip', async () => {
+      const source = aTtlSource();
+      const activeFile = '/tmp/ttl-source/active.md';
+      // Recent activity (1-day-old mtime) inside the 30-day window; the
+      // tracker row behind these memory ids is old by construction — its age
+      // must never gate (mtime is the authoritative clock).
+      stubFileMtimes(new Map([[activeFile, Date.now() - DAY_MS]]));
+      fsMock.readdir.mockResolvedValue([mockDirent('active.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
+      // Bank lost the memories → today's stale-tracker re-ingest branch.
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
+      );
+
+      await service.resumeAll([source]);
+
+      expect(fileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(activeFile);
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: activeFile }),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Skipping activity-expired file'));
+    });
+
+    it('leaves the call sequence for a ttlDays-less source identical to today (gate not entered, no stat for the gate)', async () => {
+      // Gate is defined solely by source.ttlDays; the builder omits it entirely.
+      const source = aWatchSourceConfig({ id: 'plain-source', path: '/tmp/plain' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+      await service.resumeAll([source]);
+
+      // Today's behavior, byte-for-byte sequence: tracker lookup → execute.
+      expect(fileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith('/tmp/plain/untracked.md');
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(processFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: '/tmp/plain/untracked.md' }),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Skipping activity-expired file'));
+
+      // Negative guard: the gate branch must not run — the only stat is the
+      // existing source-root stat, never the enumerated file.
+      const statTargets = fsMock.stat.mock.calls.map(call => String(call[0]));
+      expect(statTargets).not.toContain('/tmp/plain/untracked.md');
+      expect(statTargets).toEqual(['/tmp/plain']);
+    });
+
+    it('keeps zero ingest work across repeat resumes of the same past-due set (idempotent w.r.t. restarts)', async () => {
+      const source = aTtlSource();
+      stubFileMtimes(
+        new Map([
+          ['/tmp/ttl-source/stale-a.md', Date.now() - 40 * DAY_MS],
+          ['/tmp/ttl-source/stale-b.md', Date.now() - 60 * DAY_MS],
+        ]),
+      );
+      fsMock.readdir.mockResolvedValue([mockDirent('stale-a.md', false), mockDirent('stale-b.md', false)]);
+
+      await service.resumeAll([source]);
+      await service.resumeAll([source]);
+
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+  });
 });

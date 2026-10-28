@@ -83,6 +83,8 @@ export class FileMemoryTrackerRepository {
    * are skipped so a single bad record never blocks the rest;
    * Prisma-level errors still propagate.
    */
+  // Deprecated: activity-clock derivation (ADR-8/ADR-9) replaced the createdAt SQL age clock;
+  // kept for API compatibility — remove in a future cleanup.
   async findExpiredBySourceId(sourceId: string, cutoff: Date): Promise<Result<FileMemoryTracker[]>> {
     const trackers = await this.prisma.fileTracker.findMany({
       where: { sourceId, createdAt: { lt: cutoff } },

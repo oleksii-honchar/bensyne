@@ -4,9 +4,9 @@ title: "RAG Content Chunker — Server Components"
 c4_level: component
 system: racochu
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-08-25T13:45:19Z"
+updatedAt: "2026-10-28T18:22:10Z"
 tags: [architecture, component]
-see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md, decisions/0087-chokidar-dot-root-root-guard.decision.md, decisions/0088-chokidar-watcher-ready-log.decision.md]
+see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md, decisions/0087-chokidar-dot-root-root-guard.decision.md, decisions/0088-chokidar-watcher-ready-log.decision.md, decisions/0118-ttl-activity-clock-gate.decision.md]
 linked_elements: []
 deprecated:
   date: null
@@ -41,7 +41,7 @@ C4Component
     Component(bensyneClient, "BensyneClient", "TypeScript + native http", "Streamable HTTP MCP client (getFileChunks read-only + remember(forceReembed))")
     Component(config, "ConfigurationService", "TypeScript + Zod", "Loads and validates config schemas")
     Component(shutdown, "GracefulShutdownService", "TypeScript", "SIGTERM/SIGINT handler: drain queue, close clients")
-    Component(ttlSweep, "TtlReconciliationService", "TypeScript", "TTL sweep: forgets expired trackers via bensyne forgetFile (startup + daily + --ttl-sweep)")
+    Component(ttlSweep, "TtlReconciliationService", "TypeScript", "TTL sweep: forgets expired trackers via bensyne forgetFile (startup + daily + --ttl-sweep), derives expired via activity clock DEC-0118")
     Component(fileTracker, "FileMemoryTrackerService", "TypeScript", "FileTracker queries + cleanup (findExpiredBySourceId, deleteByFilePath)")
   }
 
@@ -72,7 +72,7 @@ C4Component
   Rel(server, shutdown, "Registers shutdown hooks")
   Rel(config, ttlSweep, "Reads watchSources[].ttlDays")
   Rel(ttlSweep, fileQueue, "Awaits empty queue before sweep")
-  Rel(ttlSweep, fileTracker, "Queries expired + deletes trackers")
+  Rel(ttlSweep, fileTracker, "Reads tracked rows + deletes expired")
   Rel(ttlSweep, bensyneMCP, "forgetByFile(filePath, memoryBank)")
 ```
 
@@ -96,7 +96,7 @@ C4Component
 | `bensyneClient` | BensyneClient | Component | Native http | Streamable HTTP MCP client: `getFileChunks()` (read-only verification) + `remember(chunk, { forceReembed })`; retry with backoff |
 | `config` | ConfigurationService | Component | Zod | Parses YAML config, validates against Zod schemas, provides typed getters |
 | `shutdown` | GracefulShutdownService | Component | Node.js signals | Handles SIGTERM/SIGINT: stops watchers, drains queue (30s), closes MnemosyneClient |
-| `ttlSweep` | TtlReconciliationService | Component | TypeScript | TTL sweep — startup (all modes) + daily interval (watch mode) + `--ttl-sweep`; awaits empty queue; forgets expired trackers via bensyne `forgetByFile`, cleans up trackers; shares mass-forget guard |
+| `ttlSweep` | TtlReconciliationService | Component | TypeScript | TTL sweep — startup (all modes) + daily interval (watch mode) + `--ttl-sweep`; awaits empty queue; derives the expired set via the activity clock (DEC-0118, `src/utils/ttl-activity.ts`) instead of the SQL age query; forgets expired trackers via bensyne `forgetByFile`, cleans up trackers; shares mass-forget guard; per-source `ttlDays` opt-in gate also guards the resume/auto-populate batch paths (DEC-0118) |
 | `fileTracker` | FileMemoryTrackerService | Component | TypeScript | FileTracker queries + cleanup: `findExpiredBySourceId(sourceId, cutoff)`, `deleteByFilePath`; recover uses `FileTrackerRepository.findTrackedBySourceId(sourceId?)` (full aggregate incl. fileHash/hardwareId) |
 
 ## Notes

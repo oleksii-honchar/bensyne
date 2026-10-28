@@ -5,10 +5,10 @@ status: completed
 title: "Source TTL Sweep (Racochu)"
 owner: ""
 createdAt: "2026-08-25T13:45:19Z"
-updatedAt: "2026-08-25T13:45:19Z"
+updatedAt: "2026-10-28T18:22:10Z"
 system: racochu
 tags: [ttl, retention, racochu, feature]
-see_also: ["decisions/0073-ttl-sweep-racochu-side.decision.md", "decisions/0074-ttl-clock-filetracker-created-at.decision.md", "decisions/0075-ttl-config-ttl-days.decision.md", "decisions/0076-ttl-sweep-cadence.decision.md", "decisions/0077-ttl-mass-forget-guard.decision.md", "decisions/0078-ttl-tombstone-acceptance.decision.md"]
+see_also: ["decisions/0073-ttl-sweep-racochu-side.decision.md", "decisions/0074-ttl-clock-filetracker-created-at.decision.md", "decisions/0075-ttl-config-ttl-days.decision.md", "decisions/0076-ttl-sweep-cadence.decision.md", "decisions/0077-ttl-mass-forget-guard.decision.md", "decisions/0078-ttl-tombstone-acceptance.decision.md", "decisions/0118-ttl-activity-clock-gate.decision.md"]
 ---
 
 # Specification: Source TTL Sweep (Racochu)
@@ -30,9 +30,12 @@ memories are out of scope.
 - **Config:** `watchSources[].ttlDays?: number`
   (`z.number().int().positive().optional()`) in `watchSourceConfigSchema`.
   Absent ⇒ no sweep for that source. Hot-reload friendly.
-- **Clock:** `FileTracker.createdAt` (first ingest) — age filter in SQL via
+- **Clock:** ~~`FileTracker.createdAt` (first ingest) — age filter in SQL via
   `findExpiredBySourceId(sourceId, cutoff)`; no migration (Prisma already
-  persists `createdAt`).
+  persists `createdAt`).~~ **RETIRED 2026-10-28 by
+  [[0118-ttl-activity-clock-gate|DEC-0118]]:** eligibility is derived from the
+  activity clock (mtime → row timestamps), no SQL age query;
+  `findExpiredBySourceId` kept only with a deprecation comment.
 - **Service:** `TtlReconciliationService` (`run(dryRun?, sourceId?)`,
   `startDailySweep()` = `setInterval(24h).unref()`,
   `stop()`/`onApplicationShutdown`). Non-fatal, idempotent, never throws;
@@ -62,6 +65,8 @@ Implemented and verified per session implementation plan (all tasks complete):
   Task 7 docs + `ttlDays: 365` config (agent-sessions + dev.yaml) ✓
 - Config set in `~/.config/racochu.yaml` (agent-sessions) and
   `apps/racochu/dev.yaml` (tmp-agent-sessions): `ttlDays: 365`.
+- Clock superseded 2026-10-28 (DEC-0118); activity-clock gate implemented at
+  `d2e3797` (pending committal + e2e V1).
 
 ## Risks
 
@@ -71,4 +76,6 @@ Implemented and verified per session implementation plan (all tasks complete):
 - `files` DELETED tombstones accumulate (~1y-of-ingest per year) → accepted,
   revisit only if growth observable.
 - TTL clock forgets actively re-ingested files → accepted per user decision
-  (agent-sessions per-day, mostly immutable).
+  (agent-sessions per-day, mostly immutable). **RETIRED 2026-10-28 by
+  DEC-0118** — under the activity clock an actively-updated file is never past
+  due (pinned by e2e scenario §7(6)).
