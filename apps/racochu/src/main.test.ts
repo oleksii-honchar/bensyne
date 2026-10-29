@@ -29,6 +29,9 @@ const EMPTY_SUMMARY: ReconciliationSummary = {
   refusedMassForget: 0,
 };
 
+// Flag-off fixture for the mock service: every summary field the typed
+// TtlSweepSummary contract requires is present; the deleteDueFiles counters
+// (spec §4b, always-present) show 0 for a source without the flag.
 const EMPTY_TTL_SUMMARY: TtlSweepSummary = {
   sourcesChecked: 0,
   expired: 0,
@@ -36,6 +39,10 @@ const EMPTY_TTL_SUMMARY: TtlSweepSummary = {
   forgotten: 0,
   failed: 0,
   refusedMassForget: 0,
+  wouldDelete: 0,
+  deletedFiles: 0,
+  unlinkFailed: 0,
+  skippedConfinement: 0,
   dryRun: false,
 };
 

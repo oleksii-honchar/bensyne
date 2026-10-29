@@ -8,9 +8,11 @@ import { ForceReprocessService } from '../../application/services/force-reproces
 import { TtlReconciliationService } from '../../application/services/ttl-reconciliation.service';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { FileMemoryTrackerRepository } from '../../infrastructure/repositories/file-memory-tracker.repository';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
 import { createTestApplication } from '../main.test-application';
 
 const PROCESSING_WAIT_MS = 20000; // debounce(500ms) + chunking + MCP ingestion + Mnemosyne indexing
@@ -54,6 +56,15 @@ describe('[E2E] TTL Sweep — ingest → dry-run → real sweep (tombstone, idem
   let chainFileB: string;
   let chainMarkerA: string;
   let chainMarkerB: string;
+
+  // deleteDueFiles matrix (round-2 §7 items 13–19). The flag lives ONLY in
+  // per-test source VIEWS fed to privately constructed sweepers (see
+  // deleteDueFilesSweeper) — the declared e2e sources stay flag-off, so
+  // scenarios 1–13 keep running the byte-identical flag-off chain. This file
+  // runs sequentially (maxWorkers: 1): test 14 seeds the deleted-file state
+  // that test 18 round-trips.
+  let deleteLifecycleFile: string;
+  let deleteLifecycleMarker: string;
 
   /**
    * Read-only handle on the bensyne bank's file metadata DB
@@ -154,6 +165,50 @@ describe('[E2E] TTL Sweep — ingest → dry-run → real sweep (tombstone, idem
     const result = await bensyneClient!.getFileChunks(targetPath, bank);
     expect(result.isOk()).toBe(true);
     return result.getValue().chunks.length;
+  }
+
+  async function pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── round-2 deleteDueFiles helpers (spec §7 items 13–19) ───────────────────
+  /**
+   * A fresh TtlReconciliationService for ONE flag-on fixture. The service reads
+   * its sources from its ConfigurationService on every run, so a minimal config
+   * double returning exactly one scoped view (deleteDueFiles: true + ttlDays,
+   * own tmp dir) keeps each flag-on scenario's fixtures strictly bounded and
+   * never mutates the global e2e config. Rows keep the declared SOURCE_ID, so
+   * the row-derived expired set still reconciles exactly this suite's files.
+   * (Precedent for `as unknown as` dependency doubles: 05-testing fake-repos.)
+   */
+  function deleteDueFilesSweeper(view: WatchSourceConfig): TtlReconciliationService {
+    const configDouble = { getWatchSources: () => [view] } as unknown as ConfigurationService;
+    return new TtlReconciliationService(
+      app!.get(FileMemoryTrackerService),
+      app!.get(BensyneClient),
+      configDouble,
+      app!.get(FileProcessingQueue),
+      app!.get(BasePinoLogger),
+    );
+  }
+
+  /**
+   * Ledger hygiene for the sequential matrix: the derived expired set spans ALL
+   * tracked rows of the source, so a flag-on fixture that SURVIVES its test
+   * (dry-run untouched, mass-cap refused, confinement-skipped link) is brought
+   * back into activity afterwards. That keeps every later scenario's exact
+   * `expired` count pinned to its own fixture — same discipline test 9 uses
+   * for the round-1 chain; no scenario's assertions are relaxed for leftovers.
+   */
+  async function keepLedgerClean(...targets: string[]): Promise<void> {
+    for (const target of targets) {
+      touchFileNow(target);
+    }
   }
 
   beforeAll(async () => {
@@ -659,4 +714,395 @@ describe('[E2E] TTL Sweep — ingest → dry-run → real sweep (tombstone, idem
     expect(await bankChunkCount(nonTtlFile, nonTtlScope.memoryBank!)).toBeGreaterThan(0);
     expect(await bankHasMarker(nonTtlMarker, nonTtlScope.memoryBank!)).toBe(true);
   }, 240000);
+
+  // ── deleteDueFiles matrix — round-2 spec §7 items 13–19 ────────────────────
+  // Scenario 13 extends scenario 3 (the flag-off anchor): the always-present
+  // new summary fields pin at 0 and no unlink is attempted. Scenarios 14–19
+  // are flag-on: each gets its own scope dir and its own sweeper instance
+  // configured via deleteDueFilesSweeper — the declared config sources are
+  // NEVER mutated, so every flag-off behavior in this file stays byte-identical.
+  // The flag-off sweep of test 13 runs on the app's OWN service (production
+  // code path). The expired-set ledger is kept exact by keepLedgerClean().
+
+  it('13. §7(13) flag-off byte-identical — scenario-3 shape, new summary fields at 0, file on disk', async () => {
+    // The regression anchor (§1 criterion 1): a past-due file forgotten by the
+    // app's own service on the flag-off declared source — forget chain
+    // unchanged (expired 1 / forgotten 1 / row ko) while wouldDelete,
+    // deletedFiles, unlinkFailed and skippedConfinement are present at 0 and
+    // the file REMAINS on disk after forgotten++ — no unlink was attempted.
+    const anchorScope = scopedSource(ttlSource!, 'flagoff-anchor');
+    const anchorUnique = Date.now();
+    const anchorMarker = `TTL-FLAGOFF-${anchorUnique}`;
+    const anchorFile = await writeScopedFile(
+      anchorScope,
+      'anchor.md',
+      `# Flag-off Anchor ${anchorUnique}\n\nMarker: ${anchorMarker}. Flag-off: forgotten, never unlinked.`,
+    );
+    await ingestViaExplicitDoor(anchorScope);
+    expect(await trackerCountFor(anchorFile)).toBe(1);
+    expect(await bankHasMarker(anchorMarker)).toBe(true);
+
+    await ageFile(anchorFile, BACKDATE_DAYS);
+
+    const summary = await ttlService!.run();
+    console.log(`[E2E-TtlSweep] §7(13) flag-off summary: ${JSON.stringify(summary)}`);
+    expect(summary.sourcesChecked).toBe(1);
+    expect(summary.expired).toBe(1);
+    expect(summary.forgotten).toBe(1);
+    expect(summary.failed).toBe(0);
+    // Round-2 fields present at 0 (D2, second half): the deleted branch was
+    // never evaluated for a flag-off source.
+    expect(summary.wouldForget).toBe(0);
+    expect(summary.wouldDelete).toBe(0);
+    expect(summary.deletedFiles).toBe(0);
+    expect(summary.unlinkFailed).toBe(0);
+    expect(summary.skippedConfinement).toBe(0);
+
+    expect(await trackerCountFor(anchorFile)).toBe(0);
+    expect(await bankHasMarker(anchorMarker)).toBe(false);
+    // The flag-off file survives the sweep (scenario 3's disk assertion, kept).
+    expect(await pathExists(anchorFile)).toBe(true);
+  }, 240000);
+
+  it('14. §7(14) flag-on full lifecycle — forgotten 1 + deletedFiles 1, row ko, recall ko, fs.access throws; second sweep zeros', async () => {
+    // The D3 chain end to end on a flag-on fixture: forget → untrack → unlink.
+    const deleteScope = scopedSource(ttlSource!, 'delete-lifecycle', { deleteDueFiles: true });
+    const uniqueId = Date.now();
+    deleteLifecycleMarker = `TTL-DELETE-${uniqueId}`;
+    deleteLifecycleFile = await writeScopedFile(
+      deleteScope,
+      'due.md',
+      `# Delete Due ${uniqueId}\n\nMarker: ${deleteLifecycleMarker}. Past due with the flag on: gone from all three stores.`,
+    );
+    await ingestViaExplicitDoor(deleteScope);
+    expect(await trackerCountFor(deleteLifecycleFile)).toBe(1);
+    expect(await memoryRowsFor(deleteLifecycleFile)).toBeGreaterThan(0);
+    expect(await bankHasMarker(deleteLifecycleMarker)).toBe(true);
+
+    await ageFile(deleteLifecycleFile, BACKDATE_DAYS);
+
+    const summary = await deleteDueFilesSweeper(deleteScope).run();
+    console.log(`[E2E-TtlSweep] §7(14) flag-on sweep summary: ${JSON.stringify(summary)}`);
+    expect(summary.sourcesChecked).toBe(1);
+    expect(summary.expired).toBe(1);
+    expect(summary.forgotten).toBe(1);
+    expect(summary.deletedFiles).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(summary.wouldForget).toBe(0);
+    expect(summary.wouldDelete).toBe(0);
+    expect(summary.unlinkFailed).toBe(0);
+    expect(summary.skippedConfinement).toBe(0);
+
+    // All three stores: tracker row ko (memories cascade), bank recall ko,
+    // and the file itself is gone — fs.access throws ENOENT.
+    expect(await trackerCountFor(deleteLifecycleFile)).toBe(0);
+    expect(await memoryRowsFor(deleteLifecycleFile)).toBe(0);
+    expect(await bankHasMarker(deleteLifecycleMarker)).toBe(false);
+    expect(await pathExists(deleteLifecycleFile)).toBe(false);
+    expect(await bankChunkCount(deleteLifecycleFile)).toBe(0);
+
+    // Idempotent: a second sweep has nothing left (no row, no file to find).
+    const second = await deleteDueFilesSweeper(deleteScope).run();
+    console.log(`[E2E-TtlSweep] §7(14) second sweep summary: ${JSON.stringify(second)}`);
+    expect(second.expired).toBe(0);
+    expect(second.forgotten).toBe(0);
+    expect(second.deletedFiles).toBe(0);
+    expect(second.wouldDelete).toBe(0);
+    expect(second.unlinkFailed).toBe(0);
+    expect(second.failed).toBe(0);
+  }, 300000);
+
+  it('15. §7(15) flag-on dry-run counts only — wouldForget 1 + wouldDelete 1, everything intact', async () => {
+    // D4: in a dry run a contained candidate counts in BOTH preview counters
+    // and nothing is removed from any store.
+    const dryScope = scopedSource(ttlSource!, 'delete-dryrun', { deleteDueFiles: true });
+    const uniqueId = Date.now();
+    const dryMarker = `TTL-DRYRUN-${uniqueId}`;
+    const dryFile = await writeScopedFile(
+      dryScope,
+      'due-dry.md',
+      `# Dry-run Due ${uniqueId}\n\nMarker: ${dryMarker}. Counted by a flag-on dry run, touched by nothing.`,
+    );
+    await ingestViaExplicitDoor(dryScope);
+    expect(await trackerCountFor(dryFile)).toBe(1);
+    expect(await bankHasMarker(dryMarker)).toBe(true);
+
+    await ageFile(dryFile, BACKDATE_DAYS);
+
+    const summary = await deleteDueFilesSweeper(dryScope).run(true);
+    console.log(`[E2E-TtlSweep] §7(15) dry-run summary: ${JSON.stringify(summary)}`);
+    expect(summary.dryRun).toBe(true);
+    expect(summary.expired).toBe(1);
+    expect(summary.wouldForget).toBe(1);
+    expect(summary.wouldDelete).toBe(1);
+    expect(summary.forgotten).toBe(0);
+    expect(summary.deletedFiles).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.unlinkFailed).toBe(0);
+    expect(summary.skippedConfinement).toBe(0);
+
+    // Everything intact: file on disk, row present, memories recallable.
+    expect(await pathExists(dryFile)).toBe(true);
+    expect(await trackerCountFor(dryFile)).toBe(1);
+    expect(await memoryRowsFor(dryFile)).toBeGreaterThan(0);
+    expect(await bankHasMarker(dryMarker)).toBe(true);
+
+    // Ledger hygiene (see keepLedgerClean): the still-tracked fixture returns
+    // to activity so scenario 16's expired=21 is exactly its own set.
+    await keepLedgerClean(dryFile);
+  }, 240000);
+
+  it('16. §7(16) mass cap covers deletes — 21 past-due flag-on refused, deletedFiles 0, every file on disk', async () => {
+    // ADR-11's by-construction bound, pinned observably: the delete set is a
+    // subset of the guard-approved forget set, so a REFUSED mass-forget forgets
+    // AND deletes nothing (threshold 20 → 21 files refuse without the override).
+    const massScope = scopedSource(ttlSource!, 'delete-masscap', { deleteDueFiles: true });
+    const uniqueId = Date.now();
+    const MASS_CAP_COUNT = 21; // MASS_FORGET_THRESHOLD + 1 (guard constant, ../mass-forget-guard)
+    const massFiles: string[] = [];
+    for (let i = 0; i < MASS_CAP_COUNT; i++) {
+      massFiles.push(
+        await writeScopedFile(
+          massScope,
+          `due-${String(i).padStart(2, '0')}.md`,
+          `# Mass Cap ${uniqueId}-${i}\n\nMarker: TTL-MASS-${uniqueId}-${i}. Refused batch — must survive.`,
+        ),
+      );
+    }
+    await ingestViaExplicitDoor(massScope);
+    for (const massFile of massFiles) {
+      expect(await trackerCountFor(massFile)).toBe(1);
+    }
+    for (const massFile of massFiles) {
+      await ageFile(massFile, BACKDATE_DAYS);
+    }
+
+    const summary = await deleteDueFilesSweeper(massScope).run();
+    console.log(`[E2E-TtlSweep] §7(16) mass-cap summary: ${JSON.stringify(summary)}`);
+    expect(summary.expired).toBe(21); // counted BEFORE the guard (unchanged rule)
+    expect(summary.refusedMassForget).toBe(1);
+    expect(summary.forgotten).toBe(0);
+    expect(summary.deletedFiles).toBe(0);
+    expect(summary.wouldDelete).toBe(0);
+    expect(summary.unlinkFailed).toBe(0);
+    expect(summary.skippedConfinement).toBe(0);
+    expect(summary.failed).toBe(0);
+
+    // Every file still on disk with its row and memories — refusal touched nothing.
+    for (const massFile of massFiles) {
+      expect(await pathExists(massFile)).toBe(true);
+      expect(await trackerCountFor(massFile)).toBe(1);
+    }
+
+    // Ledger hygiene: bring the refused set back into activity for the
+    // scenarios after this one (their expired counts stay fixture-exact).
+    await keepLedgerClean(...massFiles);
+  }, 420000);
+
+  it('17. §7(17) confinement — symlinked candidate realpaths outside every root: nothing happened; in-root control deletes normally', async () => {
+    // D9: the confinement pre-check precedes every side effect (dry-run
+    // included). For the escaped file NOTHING happened: memories recallable,
+    // file present at its realpath, row present — only skippedConfinement
+    // counts it. A regular in-root file in the same fixture processes fully.
+    const confinedView = scopedSource(ttlSource!, 'delete-confinement', { deleteDueFiles: true });
+    const rootDir = confinedView.path!;
+    const externalDir = path.join(scopeRoot!, 'delete-confinement-external');
+    await fs.mkdir(rootDir, { recursive: true });
+    await fs.mkdir(externalDir, { recursive: true });
+
+    const uniqueId = Date.now();
+    const escapedMarker = `TTL-ESCAPED-${uniqueId}`;
+    const externalFile = path.join(externalDir, `real-target-${uniqueId}.md`);
+    await fs.writeFile(
+      externalFile,
+      `# Outside Every Root ${uniqueId}\n\nMarker: ${escapedMarker}. Reached by a link, owned by no declared root.`,
+      'utf-8',
+    );
+    const linkPath = path.join(rootDir, 'via-symlink.md');
+    await fs.symlink(externalFile, linkPath);
+
+    // The row is created for the LINK path — the fact that makes the file
+    // known to the retention system; its realpath escapes every root.
+    await runAndDrain(() => forceReprocessService!.forceReprocessFile(linkPath, confinedView));
+    await new Promise(resolve => setTimeout(resolve, PROCESSING_WAIT_MS));
+    await processingQueue!.waitForEmpty();
+    expect(await trackerCountFor(linkPath)).toBe(1);
+    expect(await bankHasMarker(escapedMarker)).toBe(true);
+
+    await ageFile(linkPath, BACKDATE_DAYS); // utimes follows the link — the target ages
+
+    // The dry run reports the SAME skip (D9: counted, nothing else touched).
+    const dry = await deleteDueFilesSweeper(confinedView).run(true);
+    console.log(`[E2E-TtlSweep] §7(17) confinement dry summary: ${JSON.stringify(dry)}`);
+    expect(dry.expired).toBe(1);
+    expect(dry.skippedConfinement).toBe(1);
+    expect(dry.wouldForget).toBe(0);
+    expect(dry.wouldDelete).toBe(0);
+    expect(dry.forgotten).toBe(0);
+    expect(dry.deletedFiles).toBe(0);
+
+    const real = await deleteDueFilesSweeper(confinedView).run();
+    console.log(`[E2E-TtlSweep] §7(17) confinement real summary: ${JSON.stringify(real)}`);
+    expect(real.expired).toBe(1);
+    expect(real.skippedConfinement).toBe(1);
+    expect(real.forgotten).toBe(0);
+    expect(real.deletedFiles).toBe(0);
+    expect(real.unlinkFailed).toBe(0);
+    expect(real.failed).toBe(0);
+    // Nothing happened to it: present at its realpath and via the link,
+    // row present, memories still recallable — byte-identical to flag-off.
+    expect(await pathExists(externalFile)).toBe(true);
+    expect(await pathExists(linkPath)).toBe(true);
+    expect(await trackerCountFor(linkPath)).toBe(1);
+    expect(await bankHasMarker(escapedMarker)).toBe(true);
+
+    // Control in the SAME source: a regular in-root candidate deletes normally.
+    const controlMarker = `TTL-CONTROL-${uniqueId}`;
+    const controlFile = await writeScopedFile(
+      confinedView,
+      'control.md',
+      `# In-root Control ${uniqueId}\n\nMarker: ${controlMarker}. Strictly below the declared root — processed fully.`,
+    );
+    await runAndDrain(() => forceReprocessService!.forceReprocessFile(controlFile, confinedView));
+    await new Promise(resolve => setTimeout(resolve, PROCESSING_WAIT_MS));
+    await processingQueue!.waitForEmpty();
+    expect(await trackerCountFor(controlFile)).toBe(1);
+    await ageFile(controlFile, BACKDATE_DAYS);
+
+    const withControl = await deleteDueFilesSweeper(confinedView).run();
+    console.log(`[E2E-TtlSweep] §7(17) control sweep summary: ${JSON.stringify(withControl)}`);
+    // Expired = the still-aged escaped link + the aged control; only the
+    // contained one proceeds through forget → untrack → unlink.
+    expect(withControl.expired).toBe(2);
+    expect(withControl.skippedConfinement).toBe(1);
+    expect(withControl.forgotten).toBe(1);
+    expect(withControl.deletedFiles).toBe(1);
+    expect(withControl.unlinkFailed).toBe(0);
+    expect(withControl.failed).toBe(0);
+    expect(await pathExists(controlFile)).toBe(false);
+    expect(await trackerCountFor(controlFile)).toBe(0);
+    expect(await bankHasMarker(controlMarker)).toBe(false);
+    // The escaped file has STILL been touched by nothing.
+    expect(await pathExists(externalFile)).toBe(true);
+    expect(await trackerCountFor(linkPath)).toBe(1);
+    expect(await bankHasMarker(escapedMarker)).toBe(true);
+
+    // Ledger hygiene: return the escaped target to activity for 18/19.
+    await keepLedgerClean(linkPath);
+  }, 420000);
+
+  it('18. §7(18) no-resurrection round trip after deletions — resume + freshly built service: zero rows/memories', async () => {
+    // Criterion 4 via round-1's mechanism with zero new anti-resurrection
+    // state: the deleted file simply does not enumerate, so batch paths cannot
+    // re-ingest it. "Service re-init": a FRESHLY constructed TtlReconciliation-
+    // Service (what a restarted process would build) also derives nothing for
+    // the deleted path.
+    expect(await pathExists(deleteLifecycleFile)).toBe(false); // §7(14) deleted it
+    expect(await trackerCountFor(deleteLifecycleFile)).toBe(0);
+    const lifecycleView = scopedSource(ttlSource!, 'delete-lifecycle', { deleteDueFiles: true });
+
+    await runAndDrain(() => forceReprocessService!.resumeSource(SOURCE_ID, [lifecycleView]));
+    expect(await trackerCountFor(deleteLifecycleFile)).toBe(0);
+    expect(await memoryRowsFor(deleteLifecycleFile)).toBe(0);
+    expect(await bankChunkCount(deleteLifecycleFile)).toBe(0);
+    expect(await bankHasMarker(deleteLifecycleMarker)).toBe(false);
+
+    const freshSummary = await deleteDueFilesSweeper(lifecycleView).run();
+    console.log(`[E2E-TtlSweep] §7(18) re-initialized sweep summary: ${JSON.stringify(freshSummary)}`);
+    // The re-initialized service sees nothing to forget or delete anywhere:
+    // every earlier flag-on fixture was left inert by its own scenario.
+    expect(freshSummary.sourcesChecked).toBe(1);
+    expect(freshSummary.expired).toBe(0);
+    expect(freshSummary.forgotten).toBe(0);
+    expect(freshSummary.deletedFiles).toBe(0);
+    expect(freshSummary.unlinkFailed).toBe(0);
+    expect(freshSummary.skippedConfinement).toBe(0);
+    expect(freshSummary.failed).toBe(0);
+
+    // Terminal: the deleted file stays deleted, zero rows/memories after all.
+    expect(await pathExists(deleteLifecycleFile)).toBe(false);
+    expect(await trackerCountFor(deleteLifecycleFile)).toBe(0);
+    expect(await bankHasMarker(deleteLifecycleMarker)).toBe(false);
+  }, 300000);
+
+  it('19. §7(19) watch unlink echo after a sweep delete — chokidar echo is a no-op: row ko, no new memories, tombstone unchanged', async () => {
+    // D10 with the ACTIVE watcher (the file lives in the real watched dir and
+    // was ingested through the watch path itself). racochu's own unlink is
+    // guaranteed to echo via chokidar (findings Context7 addendum); the
+    // handleDelete chain must converge to nothing new: row ko, no re-created
+    // memories, and the ADR-6 tombstone unchanged (same files-row, no churn).
+    // If chokidar timing proves flaky, spec §8 scopes this to the handleDelete
+    // use-case call — behavior identical; see the task summary deviation note.
+    const echoUnique = Date.now();
+    const echoMarker = `TTL-WATCH-ECHO-${echoUnique}`;
+    const echoFile = path.join(watchDir!, `ttl-watch-echo-${echoUnique}.md`);
+    await fs.writeFile(
+      echoFile,
+      `# Watch Echo ${echoUnique}\n\nMarker: ${echoMarker}. Sweep-deleted under the watcher; its unlink echo must be inert.`,
+      'utf-8',
+    );
+
+    // The watched path ingests it (this file's test 1 proves that path).
+    await new Promise(resolve => setTimeout(resolve, PROCESSING_WAIT_MS));
+    await processingQueue!.waitForEmpty();
+    expect(await trackerCountFor(echoFile)).toBe(1);
+    expect(await bankHasMarker(echoMarker)).toBe(true);
+
+    await ageFile(echoFile, BACKDATE_DAYS);
+    // Drain any echo of the utimes touch before sweeping (as in test 2).
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await processingQueue!.waitForEmpty();
+
+    // The DECLARED source with the flag on an in-memory view only — never
+    // watched dirs change; the file is inside the declared root, so
+    // confinement passes cleanly here.
+    const echoView: WatchSourceConfig = { ...ttlSource!, deleteDueFiles: true };
+    const summary = await deleteDueFilesSweeper(echoView).run();
+    console.log(`[E2E-TtlSweep] §7(19) watch-echo sweep summary: ${JSON.stringify(summary)}`);
+    expect(summary.expired).toBe(1);
+    expect(summary.forgotten).toBe(1);
+    expect(summary.deletedFiles).toBe(1);
+    expect(summary.skippedConfinement).toBe(0);
+    expect(summary.unlinkFailed).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(await pathExists(echoFile)).toBe(false); // the sweep unlinked it
+
+    // Tombstone state right after the sweep — the echo must not change it.
+    let echoedRowId: string | undefined;
+    const dbBefore = openFileMetadataDb();
+    try {
+      const fileRow = findFileRow(dbBefore, echoFile);
+      expect(fileRow).toBeDefined();
+      expect(fileRow!.status).toBe('deleted');
+      expect(countChunksForFile(dbBefore, fileRow!.id)).toBe(0);
+      echoedRowId = fileRow!.id;
+    } finally {
+      dbBefore.close();
+    }
+
+    // Let the chokidar unlink echo arrive and settle (debounce + queue drain
+    // + the zero-work quiet window the helper style uses for "nothing happened").
+    await new Promise(resolve => setTimeout(resolve, PROCESSING_WAIT_MS));
+    await processingQueue!.waitForEmpty();
+    await new Promise(resolve => setTimeout(resolve, SETTLE_WAIT_MS));
+    await processingQueue!.waitForEmpty();
+
+    // Beyond the existing no-op path nothing happened: row ko (no re-created
+    // trackers/memories), recall ko, tombstone byte-stable (same row id,
+    // status 'deleted', zero chunks).
+    expect(await trackerCountFor(echoFile)).toBe(0);
+    expect(await memoryRowsFor(echoFile)).toBe(0);
+    expect(await bankChunkCount(echoFile)).toBe(0);
+    expect(await bankHasMarker(echoMarker)).toBe(false);
+    const dbAfter = openFileMetadataDb();
+    try {
+      const fileRow = findFileRow(dbAfter, echoFile);
+      expect(fileRow).toBeDefined();
+      expect(fileRow!.id).toBe(echoedRowId);
+      expect(fileRow!.status).toBe('deleted');
+      expect(countChunksForFile(dbAfter, fileRow!.id)).toBe(0);
+    } finally {
+      dbAfter.close();
+    }
+  }, 420000);
 });

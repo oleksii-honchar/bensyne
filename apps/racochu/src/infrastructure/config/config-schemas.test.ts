@@ -4,6 +4,7 @@ import {
   enhancementConfigSchema,
   enrichmentConfigSchema,
   mcpConfigSchema,
+  resolvedWatchSourceConfigSchema,
   telemetryConfigSchema,
   userConfigSchema,
   watchSourceConfigSchema,
@@ -123,6 +124,160 @@ describe('config-schemas', () => {
         ttlDays: -5,
       });
       expect(negativeResult.success).toBe(false);
+    });
+
+    describe('deleteDueFiles (round-2 D1: opt-in disk deletion, cross-key entry rule)', () => {
+      // Behavior at the schema boundary only (spec §3.3 D1, ADR-10): the key is
+      // optional and never defaulted (absent = off — DEC-0075 idiom); the
+      // operator-entry gate rejects deleteDueFiles=true without ttlDays with ONE
+      // issue naming both keys (same rule style as the path/paths issues above);
+      // the internal seam gains type flow only — no validation there (R1 rule).
+      // No logger assertions.
+
+      it('rejects deleteDueFiles: true without ttlDays with exactly one issue naming both keys', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          deleteDueFiles: true,
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toHaveLength(1);
+          const issue = result.error.issues[0];
+          expect(String(issue.path[0])).toBe('deleteDueFiles');
+          // The single issue names BOTH keys so either reading finds the rule.
+          expect(issue.message).toContain('deleteDueFiles');
+          expect(issue.message).toContain('ttlDays');
+        }
+      });
+
+      it('accepts deleteDueFiles: true together with a valid ttlDays and preserves both on the parsed shape', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          ttlDays: 365,
+          deleteDueFiles: true,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.deleteDueFiles).toBe(true);
+          expect(result.data.ttlDays).toBe(365);
+        }
+      });
+
+      it('accepts deleteDueFiles: false without ttlDays (negative of the cross-key rule)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          deleteDueFiles: false,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.deleteDueFiles).toBe(false);
+          expect(result.data.ttlDays).toBeUndefined();
+        }
+      });
+
+      it('accepts deleteDueFiles: false together with a valid ttlDays', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          ttlDays: 30,
+          deleteDueFiles: false,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.deleteDueFiles).toBe(false);
+        }
+      });
+
+      it('accepts BOTH keys absent (opt-in, never defaulted)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+        });
+
+        expect(result.success).toBe(true);
+      });
+
+      it('absent key → parsed output carries no deleteDueFiles (byte-identical to a config without the key — no synthesized false)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data).not.toHaveProperty('deleteDueFiles');
+          expect(Object.keys(result.data)).not.toContain('deleteDueFiles');
+        }
+      });
+
+      it('normalized multi-root output also carries no deleteDueFiles when the key is absent', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          paths: ['/roots/a', '/roots/b'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data).not.toHaveProperty('deleteDueFiles');
+        }
+      });
+
+      it('configurationSchema rejects a watchSources entry with deleteDueFiles: true and no ttlDays', () => {
+        const result = configurationSchema.safeParse({
+          watchSources: [{ id: 'delete-due', path: '/path', deleteDueFiles: true }],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toHaveLength(1);
+          expect(result.error.issues[0].message).toContain('deleteDueFiles');
+          expect(result.error.issues[0].message).toContain('ttlDays');
+        }
+      });
+
+      it('internal seam preserves deleteDueFiles without applying the cross-key rule (R1: entry-only refine)', () => {
+        const withFlag = resolvedWatchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          resolvedPaths: ['/path'],
+          ttlDays: 365,
+          deleteDueFiles: true,
+        });
+        expect(withFlag.success).toBe(true);
+        if (withFlag.success) {
+          expect(withFlag.data.deleteDueFiles).toBe(true);
+        }
+
+        // The internal seam gains type-addition only: the operator cross-key
+        // rule never applies here (same R1 rule the path/paths XOR follows).
+        const withoutTtl = resolvedWatchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          resolvedPaths: ['/path'],
+          deleteDueFiles: true,
+        });
+        expect(withoutTtl.success).toBe(true);
+      });
+
+      it('internal-seam absent key → parsed output carries no deleteDueFiles', () => {
+        const result = resolvedWatchSourceConfigSchema.safeParse({
+          id: 'delete-due',
+          path: '/path',
+          resolvedPaths: ['/path'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data).not.toHaveProperty('deleteDueFiles');
+        }
+      });
     });
 
     it('accepts description field and preserves it as-is', () => {

@@ -87,7 +87,8 @@ watchSources:
       - '**/node_modules/**'
       - '**/.DS_Store'
     debounceMs: 3000
-    ttlDays: 365   # optional: forget files older than this many days
+    ttlDays: 365      # optional: forget files older than this many days
+    deleteDueFiles: false  # optional, requires ttlDays; true also deletes due files from disk
 
 chunking:
   strategy: content-aware
@@ -123,6 +124,7 @@ telemetry:
 |                    | exclude      | string[] | `['.git/**', '**/node_modules/**']` | Chokidar ignore patterns                                        |
 |                    | debounceMs   | number   | 3000                                | ms to wait after last file modification before processing       |
 |                    | ttlDays      | number   | — (no TTL)                          | Optional per-source retention in days; see [Source TTL](#source-ttl-ttldays) |
+|                    | deleteDueFiles | boolean | — (off)                           | Optional; `true` also deletes due files from disk after they are forgotten (requires `ttlDays`); see [Source TTL](#source-ttl-ttldays) |
 |                    | autoPopulate | boolean  | true                                | Auto-populate existing files on startup; set `false` to only watch for new/changed files |
 | **chunking**       | strategy     | string   | `content-aware`                     | Chunking strategy (content-aware, recursive, config)            |
 |                    | maxSizes     | object   | —                                   | Max token sizes per file role                                   |
@@ -147,7 +149,8 @@ cleaned up). Absent/omitted means **no TTL** — that source is never swept.
 watchSources:
   - id: agent-sessions
     path: ~/.agent-sessions
-    ttlDays: 365   # optional; absent = no TTL
+    ttlDays: 365         # optional; absent = no TTL
+    deleteDueFiles: true # optional; requires ttlDays — see "Deleting due files" below
     sourceType: agent-sessions
 ```
 
@@ -157,18 +160,56 @@ The TTL sweep runs:
 - **Once a day** while running in watch mode (`start`/`start:dev`), and
 - **On demand** via `racochu --ttl-sweep` (optionally scoped with `-s/--source`; combine with `--dry-run` to preview).
 
-`--dry-run` reports what *would* be forgotten without deleting anything.
+`--dry-run` reports what *would* be forgotten — and, for a `deleteDueFiles`
+source, what *would* be deleted (`wouldForget` / `wouldDelete` counts) —
+without forgetting or deleting anything.
 
 > **Mass-forget guard:** the sweep refuses to forget more than **20 files per
 > source** in one run (same guard as exclude reconciliation). If a source has
 > more expired files than that — e.g. the first backfill sweep after a year of
 > accumulation — run it once with `RACOCHU_RECONCILE_FORCE_FORGET=1` to
-> acknowledge the mass-forget and let the sweep proceed.
->
+> acknowledge the mass-forget and let the sweep proceed. A refused run
+> additionally deletes **no** files: the delete step is bounded by the same
+> guard by construction.
+
+#### Deleting due files (`deleteDueFiles`)
+
+A source may additionally set `deleteDueFiles: true` (optional, never implied;
+it **requires `ttlDays`** — a config error otherwise). For such a source the
+retention window ends in the complete lifecycle — **forget → untrack → unlink**:
+after a due file's memories are forgotten and its tracker rows are removed, the
+source file itself is deleted (`unlink`ed) from disk. The sweep summary reports
+this in its `deletedFiles` counter (`wouldDelete` in a dry run).
+
+This is the one place racochu destroys user data, and every existing safety
+mechanism applies to it without exception: per-source opt-in, the activity
+clock, the mass-forget guard (a refused run deletes nothing), and `--dry-run`
+preview. Unlinks happen only strictly inside the source's declared directories
+(realpath-checked — a file reached by a symlink that leads outside every
+declared root is skipped whole, counted as `skippedConfinement`, and left
+untouched). Failed unlinks are counted (`unlinkFailed`), never fatal; the
+leftover file is inert to batch paths until its normal doors apply. A
+previously deleted file never comes back: deleted files simply do not
+enumerate, and the explicit `--recover`/`--force-reprocess` doors report them
+with the existing file-absent semantics.
+
+**Before enabling it for the first time on a source:**
+
+1. Preview first: `racochu --ttl-sweep --dry-run -s <source-id>` — with the
+   flag set it lists both `wouldForget` and `wouldDelete`.
+2. Consider `exclude` patterns (e.g. `**/archive/**`) **before** enabling —
+   kept archives are exactly the history one does not mean to delete.
+3. Run the first real sweep immediately after such a dry-run: after
+   enablement, the **first real sweep deletes every already-past-due file**
+   (bounded — and acknowledged — by the mass-forget guard as above).
+
 > **Safety notes:** the sweep only touches sources with `ttlDays` set; expiry is
 > measured by the activity clock (see [Forget & activity semantics](#forget--activity-semantics));
-> the source files themselves are never deleted from disk — only their memories
-> and trackers.
+> source files are **not** deleted from disk unless that source explicitly sets
+> `deleteDueFiles: true` — without the flag only their memories and trackers are
+> removed. With the flag, disk deletion is bounded by the mass-forget guard and
+> confined to the source's declared directories, as described in
+> [Deleting due files](#deleting-due-files-deleteduefiles).
 
 ### Forget & activity semantics
 

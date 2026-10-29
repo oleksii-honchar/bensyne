@@ -128,7 +128,10 @@ export async function bootstrap(): Promise<void> {
     logger.info(
       `TTL sweep mode complete: sources=${summary.sourcesChecked}, expired=${summary.expired}, ` +
         `forgotten=${summary.forgotten}, wouldForget=${summary.wouldForget}, ` +
-        `failed=${summary.failed}, refused=${summary.refusedMassForget}, dryRun=${summary.dryRun}`,
+        `failed=${summary.failed}, refused=${summary.refusedMassForget}, ` +
+        `wouldDelete=${summary.wouldDelete}, deletedFiles=${summary.deletedFiles}, ` +
+        `unlinkFailed=${summary.unlinkFailed}, skippedConfinement=${summary.skippedConfinement}, ` +
+        `dryRun=${summary.dryRun}`,
     );
     await app.close();
     process.exit(0);

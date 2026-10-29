@@ -611,4 +611,323 @@ describe('TtlReconciliationService', () => {
       expect(mockProcessingQueue.waitForEmpty).toHaveBeenCalled();
     });
   });
+
+  // ============================================================================
+  // Round-2 Task 6 — deleteDueFiles flag-gated delete tail (spec §3.2 chain,
+  // §3.3 D2–D9, ADR-11). Flag-on fixtures declare an explicit resolvedPaths
+  // root; `realpath` and `unlink` are explicit fs/promises mocks so call
+  // PRESENCE and ORDER are assertable (the only new fs calls this feature adds).
+  // All pre-existing suites above must pass UNMODIFIED (byte-kept invariants).
+  // ============================================================================
+  describe('deleteDueFiles flag-gated delete tail (round-2 §3.2, D2–D9)', () => {
+    const DEL = { id: 'src-del', memoryBank: 'bank-del', ttlDays: 365, deleteDueFiles: true };
+    const ROOT = '/roots/main';
+
+    let savedForceForgetEnv: string | undefined;
+
+    beforeEach(() => {
+      savedForceForgetEnv = process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      jest.useFakeTimers();
+      jest.setSystemTime(FIXED_NOW);
+      fsMock.unlink.mockReset();
+      fsMock.unlink.mockResolvedValue(undefined);
+      fsMock.realpath.mockReset();
+      setRealpathMap({});
+      mockConfigurationService.getWatchSources.mockReturnValue([aSourceConfig({ ...DEL, path: ROOT })]);
+      mockFileMemoryTrackerService.getTrackerCreatedAt.mockResolvedValue(
+        new Date(FIXED_NOW - 400 * MS_PER_DAY),
+      );
+      fsMock.stat.mockResolvedValue(aFileStatWithMtimeMs(FIXED_NOW - 400 * MS_PER_DAY));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      if (savedForceForgetEnv === undefined) {
+        delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      } else {
+        process.env.RACOCHU_RECONCILE_FORCE_FORGET = savedForceForgetEnv;
+      }
+    });
+
+    // fs.realpath stub: paths not in the map resolve to themselves (identity).
+    function setRealpathMap(mapping: Record<string, string>): void {
+      const impl = (candidate: string | { toString(): string }): Promise<string> => {
+        const key = String(candidate);
+        return Promise.resolve(mapping[key] ?? key);
+      };
+      fsMock.realpath.mockImplementation(impl as unknown as typeof fsPromises.realpath);
+    }
+
+    function anUnlinkError(code: 'ENOENT' | 'EPERM'): NodeJS.ErrnoException {
+      return Object.assign(new Error(`unlink failed; code=${code}`), { code });
+    }
+
+    const createDeleteService = (): TtlReconciliationService =>
+      new TtlReconciliationService(
+        mockFileMemoryTrackerService as unknown as FileMemoryTrackerService,
+        mockBensyneClient as unknown as BensyneClient,
+        mockConfigurationService as unknown as ConfigurationService,
+        mockProcessingQueue as unknown as FileProcessingQueue,
+        aLogger() as unknown as BasePinoLogger,
+      );
+
+    const oneRow = (filePath: string): void => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath, sourceId: DEL.id }),
+      ]);
+    };
+
+    const rowsUnderRoot = (count: number): void => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue(
+        Array.from({ length: count }, (_, i) =>
+          aFileMemoryTracker({ filePath: `${ROOT}/file-${i}.md`, sourceId: DEL.id }),
+        ),
+      );
+    };
+
+    const countRealpathCallsFor = (target: string): number =>
+      fsMock.realpath.mock.calls.filter((call: unknown[]) => call[0] === target).length;
+
+    it('D2 flag-off: today\'s counters unchanged, all four new summary fields present at 0, unlink/realpath never called', async () => {
+      mockConfigurationService.getWatchSources.mockReturnValue([
+        aSourceConfig({ id: 'src-off', memoryBank: 'bank-off', ttlDays: 365, path: ROOT }),
+      ]);
+      oneRow(`${ROOT}/stale.md`);
+
+      const summary = await service.run();
+
+      // Today's flag-off chain unchanged: forget + tracker-delete, forgotten=1.
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(`${ROOT}/stale.md`);
+      expect(summary.forgotten).toBe(1);
+      // New fields always present, initialized 0; no new statement executed.
+      expect(summary.wouldDelete).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+      expect(summary.unlinkFailed).toBe(0);
+      expect(summary.skippedConfinement).toBe(0);
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+      expect(fsMock.realpath).not.toHaveBeenCalled();
+    });
+
+    it('D3 flag-on success chain: realpath precedes forget; unlink(file path) after tracker-delete; forgotten=1 deletedFiles=1', async () => {
+      oneRow(`${ROOT}/a.md`);
+      setRealpathMap({ [ROOT]: '/real/main', [`${ROOT}/a.md`]: '/real/main/a.md' });
+
+      const summary = await service.run();
+
+      expect(fsMock.realpath).toHaveBeenCalledWith(ROOT);
+      expect(fsMock.realpath).toHaveBeenCalledWith(`${ROOT}/a.md`);
+      // Chain step K precedes step D2: the first realpath call comes before the
+      // first forget call.
+      expect(fsMock.realpath.mock.invocationCallOrder[0]).toBeLessThan(
+        mockBensyneClient.forgetByFile.mock.invocationCallOrder[0],
+      );
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(`${ROOT}/a.md`);
+      // Unlink targets the tracked file path, not the realpath output.
+      expect(fsMock.unlink).toHaveBeenCalledTimes(1);
+      expect(fsMock.unlink).toHaveBeenCalledWith(`${ROOT}/a.md`);
+      expect(summary.forgotten).toBe(1);
+      expect(summary.deletedFiles).toBe(1);
+      expect(summary.wouldDelete).toBe(0);
+      expect(summary.unlinkFailed).toBe(0);
+      expect(summary.skippedConfinement).toBe(0);
+      expect(summary.failed).toBe(0);
+    });
+
+    it('D3 flag-on: declared roots are realpath-resolved once per source (two contained files → one root realpath)', async () => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: `${ROOT}/a.md`, sourceId: DEL.id }),
+        aFileMemoryTracker({ filePath: `${ROOT}/b.md`, sourceId: DEL.id }),
+      ]);
+
+      const summary = await service.run();
+
+      expect(countRealpathCallsFor(ROOT)).toBe(1);
+      expect(fsMock.unlink).toHaveBeenCalledTimes(2);
+      expect(summary.forgotten).toBe(2);
+      expect(summary.deletedFiles).toBe(2);
+    });
+
+    it('D4 flag-on dry-run: contained candidate counts wouldForget AND wouldDelete, touches nothing', async () => {
+      oneRow(`${ROOT}/a.md`);
+
+      const summary = await service.run(true);
+
+      expect(summary.expired).toBe(1);
+      expect(summary.wouldForget).toBe(1);
+      expect(summary.wouldDelete).toBe(1);
+      expect(summary.forgotten).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+      expect(summary.dryRun).toBe(true);
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+    });
+
+    it('D4+D9 flag-on dry-run: non-contained candidate → skippedConfinement=1, still zero other counters', async () => {
+      oneRow(`${ROOT}/escape.md`);
+      setRealpathMap({ [`${ROOT}/escape.md`]: '/outside/real.md' });
+
+      const summary = await service.run(true);
+
+      expect(summary.expired).toBe(1);
+      expect(summary.skippedConfinement).toBe(1);
+      expect(summary.wouldForget).toBe(0);
+      expect(summary.wouldDelete).toBe(0);
+      expect(summary.forgotten).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+    });
+
+    it('D9 confinement precedes every side effect: escaping symlink skipped whole (realpath before any call); in-root file in same run fully processed; root resolved once', async () => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: `${ROOT}/link-out.md`, sourceId: DEL.id }),
+        aFileMemoryTracker({ filePath: `${ROOT}/in-root.md`, sourceId: DEL.id }),
+      ]);
+      setRealpathMap({ [`${ROOT}/link-out.md`]: '/elsewhere/target.md' });
+
+      const summary = await service.run();
+
+      expect(summary.skippedConfinement).toBe(1);
+      // The escaped file produced ZERO side effects: forget/tracker/unlink ran
+      // once each, and only for the in-root file.
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(1);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(`${ROOT}/in-root.md`, 'bank-del');
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledWith(`${ROOT}/in-root.md`);
+      expect(fsMock.unlink).toHaveBeenCalledTimes(1);
+      expect(fsMock.unlink).toHaveBeenCalledWith(`${ROOT}/in-root.md`);
+      // Call ORDER: the escaped file's confinement check precedes the first
+      // forget call of the run.
+      const escapeCheckIndex = fsMock.realpath.mock.calls.findIndex(
+        (call: unknown[]) => call[0] === `${ROOT}/link-out.md`,
+      );
+      expect(escapeCheckIndex).toBeGreaterThanOrEqual(0);
+      expect(fsMock.realpath.mock.invocationCallOrder[escapeCheckIndex]).toBeLessThan(
+        mockBensyneClient.forgetByFile.mock.invocationCallOrder[0],
+      );
+      // Roots realpath-resolved ONCE per source despite two candidates.
+      expect(countRealpathCallsFor(ROOT)).toBe(1);
+      expect(summary.forgotten).toBe(1);
+      expect(summary.deletedFiles).toBe(1);
+      expect(summary.failed).toBe(0);
+    });
+
+    it('D9: the declared root itself is never a delete target (realpath equals the root → skipped)', async () => {
+      oneRow(ROOT);
+
+      const summary = await service.run();
+
+      expect(summary.skippedConfinement).toBe(1);
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(summary.forgotten).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+    });
+
+    it('D5 flag-on forget ko: failed=1, never unlinks, deletedFiles stays 0, never throws', async () => {
+      oneRow(`${ROOT}/a.md`);
+      mockBensyneClient.forgetByFile.mockResolvedValueOnce(
+        Result.ko([new ErrorWithDetails('FORGET_FAILED', 'Bensyne unreachable')]),
+      );
+
+      const runPromise = service.run();
+      await expect(runPromise).resolves.not.toThrow();
+      const summary = await runPromise;
+
+      expect(summary.failed).toBe(1);
+      expect(summary.forgotten).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+      expect(summary.unlinkFailed).toBe(0);
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.deleteByFilePath).not.toHaveBeenCalled();
+    });
+
+    it('D6 flag-on tracker-delete throw: no unlink; second sweep over the same state converges (forget no-op, row goes, unlink then) — zero new state', async () => {
+      oneRow(`${ROOT}/a.md`);
+      mockFileMemoryTrackerService.deleteByFilePath.mockRejectedValueOnce(new Error('DB locked'));
+
+      const first = await service.run();
+      expect(first.failed).toBe(1);
+      expect(first.deletedFiles).toBe(0);
+      expect(first.forgotten).toBe(0);
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+
+      // Same run state (row still present; forgetByFile remains an idempotent
+      // ok no-op per MEM-0026). A plain second run() — no new state anywhere.
+      const second = await service.run();
+      expect(second.failed).toBe(0);
+      expect(second.forgotten).toBe(1);
+      expect(second.deletedFiles).toBe(1);
+      expect(mockFileMemoryTrackerService.deleteByFilePath).toHaveBeenCalledTimes(2);
+      expect(fsMock.unlink).toHaveBeenCalledTimes(1);
+      expect(fsMock.unlink).toHaveBeenCalledWith(`${ROOT}/a.md`);
+    });
+
+    it('D7 flag-on unlink ENOENT: reached-goal — deletedFiles++ and forgotten++ (mermaid N), not unlinkFailed, never throws', async () => {
+      oneRow(`${ROOT}/gone.md`);
+      fsMock.unlink.mockRejectedValueOnce(anUnlinkError('ENOENT'));
+
+      const runPromise = service.run();
+      await expect(runPromise).resolves.not.toThrow();
+      const summary = await runPromise;
+
+      expect(summary.deletedFiles).toBe(1);
+      expect(summary.forgotten).toBe(1);
+      expect(summary.unlinkFailed).toBe(0);
+      expect(summary.failed).toBe(0);
+    });
+
+    it('D8 flag-on unlink EPERM: unlinkFailed=1 non-fatal, remaining files unaffected, never throws', async () => {
+      mockFileMemoryTrackerService.findBySourceId.mockResolvedValue([
+        aFileMemoryTracker({ filePath: `${ROOT}/locked.md`, sourceId: DEL.id }),
+        aFileMemoryTracker({ filePath: `${ROOT}/ok.md`, sourceId: DEL.id }),
+      ]);
+      fsMock.unlink.mockRejectedValueOnce(anUnlinkError('EPERM'));
+
+      const runPromise = service.run();
+      await expect(runPromise).resolves.not.toThrow();
+      const summary = await runPromise;
+
+      expect(summary.unlinkFailed).toBe(1);
+      // The EPERM file is the ONLY shortfall: the second file completed fully.
+      expect(summary.deletedFiles).toBe(1);
+      expect(summary.forgotten).toBe(1);
+      expect(summary.failed).toBe(0);
+      expect(fsMock.unlink).toHaveBeenCalledTimes(2);
+    });
+
+    it('mass-cap by construction: flag-on over threshold is REFUSED, unlink never called, deletedFiles=0', async () => {
+      delete process.env.RACOCHU_RECONCILE_FORCE_FORGET;
+      const testService = createDeleteService();
+      rowsUnderRoot(21);
+
+      const summary = await testService.run();
+
+      expect(summary.refusedMassForget).toBe(1);
+      expect(summary.expired).toBe(21);
+      expect(summary.forgotten).toBe(0);
+      expect(summary.deletedFiles).toBe(0);
+      expect(summary.skippedConfinement).toBe(0);
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(fsMock.unlink).not.toHaveBeenCalled();
+    });
+
+    it('mass-cap by construction: RACOCHU_RECONCILE_FORCE_FORGET=1 → the batch forgets AND unlinks (bounded together)', async () => {
+      process.env.RACOCHU_RECONCILE_FORCE_FORGET = '1';
+      const testService = createDeleteService();
+      rowsUnderRoot(21);
+
+      const summary = await testService.run();
+
+      expect(summary.refusedMassForget).toBe(0);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledTimes(21);
+      expect(fsMock.unlink).toHaveBeenCalledTimes(21);
+      expect(summary.forgotten).toBe(21);
+      expect(summary.deletedFiles).toBe(21);
+    });
+  });
 });

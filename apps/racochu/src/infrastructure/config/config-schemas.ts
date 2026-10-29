@@ -41,6 +41,12 @@ const watchSourceShape = z.object({
   // Optional per-source retention (days) for the TTL sweep.
   // Absent = no TTL (opt-in, never defaulted).
   ttlDays: z.number().int().positive().optional(),
+  // Optional per-source disk deletion of due files: when true, the TTL sweep
+  // additionally unlinks each file after it has been forgotten and untracked
+  // (round-2 deleteDueFiles, ADR-10). Absent = off (opt-in, never defaulted —
+  // same DEC-0075 idiom as ttlDays; the cross-key rule lives in the entry
+  // refine below, NOT here and NOT on the internal seam).
+  deleteDueFiles: z.boolean().optional(),
   exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
   debounceMs: z.number().positive().default(3000),
   // Optional content-classifier config; defaults are conservative (see
@@ -89,6 +95,20 @@ export const watchSourceConfigSchema = watchSourceShape
       // Both issues so the error names both keys, whichever the caller reads.
       ctx.addIssue({ code: 'custom', message, path: ['path'] });
       ctx.addIssue({ code: 'custom', message, path: ['paths'] });
+    }
+    // D1 (round-2, ADR-10): `deleteDueFiles: true` on a source without
+    // `ttlDays` is a destructive option that would sit inert forever — the
+    // operator-entry gate is the only point where flipping it is free, so it
+    // is refused here (one issue naming BOTH keys; same rule style as the
+    // path/paths issues above). `deleteDueFiles: false`/absent without
+    // ttlDays stays valid. The internal seam never sees this rule (R1).
+    if (data.deleteDueFiles === true && data.ttlDays === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          "Watch source 'deleteDueFiles: true' requires 'ttlDays' (deleteDueFiles is set while ttlDays is absent)",
+        path: ['deleteDueFiles'],
+      });
     }
   })
   .transform(normalizeWatchSource);

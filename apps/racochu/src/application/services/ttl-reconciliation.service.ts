@@ -27,6 +27,16 @@ const DAILY_SWEEP_INTERVAL_MS = MS_PER_DAY;
  *   cleanup (deleteByFilePath) threw (logged, non-fatal).
  * - refusedMassForget: sources where the mass-forget guard triggered
  *   (expired > threshold) and refused to proceed without an override.
+ * - wouldDelete: files that would be unlinked from disk (dry-run of a
+ *   deleteDueFiles source only; §3.2 chain, ADR-11).
+ * - deletedFiles: files unlinked from disk by a deleteDueFiles source after
+ *   being forgotten and untracked (a file already gone at unlink time —
+ *   ENOENT — counts here, reached-goal, D7).
+ * - unlinkFailed: files whose unlink failed with a non-ENOENT error (logged,
+ *   non-fatal: memories and tracker rows are already gone, D8).
+ * - skippedConfinement: expired files whose realpath fell outside every
+ *   declared source root; skipped entire and untouched this run, counted in
+ *   dry-run too (D9).
  * - dryRun: whether the run was a dry run (no forgets performed).
  */
 export interface TtlSweepSummary {
@@ -36,6 +46,10 @@ export interface TtlSweepSummary {
   forgotten: number;
   failed: number;
   refusedMassForget: number;
+  wouldDelete: number;
+  deletedFiles: number;
+  unlinkFailed: number;
+  skippedConfinement: number;
   dryRun: boolean;
 }
 
@@ -91,6 +105,10 @@ export class TtlReconciliationService implements OnApplicationShutdown {
       forgotten: 0,
       failed: 0,
       refusedMassForget: 0,
+      wouldDelete: 0,
+      deletedFiles: 0,
+      unlinkFailed: 0,
+      skippedConfinement: 0,
       dryRun,
     };
 
@@ -128,7 +146,10 @@ export class TtlReconciliationService implements OnApplicationShutdown {
     this.logger.info(
       `TTL sweep complete: sources=${summary.sourcesChecked}, expired=${summary.expired}, ` +
         `forgotten=${summary.forgotten}, wouldForget=${summary.wouldForget}, ` +
-        `failed=${summary.failed}, refused=${summary.refusedMassForget}, dryRun=${dryRun}`,
+        `failed=${summary.failed}, refused=${summary.refusedMassForget}, ` +
+        `wouldDelete=${summary.wouldDelete}, deleted=${summary.deletedFiles}, ` +
+        `unlinkFailed=${summary.unlinkFailed}, skippedConfinement=${summary.skippedConfinement}, ` +
+        `dryRun=${dryRun}`,
     );
 
     return summary;
@@ -220,6 +241,16 @@ export class TtlReconciliationService implements OnApplicationShutdown {
       return;
     }
 
+    // deleteDueFiles (round-2, ADR-11): the flag is checked at this single
+    // call site. Flag-off/absent sources never enter the extended path — the
+    // loop below is today's byte-kept chain. Flag-on sources ride the same
+    // guard-approved expired set: the delete set is a structural subset of it
+    // (mass cap by construction — no second limit).
+    if (source.deleteDueFiles === true) {
+      await this.sweepSourceWithDelete(source, expired, summary, dryRun, memoryBank);
+      return;
+    }
+
     for (const tracker of expired) {
       // No per-forget clock re-check: membership in the derived set above is the
       // single decision (never double-clock; ADR-9).
@@ -258,6 +289,138 @@ export class TtlReconciliationService implements OnApplicationShutdown {
             `error="${(error as Error).message}"`,
         );
       }
+    }
+  }
+
+  /**
+   * Per-file tail for a `deleteDueFiles` source (spec §3.2, §3.3 D3–D9,
+   * ADR-11): confinement pre-check FIRST (before any side effect), then the
+   * unchanged dry-run counting extended by `wouldDelete`, then the unchanged
+   * forget → tracker-delete chain followed by the one new terminal step —
+   * `fs.unlink`. Ordering is the safety contract: every earlier step's failure
+   * keeps today's next-sweep retry intact (forget is an idempotent no-op,
+   * MEM-0026), and a row never outlives its file. An unlink failure after both
+   * prior steps succeeded is classified and never fatal (AD-6).
+   */
+  private async sweepSourceWithDelete(
+    source: WatchSourceConfig,
+    expired: FileMemoryTracker[],
+    summary: TtlSweepSummary,
+    dryRun: boolean,
+    memoryBank: string,
+  ): Promise<void> {
+    if (expired.length === 0) {
+      return;
+    }
+
+    // Confinement roots (D9): every declared root of the source is
+    // fs.realpath-resolved exactly once per source, OUTSIDE the per-file loop.
+    const realRoots: string[] = [];
+    for (const declaredRoot of source.resolvedPaths ?? [source.path]) {
+      realRoots.push(await fs.realpath(declaredRoot));
+    }
+
+    for (const tracker of expired) {
+      // Confinement precedes every side effect (D9): a file this feature
+      // declines to delete is a file the run never touched. The declared root
+      // itself is never a target (strictly-below compare).
+      if (!(await this.isStrictlyBelowAnyRoot(tracker.filePath, realRoots))) {
+        summary.skippedConfinement += 1;
+        this.logger.warn(
+          `SKIP (outside declared roots): TTL-expired file left untouched this run; ` +
+            `filePath="${tracker.filePath}", source="${source.id}"`,
+        );
+        continue;
+      }
+
+      if (dryRun) {
+        summary.wouldForget += 1;
+        summary.wouldDelete += 1;
+        continue;
+      }
+
+      try {
+        const result = await this.bensyneClient.forgetByFile(tracker.filePath, memoryBank);
+        if (result.isKo()) {
+          // D5: forget failed — the file is NEVER unlinked (data would
+          // outlive its un-forget failure).
+          summary.failed += 1;
+          this.logger.warn(
+            `Failed to forget TTL-expired file; filePath="${tracker.filePath}", ` +
+              `memoryBank="${memoryBank}", error="${result.getErrors()[0].message}"`,
+          );
+        } else {
+          try {
+            await this.fileMemoryTrackerService.deleteByFilePath(tracker.filePath);
+            // Delete tail rides the forget tail (ADR-11): the unlink happens
+            // only at the old forgotten++ point, i.e. after both prior steps
+            // succeeded.
+            const outcome = await this.unlinkDueFile(tracker.filePath);
+            if (outcome === 'failed') {
+              // D8: non-ENOENT unlink error — memories and rows are already
+              // gone; the on-disk leftover is inert to batch paths (round-1
+              // gate). Counted, warned, non-fatal.
+              summary.unlinkFailed += 1;
+              this.logger.warn(
+                `Failed to unlink TTL-expired file; filePath="${tracker.filePath}", ` +
+                  `error="(see next line)", non-fatal: memories and tracker rows are already gone`,
+              );
+            } else {
+              // D7: ENOENT at unlink time is reached-goal (already absent) —
+              // counted as deleted, never as failed.
+              if (outcome === 'already-absent') {
+                this.logger.debug(
+                  `Unlink of TTL-expired file hit ENOENT (already absent); filePath="${tracker.filePath}"`,
+                );
+              }
+              summary.forgotten += 1;
+              summary.deletedFiles += 1;
+            }
+          } catch (error) {
+            // D6: row cleanup failed — NO unlink this run; the still-present
+            // row re-derives next sweep and the whole tail converges by retry.
+            summary.failed += 1;
+            this.logger.warn(
+              `Failed to delete tracker for TTL-expired file; filePath="${tracker.filePath}", ` +
+                `error="${(error as Error).message}"`,
+            );
+          }
+        }
+      } catch (error) {
+        summary.failed += 1;
+        this.logger.warn(
+          `Unexpected error forgetting TTL-expired file; filePath="${tracker.filePath}", ` +
+            `error="${(error as Error).message}"`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Confinement check (D9): the candidate's fs.realpath must fall strictly
+   * below one of the source's already-realpath-resolved roots. The root
+   * itself is never a target; symlinks are never followed out of a declared
+   * root.
+   */
+  private async isStrictlyBelowAnyRoot(candidatePath: string, realRoots: string[]): Promise<boolean> {
+    const realCandidate = await fs.realpath(candidatePath);
+    return realRoots.some(root => realCandidate.startsWith(`${root}/`));
+  }
+
+  /**
+   * The one unlink step of the delete tail (ADR-11) — private to this service:
+   * racochu's ONLY `fs.unlink` of user data. Classification only, no clock:
+   * `deleted` / `already-absent` (ENOENT, reached-goal per D7) / `failed`
+   * (any other error, counted and non-fatal per D8 — the caller owns logging).
+   */
+  private async unlinkDueFile(
+    filePath: string,
+  ): Promise<'deleted' | 'already-absent' | 'failed'> {
+    try {
+      await fs.unlink(filePath);
+      return 'deleted';
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'already-absent' : 'failed';
     }
   }
 
