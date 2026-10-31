@@ -8,6 +8,7 @@ import { aConfigService } from '../config/configuration.service.test-utils';
 import { BensyneRememberDto } from '../dto/bensyne-remember.dto';
 import { BasePinoLogger } from '../logging/base-pino-logger';
 import { aLogger } from '../logging/logger.test-utils';
+import { RememberRequestSerializer } from '../mnemosyne/remember-request.serializer';
 import { BensyneClient } from './bensyne-client.service';
 import { aGetFileChunksToolResponse, aRawStoredChunk } from './bensyne-client.test-utils';
 
@@ -88,7 +89,14 @@ describe('BensyneClient (Streamable HTTP)', () => {
     mockLogger = aLogger();
   });
 
-  const createClient = async (mcpConfigOverrides: Record<string, unknown> = {}) => {
+  // AH-7 seam: remember()'s size gate reads enhancement.serverRequestBodyLimit from
+  // ConfigurationService. Default fixture keeps the historic 4032 test knob (the value
+  // the 'request too large'/'4032' assertions were written against); config-driven cases
+  // pass their own limit, or `{}` to model an enhancement config WITHOUT the key set.
+  const createClient = async (
+    mcpConfigOverrides: Record<string, unknown> = {},
+    enhancementOverrides: Record<string, unknown> = { serverRequestBodyLimit: 4032 },
+  ) => {
     configService.getMcpConfig.mockReturnValue({
       url: 'http://mcp.test',
       apiKey: 'test-key',
@@ -97,10 +105,14 @@ describe('BensyneClient (Streamable HTTP)', () => {
       retryDelayMs: 10,
       ...mcpConfigOverrides,
     } as never);
+    configService.getEnhancementConfig = jest
+      .fn()
+      .mockReturnValue(enhancementOverrides as never) as never;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BensyneClient,
+        RememberRequestSerializer,
         { provide: ConfigurationService, useValue: configService },
         { provide: BasePinoLogger, useValue: mockLogger },
       ],
@@ -759,6 +771,129 @@ describe('BensyneClient (Streamable HTTP)', () => {
         expect(errors.length).toBe(1);
         expect(errors[0].message).toContain('request too large');
         expect(errors[0].message).toContain('4032');
+      });
+
+      // AH-7: the gate must honor the CONFIGURED enhancement.serverRequestBodyLimit
+      // (schema default stays 8000 where unset), not a hardcoded number.
+
+      it('admits a ~12 KB serialized remember request when serverRequestBodyLimit is configured to 32768', async () => {
+        let postCalled = false;
+
+        (http.request as jest.Mock).mockImplementation(
+          (_options: unknown, callback: (res: MockRes) => void) => {
+            const req = createMockReq();
+            postCalled = true;
+            const res = createMockResponse(
+              200,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                result: {
+                  content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+                },
+              }),
+            );
+            process.nextTick(() => callback(res));
+            return req;
+          },
+        );
+
+        const client32k = await createClient({}, { serverRequestBodyLimit: 32768 });
+
+        // ~12 KB serialized envelope — the size of the real simple-session entry-node
+        // remember request that died on the former always-hardcoded 8000 gate.
+        const chunk = aContentChunk({ text: 'X'.repeat(11000) });
+        const bodyBytes = Buffer.byteLength(
+          new RememberRequestSerializer().buildAndSerialize(chunk),
+          'utf8',
+        );
+        // The fixture must exceed the old hardcoded gate and stay under the configured knob.
+        expect(bodyBytes).toBeGreaterThan(8000);
+        expect(bodyBytes).toBeLessThanOrEqual(32768);
+
+        const result = await client32k.remember(chunk);
+
+        expect(result.isOk()).toBe(true);
+        expect(postCalled).toBe(true);
+      });
+
+      it('rejects a serialized body of exactly configuredLimit+1 bytes (boundary)', async () => {
+        let postCalled = false;
+
+        (http.request as jest.Mock).mockImplementation(
+          (_options: unknown, callback: (res: MockRes) => void) => {
+            const req = createMockReq();
+            postCalled = true;
+            const res = createMockResponse(
+              200,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                result: {
+                  content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+                },
+              }),
+            );
+            process.nextTick(() => callback(res));
+            return req;
+          },
+        );
+
+        const chunk = aContentChunk({ text: 'Y'.repeat(3000) });
+        const bodyBytes = Buffer.byteLength(
+          new RememberRequestSerializer().buildAndSerialize(chunk),
+          'utf8',
+        );
+        // Configured limit is bodyBytes-1, so the serialized body sits exactly at limit+1.
+        const boundaryClient = await createClient({}, { serverRequestBodyLimit: bodyBytes - 1 });
+
+        const result = await boundaryClient.remember(chunk);
+
+        expect(result.isKo()).toBe(true);
+        expect(postCalled).toBe(false);
+        const errors = result.getErrors();
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toContain('request too large');
+        expect(errors[0].message).toContain(String(bodyBytes)); // measured body: exactly limit+1
+        expect(errors[0].message).toContain(String(bodyBytes - 1)); // reports the configured limit
+        expect(errors[0].code).toBe('RequestTooLarge');
+      });
+
+      it('keeps the default 8000-byte gate when the enhancement config omits serverRequestBodyLimit', async () => {
+        let postCalled = false;
+
+        (http.request as jest.Mock).mockImplementation(
+          (_options: unknown, callback: (res: MockRes) => void) => {
+            const req = createMockReq();
+            postCalled = true;
+            const res = createMockResponse(
+              200,
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 3,
+                result: {
+                  content: [{ type: 'text', text: JSON.stringify({ status: 'stored', memory_id: 'mem-1' }) }],
+                },
+              }),
+            );
+            process.nextTick(() => callback(res));
+            return req;
+          },
+        );
+
+        const defaultGateClient = await createClient({}, {});
+
+        // Above the default gate: rejected, and the rejection names the default 8000.
+        const rejected = await defaultGateClient.remember(aContentChunk({ text: 'Z'.repeat(8500) }));
+        expect(rejected.isKo()).toBe(true);
+        expect(rejected.getErrors()[0].message).toContain('request too large');
+        expect(rejected.getErrors()[0].message).toContain('(limit 8000)');
+
+        // Below the default gate (though well above the 4032 configured-value fixture):
+        // proceeds — the fallback is 8000, not the test's configured knob.
+        const allowed = await defaultGateClient.remember(aContentChunk({ text: 'W'.repeat(6000) }));
+        expect(allowed.isOk()).toBe(true);
+        expect(postCalled).toBe(true);
       });
     });
   });
@@ -1808,6 +1943,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           BensyneClient,
+          RememberRequestSerializer,
           { provide: ConfigurationService, useValue: configService },
           { provide: BasePinoLogger, useValue: mockLogger },
         ],
@@ -1841,6 +1977,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           BensyneClient,
+          RememberRequestSerializer,
           { provide: ConfigurationService, useValue: configService },
           { provide: BasePinoLogger, useValue: mockLogger },
         ],
@@ -1862,6 +1999,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           BensyneClient,
+          RememberRequestSerializer,
           { provide: ConfigurationService, useValue: configService },
           { provide: BasePinoLogger, useValue: mockLogger },
         ],
@@ -1899,6 +2037,7 @@ describe('BensyneClient (Streamable HTTP)', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           BensyneClient,
+          RememberRequestSerializer,
           { provide: ConfigurationService, useValue: configService },
           { provide: BasePinoLogger, useValue: mockLogger },
         ],

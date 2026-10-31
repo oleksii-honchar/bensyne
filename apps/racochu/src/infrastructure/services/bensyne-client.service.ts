@@ -254,7 +254,11 @@ export class BensyneClient implements OnApplicationBootstrap {
     const request = this.serializer.buildRequest(chunk, options);
     const body = this.serializer.serialize(request);
     const bodyByteLength = Buffer.byteLength(body, 'utf8');
-    const MAX_REQUEST_BYTES = 8000;
+    // AH-7: honor the configured enhancement.serverRequestBodyLimit (same config access as
+    // chunk-content.use-case / mastra-chunking). The schema normalization keeps the default
+    // at 8000 where unset; the `?? 8000` mirrors that defensive pattern for direct callers.
+    const MAX_REQUEST_BYTES =
+      this.configService.getEnhancementConfig().serverRequestBodyLimit ?? 8000;
 
     if (bodyByteLength > MAX_REQUEST_BYTES) {
       const errMsg = `remember request too large: ${bodyByteLength} bytes (limit ${MAX_REQUEST_BYTES})`;
