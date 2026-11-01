@@ -15,15 +15,38 @@ export const FILE_TRACKER_STATUS = {
 
 export type FileTrackerStatus = ValuesType<typeof FILE_TRACKER_STATUS>;
 
+/**
+ * Terminal skip reasons — set on a FileTracker row when a file can never be
+ * ingested with its current content. Mirrors the nullable `skipReason` column.
+ */
+export const FILE_TRACKER_SKIP_REASON = {
+  CONTENT_FILTERED: 'content-filtered' as const,
+  EMPTY_CONTENT: 'empty-content' as const,
+  ZERO_CHUNKS: 'zero-chunks' as const,
+} as const;
+
+export type FileTrackerSkipReason = ValuesType<typeof FILE_TRACKER_SKIP_REASON>;
+
 const fileTrackerSchema = z.object({
   filePath: z.string().min(1),
   status: z.enum(Object.values(FILE_TRACKER_STATUS)).nullish(),
   fileHash: z.string().optional(),
   hardwareId: z.string().optional(),
+  skipReason: z.enum(Object.values(FILE_TRACKER_SKIP_REASON)).nullish(),
 });
 
 export type FileTrackerProps = z.infer<typeof fileTrackerSchema>;
 
+/**
+ * File tracker aggregate.
+ *
+ * Invariant: "A FileTracker row means: racochu has seen this exact content hash
+ * and reached a final decision about it — ingested (memories tracked, skipReason
+ * null) or terminally skipped (skipReason set, zero memories)."
+ *
+ * No state machine is added for skip rows: they are cleared/refreshed by a hash
+ * mismatch during normal processing, not by a status transition.
+ */
 export class FileTracker {
   private constructor(private readonly props: FileTrackerProps) {}
 
@@ -93,6 +116,10 @@ export class FileTracker {
 
   get hardwareId(): string | null {
     return this.props.hardwareId ?? null;
+  }
+
+  get skipReason(): FileTrackerSkipReason | null {
+    return this.props.skipReason ?? null;
   }
 
   toJson(): FileTrackerProps {

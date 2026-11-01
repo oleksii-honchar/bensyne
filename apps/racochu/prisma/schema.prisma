@@ -28,6 +28,9 @@ model FileTracker {
   fileHash  String?
   // Hardware ID of device that ingested this file — nullable for backward compatibility
   hardwareId String?
+  // Terminal skip reason when this file's exact content could never be ingested:
+  // null = normally ingested; 'content-filtered' | 'empty-content' | 'zero-chunks' = terminal skip on record
+  skipReason String?
 
   @@unique([filePath])
   @@index([filePath])

@@ -1,5 +1,10 @@
 import { FILE_EVENTS, FileAddedEvent, FileChangedEvent, FileDeletedEvent } from './events/file-events';
-import { FILE_TRACKER_STATUS, FileTracker, FileTrackerProps } from './file-tracker.aggregate';
+import {
+  FILE_TRACKER_SKIP_REASON,
+  FILE_TRACKER_STATUS,
+  FileTracker,
+  FileTrackerProps,
+} from './file-tracker.aggregate';
 import { aFileTracker } from './file-tracker.aggregate.test-utils';
 
 describe('FileTracker', () => {
@@ -215,6 +220,56 @@ describe('FileTracker', () => {
       const deleted = deleteResult.getValue();
       expect(deleted.fileHash).toBe('abc123');
       expect(deleted.hardwareId).toBe('hw-456');
+    });
+  });
+
+  describe('skipReason', () => {
+    it('exposes the terminal-skip reason constants', () => {
+      expect(FILE_TRACKER_SKIP_REASON.CONTENT_FILTERED).toBe('content-filtered');
+      expect(FILE_TRACKER_SKIP_REASON.EMPTY_CONTENT).toBe('empty-content');
+      expect(FILE_TRACKER_SKIP_REASON.ZERO_CHUNKS).toBe('zero-chunks');
+    });
+
+    it('accepts skipReason null and returns it from the getter', () => {
+      const props = aFileTracker({ skipReason: null });
+      const result = FileTracker.of(props);
+      expect(result.isOk()).toBe(true);
+      const fileTracker = result.getValue();
+      expect(fileTracker.skipReason).toBeNull();
+    });
+
+    it.each([
+      ['CONTENT_FILTERED', 'content-filtered'],
+      ['EMPTY_CONTENT', 'empty-content'],
+      ['ZERO_CHUNKS', 'zero-chunks'],
+    ] as const)('accepts skipReason %s and the getter returns the stored value', (key, value) => {
+      const props = aFileTracker({ skipReason: FILE_TRACKER_SKIP_REASON[key] });
+      const result = FileTracker.of(props);
+      expect(result.isOk()).toBe(true);
+      const fileTracker = result.getValue();
+      expect(fileTracker.skipReason).toBe(value);
+    });
+
+    it('returns null for skipReason when not provided (like other optional props)', () => {
+      const props = aFileTracker();
+      const result = FileTracker.of(props);
+      expect(result.isOk()).toBe(true);
+      const fileTracker = result.getValue();
+      expect(fileTracker.skipReason).toBeNull();
+    });
+
+    it('returns null for skipReason when undefined (like other optional props)', () => {
+      const props = aFileTracker({ skipReason: undefined });
+      const result = FileTracker.of(props);
+      expect(result.isOk()).toBe(true);
+      const fileTracker = result.getValue();
+      expect(fileTracker.skipReason).toBeNull();
+    });
+
+    it('rejects an unknown skipReason value', () => {
+      const props = { ...aFileTracker(), skipReason: 'not-a-reason' } as unknown as FileTrackerProps;
+      const result = FileTracker.of(props);
+      expect(result.isKo()).toBe(true);
     });
   });
 });

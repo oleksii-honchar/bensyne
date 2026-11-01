@@ -1,5 +1,7 @@
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { createRequire } from 'module';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { PrismaClient } from '../../generated/prisma/client';
 
@@ -26,6 +28,7 @@ describe('FileTracker and FileMemoryTracker Schema Integration', () => {
         "memoryBank" TEXT NOT NULL,
         "fileHash" TEXT,
         "hardwareId" TEXT,
+        "skipReason" TEXT,
         "createdAt" DATETIME NOT NULL DEFAULT (datetime('now')),
         "updatedAt" DATETIME NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY ("id"),
@@ -354,5 +357,86 @@ describe('FileTracker and FileMemoryTracker Schema Integration', () => {
 
     expect(updated.sourceId).toBe('source-update');
     expect(updated.id).toBe(created.id);
+  });
+});
+
+// ── Task 7 / spec C5: the committed migration files alone must produce the ──
+// ── dedup schema (this is what `prisma migrate deploy` will apply at boot).  ──
+// Raw SQL against a fresh temp database — no docker, no prisma CLI.
+interface MigrationSqliteHandle {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => { all: () => unknown[]; get: () => unknown };
+  close: () => void;
+}
+
+describe('Committed migrations build the dedup schema in a fresh database (C5 pre-flight)', () => {
+  const migrationsDir = join(__dirname, '..', '..', '..', 'prisma', 'migrations');
+
+  function openFreshSqlite(file: string): MigrationSqliteHandle {
+    const betterSqlite3 = createRequire(__filename)('better-sqlite3') as new (
+      f: string,
+    ) => MigrationSqliteHandle;
+    return new betterSqlite3(file);
+  }
+
+  function migrationSql(name: string): string {
+    return readFileSync(join(migrationsDir, name, 'migration.sql'), 'utf8');
+  }
+
+  let tmpDir: string;
+  let db: MigrationSqliteHandle;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'racochu-c5-migrations-'));
+    db = openFreshSqlite(join(tmpDir, 'fresh.db'));
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('applies 0_init then the additive skip-reason migration and yields the full dedup schema', () => {
+    db.exec(migrationSql('0_init'));
+    db.exec(migrationSql('20261031_add_skip_reason'));
+
+    const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as {
+      name: string;
+    }[];
+    expect(tables.map(t => t.name)).toEqual(expect.arrayContaining(['FileTracker', 'FileMemoryTracker']));
+
+    const columns = db.prepare(`PRAGMA table_info("FileTracker")`).all() as { name: string }[];
+    expect(columns.map(c => c.name)).toEqual(
+      expect.arrayContaining([
+        'id',
+        'filePath',
+        'sourceId',
+        'memoryBank',
+        'fileHash',
+        'hardwareId',
+        'skipReason',
+      ]),
+    );
+  });
+
+  it('the migrated table stores and counts dedup rows (incl. skipReason)', () => {
+    db.exec(migrationSql('0_init'));
+    db.exec(migrationSql('20261031_add_skip_reason'));
+
+    // updatedAt is NOT NULL without a DB-side default (Prisma-managed) — raw SQL must supply it.
+    db.exec(
+      `INSERT INTO "FileTracker" ("id", "filePath", "sourceId", "memoryBank", "fileHash", "skipReason", "updatedAt")
+       VALUES (1, '/dedup/file.md', 'src', 'bank', 'abc123', 'empty-content', datetime('now'));`,
+    );
+
+    const row = db
+      .prepare(`SELECT "skipReason" FROM "FileTracker" WHERE "filePath" = '/dedup/file.md'`)
+      .get() as { skipReason: string };
+    expect(row.skipReason).toBe('empty-content');
+
+    const counted = db.prepare(`SELECT COUNT(*) AS "count" FROM "FileTracker"`).get() as {
+      count: number;
+    };
+    expect(counted.count).toBe(1);
   });
 });
