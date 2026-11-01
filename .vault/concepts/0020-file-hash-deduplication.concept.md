@@ -3,9 +3,10 @@ type: concept
 system: shared
 title: "Dual-Hash Deduplication"
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-23T14:33:06Z"
-tags: [deduplication, dual-hash, chunk-hash, file-hash, cross-device]
+updatedAt: "2026-11-01T13:54:35Z"
 see_also:
+  - decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md
+  - runbooks/0011-verify-racochu-ingest-gate-holding.runbook.md
   - decisions/0048-dual-hash-wire-contract.decision.md
   - decisions/0039-file-hash-deduplication-metadata.decision.md
   - specifications/0005-file-hash-deduplication.spec.md
@@ -37,3 +38,21 @@ When a vault is synced across multiple devices (e.g., Mac mini, MacBook Pro), th
 - **Retrieval surface (D15):** `fetchFile` chunk entries carry `chunk_hash` (null for legacy rows), file block carries `file_hash`; `recallMemory`/`searchFiles` `file_enrichment` carries both; `file_chunks.content_hash` (V3 column) is populated at materialization — no migration
 - **Hardware ID:** detected via `native-machine-id`, stored in `FileTracker.hardwareId` for audit (unchanged)
 - **Forget cleanup:** when a memory is forgotten via `forgetMemory`, its hash_index entry is removed (keyed by memory_id)
+
+---
+
+## Extension 2026-11-01 — File-level ingest gate upstream (DEC-0119)
+
+Dual-hash per-chunk dedup (this concept) now sits **downstream of a file-level ingest gate**:
+unchanged files never reach chunking at all, so no chunk_hash traffic is produced for them.
+Layers and responsibilities stay independent:
+
+- **File gate (racochu, DEC-0119):** `fileHash` vs `FileTracker.fileHash` — eliminates no-op
+  full-file work *before* chunk/LLM/bank cost. Fail-open; corrective paths bypass via `forceIngest`.
+- **Bank-side dual-hash (DEC-0039/0048, unchanged):** per-chunk `chunk_hash` + rebuild signal
+  `file_hash` — still the layer that makes real re-ingest (changed files, `--force-reprocess`)
+  idempotent across devices.
+- **Per-filePath safety:** the file gate keys on `filePath`, deliberately **not** on content
+  identity — verified against the live `agent-sessions` bank where two machines feed one bank
+  under different home-path prefixes (`/Users/…` vs `/Users/oleksii.honchar/…`): distinct paths
+  coexist; identical paths from two machines would collide (accepted; hardwareId audit unchanged).

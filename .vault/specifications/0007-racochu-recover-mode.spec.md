@@ -5,10 +5,11 @@ kind: feature
 title: "Racochu CLI recover Mode — Zero-LLM Chunk Recovery"
 status: completed
 createdAt: "2026-08-26T07:18:26Z"
-updatedAt: "2026-08-26T07:18:26Z"
+updatedAt: "2026-11-01T13:54:35Z"
 owner: ""
 target: ""
 see_also:
+  - decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md
   - decisions/0079-recover-getfilechunks-readonly-tool.decision.md
   - decisions/0080-recover-skipenrichment-chunking.decision.md
   - decisions/0081-recover-exiting-cli-mode.decision.md
@@ -62,3 +63,20 @@ after the pass (no watch).
 - Stale hash-index dedup trap (HIGH without fix) — mitigated by `force_reembed` guard.
 - `getFileChunks` not deployed (MEDIUM) — spec says recover aborts with clear message;
   ⚠️ implementation logs per-file errors but exits 0 (review medium finding, tracked follow-up).
+
+## Update 2026-11-01 — recover × ingest gate (DEC-0119)
+
+Interaction with the new file-level ingest gate in `ProcessFileUseCase`:
+
+- **Step 4 (`FILE_NOT_FOUND` on a tracked row ⇒ bank-loss repair):** re-ingest now passes
+  `forceIngest: true` — local hash equality can never veto a bank-proven repair (preserves this
+  spec's verified-before-trusted semantics, DEC-0082/0084).
+- **Step 5 (hash-mismatch change path):** also passes `forceIngest: true` defensively (the gate
+  cannot fire there anyway — hashes differ by construction).
+- **Skip-row interaction (by design):** a terminal-skip row (DEC-0119, `skipReason` set, zero
+  bank memories) always trips step 4 `FILE_NOT_FOUND` on recover; the forced re-evaluation
+  enters `ingestFile` and deterministically re-hits its terminal-skip branch (read + hash
+  [+ local chunk attempt for zero-chunk producers] — no LLM, no bank write), re-recording the
+  same skip. Per-run recover cost stays bounded by the skip-set size — recover remains a
+  deliberate operator tool, unbroken by the gate.
+- Repair-submit path (steps 6–9, bypasses ProcessFileUseCase) untouched.

@@ -3,9 +3,9 @@ type: runbook
 system: racochu
 title: "Troubleshooting"
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-08-28T17:23:01Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [troubleshooting, operations]
-see_also: [memories/0008-mnemosyne-sse-deprecated.memory.md, memories/0009-mnemosyne-schema-versioning.memory.md, memories/0026-forgetfile-file-not-found-noop.memory.md]
+see_also: [memories/0008-mnemosyne-sse-deprecated.memory.md, memories/0009-mnemosyne-schema-versioning.memory.md, memories/0026-forgetfile-file-not-found-noop.memory.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0121-manual-cli-watch-operation-with-instance-lock.decision.md, runbooks/0011-verify-racochu-ingest-gate-holding.runbook.md]
 ---
 
 # Runbook: Troubleshooting
@@ -114,3 +114,23 @@ watchSources:
 - **Format:** Structured JSON via Pino, rolled by size (5MB)
 - **Symlink:** `current.log` → active log file
 - **Debug:** `NODE_ENV=development` for pretty-printed logs
+
+---
+
+## Update 2026-11-01 — new expected behaviors and triage (DEC-0119, DEC-0121)
+
+- **`another racochu watch instance holds the lock (pid X) — exiting` (exit 1):** **expected**
+  refusal of a second concurrent watcher (single-instance lock, DEC-0121). If the holder is
+  unknown, check the pid; a dead holder's stale lock self-heals on the next start attempt
+  (stale-pid reclaim). Manual starts without a daemon are the operating model.
+- **`Skipping unchanged file (hash gate): path=…, fileHash=…`:** expected — the content-hash
+  gate doing its job (DEC-0119). High counts are healthy. If unchanged files still re-ingest,
+  triage via runbook 0011 (check `fileHash` fill and gate **fail-open** warn logs first).
+- **`terminal-skip-recorded reason=empty-content|zero-chunks|content-filtered`:** expected
+  classification, **not an error** — never-ingestable files quarantined in FileTracker with
+  `skipReason` set. (Corresponding `File processing failed … too_small` events should be 0 now.)
+- **`dedup state must not shrink (was N, now M)` at startup:** DEC-0120 fail-loud guard —
+  startup deliberately aborts instead of silently losing dedup state. Operator override for a
+  genuine intentional DB swap: replace the DB file and start fresh.
+- **Same bank fed from a second machine (different home-path prefix):** expected coexistence;
+  the gate and tracker key on `filePath` (see spec 0005 scope note). No action.

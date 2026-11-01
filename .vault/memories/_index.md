@@ -2,7 +2,7 @@
 type: index
 title: "Memories"
 createdAt: "2026-08-16"
-updatedAt: "2026-10-08T20:33:16Z"
+updatedAt: "2026-11-01T13:54:35Z"
 ---
 
 # Memories
@@ -46,3 +46,4 @@ Durable facts, lessons, and gotchas. Single ID space: `MEM-NNNN` (0001–0029). 
 - [[0020-mnemosyne-valid-until-soft-expiry]] — Mnemosyne Native valid_until Is Soft Expiry — Not Per-Source Retention or Auto-Sweep
 - [[0022-enrichment-chunkhash-invariant]] — Enrichment Never Rewrites Chunk Text — chunkHash Is Invariant
 - [[0023-chokidar-dot-root-self-exclusion]] — Exclude Glob Matching the Watched Root (dot-named root self-exclusion)
+- [[0030-better-sqlite3-napi-loads-node24-and-26]] — better-sqlite3 13.x Is N-API: ABI 147-vs-137 Blocker Claim Stale (Node 24+26 verified)

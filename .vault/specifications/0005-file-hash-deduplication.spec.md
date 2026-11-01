@@ -5,11 +5,12 @@ title: "Dual-Hash Deduplication for Cross-Device Sync"
 kind: feature
 status: completed
 createdAt: "2026-08-07T18:01:00Z"
-updatedAt: "2026-08-23T14:33:06Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [deduplication, dual-hash, chunk-hash, file-hash, cross-device, sync]
 owner: ""
 target: null
 see_also:
+  - decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md
   - decisions/0039-file-hash-deduplication-metadata.decision.md
   - decisions/0040-native-machine-id-hardware-detection.decision.md
   - decisions/0041-filetracker-schema-extension.decision.md
@@ -76,3 +77,13 @@ Prevent duplicate memories when the same Obsidian vault is synced across multipl
 
 - 2026-08-07: Feature implemented, 797/797 tests passing, all spec requirements met
 - 2026-08-17: Dual-hash wire contract delivered (DEC-0048); bensyne 1454/0, racochu 818/0; both previously-blocked e2e suites PASS
+
+## Scope note 2026-11-01 — upstream file-level ingest gate (DEC-0119)
+
+A file-level **content-hash ingest gate** (racochu `ProcessFileUseCase`, DEC-0119) now sits
+upstream of everything this spec describes: unchanged files are gated before chunking, so they
+produce no chunk_hash traffic at all. This spec's cross-device semantics are **unchanged** —
+bank-side per-chunk dedup remains the layer that makes genuine re-ingest idempotent across
+devices. Deliberate property of the gate: it keys per `filePath`, not per content identity —
+verified against the live `agent-sessions` bank where two machines feed one bank under different
+home-path prefixes (which coexist as distinct paths). See concept 0020 "Extension 2026-11-01".

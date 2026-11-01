@@ -3,9 +3,9 @@ type: concept
 system: racochu
 title: "Processing Model"
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-08-07T18:50:00Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [domain, processing]
-see_also: [concepts/0008-chunk-concept.concept.md, decisions/0036-forget-after-ingest-on-file-update.decision.md, memories/0014-chokidar-macos-dual-events.memory.md]
+see_also: [concepts/0008-chunk-concept.concept.md, decisions/0036-forget-after-ingest-on-file-update.decision.md, memories/0014-chokidar-macos-dual-events.memory.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0121-manual-cli-watch-operation-with-instance-lock.decision.md, runbooks/0011-verify-racochu-ingest-gate-holding.runbook.md]
 ---
 
 # Concept: Processing Model
@@ -55,3 +55,28 @@ FileProcessingQueue (bounded async queue)
 - **Change handling (forget-after-ingest):** `handleChange()` gets old memory IDs, ingests new content, then forgets old memories. Forget failures are non-fatal — new content is always ingested (see DEC-0036, DEC-0037)
 - **Delete handling:** `handleDelete()` forgets all tracked memories via MnemosyneClient.forget() and clears the tracker entry
 - **Chokidar dedup:** `processing` Set in ProcessFileUseCase skips duplicate events from macOS chokidar (see memory 0007)
+
+---
+
+### Update 2026-11-01 — Content-hash ingest gate, terminal skips, manual operating stance (DEC-0119, DEC-0121)
+
+The processing model gained a **persistent decision layer** in front of ingestion:
+
+- **Ingest gate** in `ProcessFileUseCase` (the class's own comment calls it "the ingest gate
+  covering --watch, --process-only, and --resume"): unchanged file hash ⇒ log-and-skip **before
+  any destructive step** (`getMemoryIds`/`forgetByFile` in `handleChange` — order-guard
+  test-enforced; after the content read in `ingestFile`). Comparison rule copied from DEC-0084
+  (skip only when stored hash non-null, computable, equal); **fail-open** on any gate-input
+  failure. This supersedes the "in-memory dedup only" era: repeated passes now cost one indexed
+  `FileTracker` read + one SHA-256 per unchanged file.
+- **Terminal skips:** empty-content / zero-chunk / content-filtered outcomes end the flow with
+  `Result.ok` + a quarantined `FileTracker` row (`skipReason`, zero memories) instead of error
+  noise or silent no-record — see concept 0014 and DEC-0119.
+- **`forceIngest`** parameter carries deliberate corrective intent (force-reprocess, resume
+  stale-tracker repair, recover FILE_NOT_FOUND/step-5) past the gate; repair semantics unchanged.
+- **Batch observation surface:** every batch path ends with
+  `… finished: files=…, gated-skips=…, terminal-skip-skips=…, verified-skips=…, re-ingested=…`
+  (health check: runbook 0011).
+- **Operating stance (DEC-0121):** no daemon — watch mode is operator-run from the CLI; a second
+  watch start is refused by `data/racochu.watch.lock` (holder pid in the message); `autoPopulate`
+  stays ON as the only downtime reconciliation, now cheap.

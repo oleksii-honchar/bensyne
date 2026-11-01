@@ -2,7 +2,7 @@
 type: index
 title: "Runbooks"
 createdAt: "2026-08-16"
-updatedAt: "2026-10-08T20:33:16Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: []
 ---
 
@@ -22,6 +22,7 @@ Operational runbooks. Grouped by `system` frontmatter.
 - [[0004-prisma-setup]] — Prisma SQLite Setup
 - [[0005-vault-chunking-smoke-test]] — Vault Chunking Smoke Test
 - [[0006-racochu-recover-mode]] — Racochu Recover Mode (--recover)
+- [[0011-verify-racochu-ingest-gate-holding]] — Verify the racochu Ingest Gate Is Holding (DEC-0119 post-change health check)
 
 ### bensyne-mcp
 

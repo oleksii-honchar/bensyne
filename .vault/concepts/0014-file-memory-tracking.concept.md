@@ -3,9 +3,9 @@ type: concept
 system: racochu
 title: "File→Memory Tracking"
 createdAt: "2026-08-01T12:00:00Z"
-updatedAt: "2026-08-07T19:01:00Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [file-tracking, mnemosyne, prisma, file-hash, hardware-id]
-see_also: [decisions/0028-file-memory-tracking-prisma-sqlite.decision.md, decisions/0038-no-tracker-api-changes.decision.md, decisions/0041-filetracker-schema-extension.decision.md, concepts/0012-processing-model.concept.md, concepts/0020-file-hash-deduplication.concept.md, memories/0013-change-handler-per-id-forget-memory.memory.md]
+see_also: [decisions/0028-file-memory-tracking-prisma-sqlite.decision.md, decisions/0038-no-tracker-api-changes.decision.md, decisions/0041-filetracker-schema-extension.decision.md, concepts/0012-processing-model.concept.md, concepts/0020-file-hash-deduplication.concept.md, memories/0013-change-handler-per-id-forget-memory.memory.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md]
 ---
 
 # Concept: File→Memory Tracking
@@ -53,3 +53,27 @@ Without tracking, memories persist indefinitely even after source files are dele
 - `FileTracker.hardwareId` — nullable String, device ID from `native-machine-id`, indexed for audit
 - Populated by `IngestChunkUseCase` → `FileMemoryTrackerService.trackMemory()` → `repository.updateFileTrackerHash()`
 - Enables local dedup checks before calling Mnemosyne (see `concepts/0020-file-hash-deduplication.concept.md`)
+
+---
+
+### Update 2026-11-01 — Final-decision invariant + terminal-skip rows (DEC-0119)
+
+`FileTracker` semantics tightened to a **final-decision store** (aggregate docstring invariant):
+
+> *A FileTracker row means: racochu has seen this exact content hash and reached a final decision
+> about it — ingested (memories tracked, `skipReason` null) or terminally skipped (`skipReason`
+> set, zero memories).*
+
+- **New nullable column `FileTracker.skipReason`** (`'content-filtered' | 'empty-content' |
+  'zero-chunks'`; enum-style const `FILE_TRACKER_SKIP_REASON`, pattern per DEC-0041). Rows with
+  `skipReason` set carry **zero** `FileMemoryTracker` children by design.
+- **Self-clearing:** no status machine — a content change makes the hash differ and normal
+  processing re-evaluates; a successful ingest clears `skipReason` alongside
+  `updateFileTrackerHash`.
+- **Gate-facing reads** (on the repository `FileMemoryTrackerService` owns):
+  `findHashAndSkipReasonByFilePath(filePath)` → single indexed read; service wrappers
+  `getIngestGateState(filePath)` (fail-open: DB error ⇒ caller treats as "not gated") and
+  `recordTerminalSkip(...)` (non-fatal write, try/catch-warn).
+- **Consumer note:** the ~+250 expected zero-memory rows were audited safe for recover (deterministic
+  cheap re-skip via step-4 FILE_NOT_FOUND + forceIngest), re-embed (no chunk work), TTL/mass-forget-guard
+  (row-count based; zero-memory forget is a bank no-op) — DEC-0119 consequences.

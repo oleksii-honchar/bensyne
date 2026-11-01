@@ -3,7 +3,7 @@ type: architecture
 title: "RAG Content Chunker — System Overview"
 system: racochu
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-08-16"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [architecture, overview]
 see_also: [decisions/0026-remote-database-segregation.decision.md]
 ---

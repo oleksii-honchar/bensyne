@@ -3,9 +3,9 @@ type: runbook
 system: racochu
 title: "Production Deployment"
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-07-31T07:30:00Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: [production, deployment]
-see_also: [concepts/0011-namespace-routing.concept.md]
+see_also: [concepts/0011-namespace-routing.concept.md, decisions/0120-prisma-migrate-deploy-with-fail-loud-dedup-guard.decision.md, decisions/0121-manual-cli-watch-operation-with-instance-lock.decision.md, runbooks/0011-verify-racochu-ingest-gate-holding.runbook.md]
 ---
 
 # Runbook: Production Deployment
@@ -65,3 +65,22 @@ Deploy RAG Content Chunker as a production service watching configured sources.
 
 - Stop: SIGTERM (graceful drain) or SIGINT
 - Restore config: backup before editing
+
+---
+
+## Update 2026-11-01 — racochu deployment/operation model changes (DEC-0120, DEC-0121)
+
+- **Startup schema lifecycle changed:** `ensureSchema()` no longer runs
+  `prisma db push --accept-data-loss`; it runs `prisma migrate deploy` against committed
+  migrations with a fail-loud FileTracker row-count guard (`dedup state must not shrink …`
+  aborts startup). **Operator step for pre-existing DBs (once, before first deploy):**
+  `npx prisma migrate resolve --applied 0_init`. Details: decision DEC-0120, runbook 0004.
+- **Operating stance: no daemon (by operator directive 2026-10-31).** Watch mode is started
+  manually from the CLI (`npm start` / `dist/src/main.js`). A second watcher start is refused:
+  `another racochu watch instance holds the lock (pid X) — exiting` (exit 1) —
+  this message is **expected behavior**, not a failure to fix. `autoPopulate` stays ON. (DEC-0121)
+- **CLI semantics:** `--process-only` is now gated (safe catch-up); `--force-reprocess` is the
+  deliberate full-rebuild override. README modes table is the surface of record.
+- **Post-deploy acceptance:** one manual watch start must show large `gated-skips`/
+  `verified-skips` and near-zero real work in the batch summary; repeated starts keep it flat —
+  runbook 0011.

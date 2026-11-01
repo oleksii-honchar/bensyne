@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-08-31T12:40:34Z"
+updatedAt: "2026-11-01T13:54:35Z"
 tags: []
 ---
 
