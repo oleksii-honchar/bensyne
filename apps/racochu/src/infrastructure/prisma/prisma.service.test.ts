@@ -1,11 +1,12 @@
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 import { execSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { PrismaClient } from '../../generated/prisma/client';
 
-import { findProjectRoot } from './prisma.service';
+import { findProjectRoot, PrismaService } from './prisma.service';
 
 const projectRoot = resolve(__dirname, '../../../');
 const testDbPath = join(projectRoot, 'data', 'test-prisma.db');
@@ -166,6 +167,190 @@ describe('PrismaService.ensureSchema', () => {
         });
       }).toThrow();
     });
+  });
+});
+
+// ── Task 7 / spec C5: migrate deploy + fail-loud dedup count guard ──────────
+// The constructor options below are the test seams (spec C5 "Design for
+// testability"): `execSchemaCommand` captures the composed schema command,
+// `readFileTrackerCount` scripts the count source, `dataDir` isolates the
+// adapter from the real project data dir. Defaults must keep production wiring.
+interface SchemaCommandOptions {
+  cwd: string;
+  stdio: 'inherit';
+  env?: Record<string, string | undefined>;
+}
+// Standalone structural view of the service under test (a PrismaService ∩
+// public-ensureSchema intersection collapses to `never` because the current
+// ensureSchema is private — the point of these tests is to make it public).
+interface EnsureSchemaService {
+  ensureSchema(): void;
+  onModuleInit(): Promise<void>;
+  $connect(): Promise<unknown>;
+}
+type SchemaGuardConstructor = new (options: {
+  dataDir: string;
+  execSchemaCommand: (command: string, options: SchemaCommandOptions) => void;
+  readFileTrackerCount?: () => number;
+}) => EnsureSchemaService;
+
+// better-sqlite3 ships no type definitions — only this surface is used here.
+interface TestSqliteHandle {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => { get: () => unknown };
+  close: () => void;
+}
+
+function openTestSqlite(file: string): TestSqliteHandle {
+  const betterSqlite3 = createRequire(__filename)('better-sqlite3') as new (f: string) => TestSqliteHandle;
+  return new betterSqlite3(file);
+}
+
+describe('PrismaService.ensureSchema (migrate deploy + dedup-state guard, C5)', () => {
+  const SchemaGuardService = PrismaService as unknown as SchemaGuardConstructor;
+  const SHRINK_MESSAGE = 'dedup state must not shrink (was 7, now 0)';
+
+  let tmpDataDir: string;
+
+  beforeEach(() => {
+    tmpDataDir = mkdtempSync(join(tmpdir(), 'racochu-c5-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDataDir, { recursive: true, force: true });
+  });
+
+  function serviceWithSeams(options: {
+    counts?: number[];
+    execSchemaCommand?: (command: string, options: SchemaCommandOptions) => void;
+  }) {
+    const execSchemaCommand = jest.fn(
+      options.execSchemaCommand ?? ((_command: string, _opts: SchemaCommandOptions) => undefined),
+    );
+    const scripted = [...(options.counts ?? [0, 0])];
+    const readFileTrackerCount = jest.fn((): number => {
+      const next = scripted.shift();
+      if (next === undefined) {
+        throw new Error('unexpected extra FileTracker count read beyond the scripted sequence');
+      }
+      return next;
+    });
+    const service = new SchemaGuardService({ dataDir: tmpDataDir, execSchemaCommand, readFileTrackerCount });
+    return { service, execSchemaCommand, readFileTrackerCount };
+  }
+
+  it('runs the schema step via `prisma migrate deploy` and never via `db push`', () => {
+    const { service, execSchemaCommand, readFileTrackerCount } = serviceWithSeams({ counts: [7, 7] });
+
+    service.ensureSchema();
+
+    expect(execSchemaCommand).toHaveBeenCalledTimes(1);
+    const [command, execOptions] = execSchemaCommand.mock.calls[0];
+    expect(command).toContain('prisma migrate deploy');
+    expect(command).not.toContain('db push');
+    expect(command).not.toContain('--accept-data-loss');
+    expect(execOptions.cwd).toBe(findProjectRoot(__dirname));
+    // Non-interactive deploy does not prompt — no consent-env plumbing allowed.
+    expect(execOptions.env).toBeUndefined();
+    // Count read happens around the schema step: before and after.
+    expect(readFileTrackerCount).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes when the dedup row count is stable across the schema step (7 → 7)', () => {
+    const { service, execSchemaCommand } = serviceWithSeams({ counts: [7, 7] });
+
+    expect(() => service.ensureSchema()).not.toThrow();
+    expect(execSchemaCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes on a fresh/empty database (0 → 0)', () => {
+    const { service, execSchemaCommand } = serviceWithSeams({ counts: [0, 0] });
+
+    expect(() => service.ensureSchema()).not.toThrow();
+    expect(execSchemaCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts with the exact operator message when the dedup state shrinks (7 → 0)', () => {
+    const { service } = serviceWithSeams({ counts: [7, 0] });
+
+    let thrown: unknown;
+    try {
+      service.ensureSchema();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe(SHRINK_MESSAGE);
+  });
+
+  it('still surfaces a failing migrate step as before, and never counts after it', () => {
+    const migrationFailure = new Error('migrations failed');
+    const { service, readFileTrackerCount } = serviceWithSeams({
+      counts: [7], // only the pre-step read is expected — the post read must never happen
+      execSchemaCommand: () => {
+        throw migrationFailure;
+      },
+    });
+
+    expect(() => service.ensureSchema()).toThrow(migrationFailure);
+    expect(readFileTrackerCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts onModuleInit before any connect work when the guard trips', async () => {
+    const { service } = serviceWithSeams({ counts: [7, 0] });
+    const connect = jest.spyOn(service, '$connect').mockResolvedValue(undefined);
+
+    await expect(service.onModuleInit()).rejects.toThrow(SHRINK_MESSAGE);
+    expect(connect).not.toHaveBeenCalled();
+
+    connect.mockRestore();
+  });
+
+  it('proceeds to connect when the guard passes', async () => {
+    const { service } = serviceWithSeams({ counts: [0, 0] });
+    const connect = jest.spyOn(service, '$connect').mockResolvedValue(undefined);
+
+    await service.onModuleInit();
+    expect(connect).toHaveBeenCalledTimes(1);
+
+    connect.mockRestore();
+  });
+
+  it('real count source: treats a missing FileTracker table as 0 on a fresh database', () => {
+    // No readFileTrackerCount injected — exercises the production default read
+    // through the better-sqlite3 driver against an empty database.
+    const execSchemaCommand = jest.fn();
+    const service = new SchemaGuardService({ dataDir: tmpDataDir, execSchemaCommand });
+
+    expect(() => service.ensureSchema()).not.toThrow();
+    expect(execSchemaCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('real count source: detects an actual 3 → 0 shrink through the driver', () => {
+    const dbPath = join(tmpDataDir, 'racochu.db');
+    const seed = openTestSqlite(dbPath);
+    seed.exec(
+      `CREATE TABLE "FileTracker" ("id" INTEGER PRIMARY KEY, "filePath" TEXT NOT NULL);
+       INSERT INTO "FileTracker" ("id", "filePath") VALUES (1, '/a'), (2, '/b'), (3, '/c');`,
+    );
+    seed.close();
+
+    // The stubbed schema step wipes the rows — standing in for a destructive migrate.
+    const execSchemaCommand = jest.fn((_command: string, _options: SchemaCommandOptions) => {
+      const wipe = openTestSqlite(dbPath);
+      wipe.exec('DELETE FROM "FileTracker"');
+      wipe.close();
+    });
+    const service = new SchemaGuardService({ dataDir: tmpDataDir, execSchemaCommand });
+
+    let thrown: unknown;
+    try {
+      service.ensureSchema();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe('dedup state must not shrink (was 3, now 0)');
   });
 });
 
