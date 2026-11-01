@@ -1,6 +1,7 @@
 import { FileMemoryTracker } from '@/domain/file-memory-tracker.aggregate';
 import { AggregateResult } from '@/utils/aggregate-result';
 import { ErrorWithDetails } from '@/utils/error-with-details';
+import { Result } from '@/utils/result';
 import { Test, TestingModule } from '@nestjs/testing';
 import { FileMemoryTrackerRepository } from '../repositories/file-memory-tracker.repository';
 import {
@@ -359,6 +360,74 @@ describe('FileMemoryTrackerService', () => {
 
       await expect(service.deleteByFilePath('/nonexistent/file.txt')).resolves.not.toThrow();
       expect(repository.deleteByFilePath).toHaveBeenCalledWith('/nonexistent/file.txt');
+    });
+  });
+
+  describe('recordTerminalSkip', () => {
+    it('delegates all fields to the repository terminal-skip write', async () => {
+      await service.recordTerminalSkip('/skip/file.txt', 'src-1', 'bank-a', 'sha-1', 'hw-1', 'zero-chunks');
+
+      expect(repository.upsertTerminalSkip).toHaveBeenCalledWith(
+        '/skip/file.txt',
+        'src-1',
+        'bank-a',
+        'sha-1',
+        'hw-1',
+        'zero-chunks',
+      );
+    });
+
+    it('throws when the repository returns a ko result (callers wrap in try/catch — non-fatal)', async () => {
+      repository.upsertTerminalSkip.mockResolvedValue(
+        Result.ko([new ErrorWithDetails('write failed', 'UpsertTerminalSkipError')]),
+      );
+
+      await expect(
+        service.recordTerminalSkip('/skip/file.txt', 'src-1', 'bank-a', 'sha-1', null, 'empty-content'),
+      ).rejects.toThrow('write failed');
+    });
+  });
+
+  describe('getIngestGateState', () => {
+    it('reports untracked files as { storedHash: null, skipReason: null, tracked: false }', async () => {
+      repository.findHashAndSkipReasonByFilePath.mockResolvedValue(Result.ok(null));
+
+      const state = await service.getIngestGateState('/untracked/file.txt');
+
+      expect(repository.findHashAndSkipReasonByFilePath).toHaveBeenCalledWith('/untracked/file.txt');
+      expect(state).toEqual({ storedHash: null, skipReason: null, tracked: false });
+    });
+
+    it('returns the full gate state for a tracked terminal-skip row (exact passthrough)', async () => {
+      repository.findHashAndSkipReasonByFilePath.mockResolvedValue(
+        Result.ok({ fileHash: 'sha-known', skipReason: 'content-filtered' }),
+      );
+
+      const state = await service.getIngestGateState('/skip/file.txt');
+
+      expect(state).toEqual({
+        storedHash: 'sha-known',
+        skipReason: 'content-filtered',
+        tracked: true,
+      });
+    });
+
+    it('reports a tracked legacy row without hash or skip reason as tracked:true with nulls', async () => {
+      repository.findHashAndSkipReasonByFilePath.mockResolvedValue(
+        Result.ok({ fileHash: null, skipReason: null }),
+      );
+
+      const state = await service.getIngestGateState('/legacy/file.txt');
+
+      expect(state).toEqual({ storedHash: null, skipReason: null, tracked: true });
+    });
+
+    it('throws when the repository read fails (the caller degrades fail-open — not the service)', async () => {
+      repository.findHashAndSkipReasonByFilePath.mockResolvedValue(
+        Result.ko([new ErrorWithDetails('DB unavailable', 'ReadFileTrackerGateStateError')]),
+      );
+
+      await expect(service.getIngestGateState('/any/file.txt')).rejects.toThrow('DB unavailable');
     });
   });
 });

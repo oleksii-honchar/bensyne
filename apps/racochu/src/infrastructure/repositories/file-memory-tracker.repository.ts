@@ -1,4 +1,5 @@
 import { FileMemoryTracker } from '@/domain/file-memory-tracker.aggregate';
+import { FileTrackerSkipReason } from '@/domain/file-tracker.aggregate';
 import { generateId } from '@/utils/big-endian-id';
 import { ErrorWithDetails } from '@/utils/error-with-details';
 import { Result } from '@/utils/result';
@@ -134,6 +135,37 @@ export class FileMemoryTrackerRepository {
   }
 
   /**
+   * Read only the ingest-gate columns (fileHash, skipReason) for a filePath —
+   * the single indexed read used by the hash-gate. Result.ok(null) means the
+   * file is untracked (no FileTracker row). Unlike the methods above that let
+   * Prisma errors propagate, a read failure is converted to Result.ko so the
+   * gate caller can decide degradation (fail-open) at its own boundary.
+   */
+  async findHashAndSkipReasonByFilePath(
+    filePath: string,
+  ): Promise<Result<{ fileHash: string | null; skipReason: string | null } | null>> {
+    try {
+      const row = await this.prisma.fileTracker.findUnique({
+        where: { filePath },
+        select: { fileHash: true, skipReason: true },
+      });
+
+      if (!row) {
+        return Result.ok(null);
+      }
+
+      return Result.ok({ fileHash: row.fileHash, skipReason: row.skipReason });
+    } catch (error: unknown) {
+      return Result.ko([
+        new ErrorWithDetails(
+          `Failed to read gate state for FileTracker: ${filePath}. ${(error as Error).message}`,
+          'ReadFileTrackerGateStateError',
+        ),
+      ]);
+    }
+  }
+
+  /**
    * Find existing tracker by filePath, or save the provided aggregate with a pre-generated ID.
    * Aggregate-first: caller creates the aggregate with domain logic, repository just persists it.
    */
@@ -199,6 +231,59 @@ export class FileMemoryTrackerRepository {
     return result;
   }
 
+  /**
+   * Record a terminal-skip decision on the FileTracker row keyed by filePath.
+   * Create path uses the same application-generated id as every other FileTracker
+   * write in this file (generateId()); update path refreshes fileHash,
+   * hardwareId and skipReason only — identity columns stay untouched.
+   *
+   * Never touches FileMemoryTracker rows: a terminal skip is a decision with
+   * zero memories by definition (spec C1 invariant). A Prisma failure is
+   * converted to Result.ko (same conversion style as deleteByFilePath above) —
+   * recording is non-fatal and the caller decides how to degrade.
+   *
+   * Callers must provide fileHash: a skip row without a hash cannot be
+   * re-evaluated by the gate and breaks the "row ⇒ final decision on these
+   * exact bytes" invariant (enforced at the use-case layer).
+   */
+  async upsertTerminalSkip(
+    filePath: string,
+    sourceId: string,
+    memoryBank: string,
+    fileHash: string | null,
+    hardwareId: string | null,
+    skipReason: FileTrackerSkipReason,
+  ): Promise<Result<void>> {
+    try {
+      await this.prisma.fileTracker.upsert({
+        where: { filePath },
+        create: {
+          id: generateId(),
+          filePath,
+          sourceId,
+          memoryBank,
+          fileHash,
+          hardwareId,
+          skipReason,
+        },
+        update: {
+          fileHash,
+          hardwareId,
+          skipReason,
+        },
+      });
+
+      return Result.ok(undefined);
+    } catch (error: unknown) {
+      return Result.ko([
+        new ErrorWithDetails(
+          `Failed to upsert terminal skip for FileTracker: ${filePath}. ${(error as Error).message}`,
+          'UpsertTerminalSkipError',
+        ),
+      ]);
+    }
+  }
+
   async getMemoryIds(filePath: string): Promise<string[]> {
     const tracker = await this.prisma.fileTracker.findUnique({
       where: { filePath },
@@ -215,15 +300,21 @@ export class FileMemoryTrackerRepository {
   /**
    * Update fileHash and/or hardwareId on the FileTracker parent record.
    * Only sets fields that are provided (non-undefined).
+   *
+   * A hash write ALWAYS clears skipReason (spec C3 step 5): a row reaching
+   * this path via trackMemory belongs to content that passed every
+   * terminal-skip branch, so any recorded skip is stale for these bytes.
+   * Clearing null rows keeps them null — no new behavior for plain rows.
    */
   async updateFileTrackerHash(
     filePath: string,
     fileHash: string | undefined,
     hardwareId: string | undefined,
   ): Promise<void> {
-    const updateData: { fileHash?: string | null; hardwareId?: string | null } = {};
+    const updateData: { fileHash?: string | null; hardwareId?: string | null; skipReason?: null } = {};
     if (fileHash !== undefined) {
       updateData.fileHash = fileHash ?? null;
+      updateData.skipReason = null;
     }
     if (hardwareId !== undefined) {
       updateData.hardwareId = hardwareId ?? null;

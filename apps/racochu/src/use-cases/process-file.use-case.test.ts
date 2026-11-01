@@ -5,8 +5,8 @@ import '@/utils/mastra-rag.test-utils';
 import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../application/services/content-classifier.service';
 import { aContentChunk } from '../domain/content-chunk.entity.test-utils';
 import { FileAddedEvent, FileChangedEvent, FileDeletedEvent } from '../domain/events/file-events';
-import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';
 import { watchSourceConfigSchema } from '../infrastructure/config/config-schemas';
+import { aSourceConfig } from '../infrastructure/config/configuration.service.test-utils';
 import { aLogger } from '../infrastructure/logging/logger.test-utils';
 import { BensyneClient } from '../infrastructure/services/bensyne-client.service';
 import { aBensyneClientService } from '../infrastructure/services/bensyne-client.test-utils';
@@ -35,6 +35,9 @@ describe('ProcessFileUseCase', () => {
   let mockBensyneClient: ReturnType<typeof aBensyneClientService>;
   let mockFileHasherService: jest.Mocked<{ compute: jest.Mock }>;
   let mockHardwareIdDetectorService: jest.Mocked<{ getHardwareId: jest.Mock }>;
+  // Suite-scoped so the two C8 log-string contract tests (Global-rule narrow
+  // exception: the operator-facing strings ARE the contract) can assert them.
+  let mockLogger: ReturnType<typeof aLogger>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -46,7 +49,7 @@ describe('ProcessFileUseCase', () => {
     mockBensyneClient = aBensyneClientService();
     mockFileHasherService = { compute: jest.fn().mockResolvedValue('test-hash-abc123') };
     mockHardwareIdDetectorService = { getHardwareId: jest.fn().mockResolvedValue('test-hw-id') };
-    const mockLogger = aLogger();
+    mockLogger = aLogger();
 
     useCase = new ProcessFileUseCase(
       mockChunkContentUseCase as unknown as ChunkContentUseCase,
@@ -717,6 +720,474 @@ describe('ProcessFileUseCase', () => {
     });
   });
 
+  describe('hash ingest gate (spec C3 — duplicate re-ingestion fix)', () => {
+    // Decision table per spec §8 items 1–8. All assertions go through the
+    // fakes' call behavior (05-testing.mdc); the only logger assertions are
+    // the two C8 operator-string contracts (Global-rule narrow exception).
+    const gFilePath = '/gated/file.md';
+    const gSourceId = 'gated-source';
+    const gMemoryBank = 'gated-bank';
+    const gSourceConfig = aSourceConfig({ id: gSourceId, memoryBank: gMemoryBank });
+    const COMPUTED_HASH = 'test-hash-abc123';
+    const HASH12 = COMPUTED_HASH.substring(0, 12);
+
+    const gateStateOf = (storedHash: string | null, skipReason: string | null = null) => ({
+      storedHash,
+      skipReason,
+      tracked: true,
+    });
+
+    const changeParams = (extra: Record<string, unknown> = {}) => ({
+      filePath: gFilePath,
+      eventType: 'change' as const,
+      sourceId: gSourceId,
+      memoryBank: gMemoryBank,
+      sourceConfig: gSourceConfig,
+      ...extra,
+    });
+    const addParams = (extra: Record<string, unknown> = {}) =>
+      changeParams({ ...extra, eventType: 'add' as const });
+
+    // Default stubs for every test: a healthy full ingest path so a scenario
+    // can only "skip" by the gate/skip branches actually working.
+    const stubIngestPath = (
+      content = '# Real content that passes every filter',
+      oldMemoryIds: string[] = [],
+    ) => {
+      (fs.readFile as jest.Mock).mockResolvedValue(content);
+      mockFileMemoryTrackerService.getMemoryIds.mockResolvedValue(oldMemoryIds);
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok([aContentChunk({ text: 'gated chunk' })]));
+      mockIngestChunkUseCase.execute.mockResolvedValue(Result.ok({ memoryIds: ['mem-new'] }));
+      mockBensyneClient.forgetByFile.mockResolvedValue(
+        Result.ok({ status: 'forgotten', file_id: 'file-1', files_affected: 1 } as never),
+      );
+      mockFileMemoryTrackerService.forgetMemories.mockResolvedValue(null);
+      mockProcessingQueue.addToQueue.mockImplementation(task => task());
+    };
+
+    it('T3-AC1 change + equal stored hash ⇒ skips before any destructive step', async () => {
+      stubIngestPath(undefined, ['mem-old']);
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(COMPUTED_HASH));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.getIngestGateState).toHaveBeenCalledWith(gFilePath);
+      // Hash computed exactly once, before the gate decision (spec C3.2)
+      expect(mockFileHasherService.compute).toHaveBeenCalledTimes(1);
+      // DEC-A1: nothing destructive may run for an unchanged file
+      expect(mockFileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(mockBensyneClient.forgetByFile).not.toHaveBeenCalled();
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC1b change + differing hash ⇒ gate read still precedes getMemoryIds/forgetByFile/ingest (order guard)', async () => {
+      stubIngestPath(undefined, ['mem-old-1']);
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf('stored-different-hash'));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      const gateOrder = mockFileMemoryTrackerService.getIngestGateState.mock.invocationCallOrder[0];
+      const getIdsOrder = mockFileMemoryTrackerService.getMemoryIds.mock.invocationCallOrder[0];
+      const forgetOrder = mockBensyneClient.forgetByFile.mock.invocationCallOrder[0];
+      const ingestOrder = mockIngestChunkUseCase.execute.mock.invocationCallOrder[0];
+      // Fail-open fallback (gate never consulted) must not pass this test.
+      expect(gateOrder).toBeDefined();
+      expect(gateOrder).toBeLessThan(getIdsOrder);
+      expect(getIdsOrder).toBeLessThan(forgetOrder);
+      // DEC-0036 ordering kept intact after the gate insertion.
+      expect(forgetOrder).toBeLessThan(ingestOrder);
+    });
+
+    it('T3-AC2a change + differing stored hash ⇒ full DEC-0036 flow, computed hash reused (never re-hashed)', async () => {
+      stubIngestPath(undefined, ['mem-old-1', 'mem-old-2']);
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf('stored-different-hash'));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileHasherService.compute).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(gFilePath);
+      expect(mockBensyneClient.forgetByFile).toHaveBeenCalledWith(gFilePath, gMemoryBank);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+      expect(mockFileMemoryTrackerService.forgetMemories).toHaveBeenCalledWith(gFilePath, [
+        'mem-old-1',
+        'mem-old-2',
+      ]);
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC2b change + tracked row with null stored hash (legacy) ⇒ full flow proceeds (never starved)', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(null));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC2c change + untracked path ⇒ full flow proceeds', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue({
+        storedHash: null,
+        skipReason: null,
+        tracked: false,
+      });
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC3a add + equal stored hash ⇒ skip: no chunking, no ingest, one hash', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(COMPUTED_HASH));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileHasherService.compute).toHaveBeenCalledTimes(1);
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC3b add + equal hash but forceIngest:true ⇒ proceeds through the full flow', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(COMPUTED_HASH));
+
+      const result = await useCase.execute(addParams({ forceIngest: true }));
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC4a empty content ⇒ recordTerminalSkip(EMPTY_CONTENT), ok, chunker never invoked', async () => {
+      stubIngestPath('');
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).toHaveBeenCalledWith(
+        gFilePath,
+        gSourceId,
+        gMemoryBank,
+        COMPUTED_HASH,
+        'test-hw-id',
+        'empty-content',
+      );
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC4b whitespace-only content ⇒ EMPTY_CONTENT recorded with zero chunker calls', async () => {
+      stubIngestPath('   \n\t  ');
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).toHaveBeenCalledWith(
+        gFilePath,
+        gSourceId,
+        gMemoryBank,
+        COMPUTED_HASH,
+        'test-hw-id',
+        'empty-content',
+      );
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC5 zero-chunk producer ⇒ ZERO_CHUNKS recorded before the ok return', async () => {
+      stubIngestPath('# Regular ingestable content');
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok([]));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).toHaveBeenCalledWith(
+        gFilePath,
+        gSourceId,
+        gMemoryBank,
+        COMPUTED_HASH,
+        'test-hw-id',
+        'zero-chunks',
+      );
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC6 content-filtered file ⇒ CONTENT_FILTERED recorded, returns ok, no chunking', async () => {
+      // Same machine-dump shape as the existing content-filter suite
+      // (>= markerRatio of the default classifier).
+      stubIngestPath(
+        [
+          'added in remote',
+          '  their  100644 57d0e502d5855bd14208313fa99a4cecac1faeee .vault/_Vault-Home.md',
+          '@@ -0,0 +1,20 @@',
+          '+---',
+          '+type: index',
+          '+title: "Vault Home"',
+          '+createdAt: "2026-06-08T18:32:00Z"',
+          '+updatedAt: "2026-06-10T20:00:00Z"',
+          '+tags: []',
+          '+',
+          '+# Vault Home',
+        ].join('\n'),
+      );
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).toHaveBeenCalledWith(
+        gFilePath,
+        gSourceId,
+        gMemoryBank,
+        COMPUTED_HASH,
+        'test-hw-id',
+        'content-filtered',
+      );
+      expect(mockChunkContentUseCase.execute).not.toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC7a gate-state read throws ⇒ change flow proceeds unchanged (fail-open)', async () => {
+      stubIngestPath(undefined, ['mem-old-1']);
+      mockFileMemoryTrackerService.getIngestGateState.mockRejectedValue(new Error('DB connection failed'));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(gFilePath);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC7b hash compute throws on change ⇒ proceeds without gating and re-hashing (fail-open)', async () => {
+      stubIngestPath(undefined, ['mem-old-1']);
+      // Even an equal-looking stored hash cannot gate without a computed hash.
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(COMPUTED_HASH));
+      mockFileHasherService.compute.mockRejectedValue(new Error('disk read interrupted'));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileHasherService.compute).toHaveBeenCalledTimes(1);
+      expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(gFilePath);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: undefined }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC7c gate-state read throws ⇒ add flow proceeds (fail-open)', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockRejectedValue(new Error('DB connection failed'));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalled();
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+    });
+
+    it('T3-AC8 change with an existing terminal-skip row + changed content ⇒ full re-evaluation flow', async () => {
+      stubIngestPath('# Content grown since it was skipped');
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(
+        gateStateOf('sha-of-the-skipped-bytes', 'empty-content'),
+      );
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(gFilePath);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+      // Ingestable content must NOT record a new skip — the hash write through
+      // trackMemory→updateFileTrackerHash clears skipReason (proved at the
+      // repository seam in file-memory-tracker.repository.test.ts).
+      expect(mockFileMemoryTrackerService.recordTerminalSkip).not.toHaveBeenCalled();
+    });
+
+    it('T3-AC9 full ADD ingest computes the file hash exactly once', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf('stored-different-hash'));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockFileHasherService.compute).toHaveBeenCalledTimes(1);
+      expect(mockChunkContentUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ fileHash: COMPUTED_HASH }),
+      );
+    });
+
+    it('C8 contract — emits the exact operator-facing hash-gate skip line', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValue(gateStateOf(COMPUTED_HASH));
+
+      await useCase.execute(addParams());
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `Skipping unchanged file (hash gate): path="${gFilePath}", fileHash="${HASH12}"`,
+      );
+    });
+
+    it('C8 contract — emits the exact operator-facing terminal-skip-recorded line', async () => {
+      stubIngestPath('');
+
+      await useCase.execute(addParams());
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `terminal-skip-recorded reason=empty-content path="${gFilePath}"`,
+      );
+    });
+
+    // T6 completes the C8 format-contract families: every operator-facing
+    // string gets exactly one format test (the narrow log-assertion
+    // exception), the skip families additionally expose their classification
+    // signal as additive outcome data (deviation note in the task report).
+
+    const gateSkipLine = () =>
+      mockLogger.info.mock.calls
+        .map(call => String(call[0]))
+        .find(line => line.startsWith('Skipping unchanged file (hash gate): '));
+
+    it('C8 contract — ADD and CHANGE gate paths emit the identical skip line (same shape)', async () => {
+      const expectedLine = `Skipping unchanged file (hash gate): path="${gFilePath}", fileHash="${HASH12}"`;
+
+      // ADD path
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValueOnce(gateStateOf(COMPUTED_HASH));
+      await useCase.execute(addParams());
+      const addLine = gateSkipLine();
+      expect(addLine).toBe(expectedLine);
+
+      // CHANGE path — same contract string, byte-identical shape.
+      mockLogger.info.mockClear();
+      stubIngestPath(undefined, ['mem-old']);
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValueOnce(gateStateOf(COMPUTED_HASH));
+      await useCase.execute(changeParams());
+      const changeLine = gateSkipLine();
+      expect(changeLine).toBe(expectedLine);
+      expect(changeLine).toBe(addLine);
+    });
+
+    it('C8 contract — emits the exact terminal-skip line for content-filtered bytes', async () => {
+      // Same machine-dump shape as T3-AC6 (marker-ratio of the default classifier).
+      stubIngestPath(
+        [
+          'added in remote',
+          '  their  100644 57d0e502d5855bd14208313fa99a4cecac1faeee .vault/_Vault-Home.md',
+          '@@ -0,0 +1,20 @@',
+          '+---',
+          '+type: index',
+        ].join('\n'),
+      );
+
+      await useCase.execute(addParams());
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `terminal-skip-recorded reason=content-filtered path="${gFilePath}"`,
+      );
+    });
+
+    it('C8 contract — emits the exact terminal-skip line for zero-chunk producers', async () => {
+      stubIngestPath('# Regular ingestable content');
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok([]));
+
+      await useCase.execute(addParams());
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        `terminal-skip-recorded reason=zero-chunks path="${gFilePath}"`,
+      );
+    });
+
+    // Outcome-data contract for the C8 classification (additive marker).
+    const outcomeOf = (result: { isOk(): boolean; getValue(): unknown }) =>
+      result.isOk() ? (result.getValue() as { skipped?: string } | undefined) : undefined;
+
+    it('T6 outcome marker — hash-gate skip (ADD) reports skipped="unchanged" on the ok result', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValueOnce(gateStateOf(COMPUTED_HASH));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(outcomeOf(result)?.skipped).toBe('unchanged');
+    });
+
+    it('T6 outcome marker — hash-gate skip (CHANGE) reports skipped="unchanged" on the ok result', async () => {
+      stubIngestPath(undefined, ['mem-old']);
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValueOnce(gateStateOf(COMPUTED_HASH));
+
+      const result = await useCase.execute(changeParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(outcomeOf(result)?.skipped).toBe('unchanged');
+    });
+
+    it('T6 outcome marker — terminal skip (zero-chunks) reports skipped="terminal"', async () => {
+      stubIngestPath('# Regular ingestable content');
+      mockChunkContentUseCase.execute.mockResolvedValue(Result.ok([]));
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(outcomeOf(result)?.skipped).toBe('terminal');
+    });
+
+    it('T6 outcome marker — empty-content and content-filtered terminal skips report skipped="terminal"', async () => {
+      stubIngestPath('');
+      const emptyResult = await useCase.execute(addParams({ filePath: '/gated/empty.md' }));
+      expect(emptyResult.isOk()).toBe(true);
+      expect(outcomeOf(emptyResult)?.skipped).toBe('terminal');
+
+      stubIngestPath(
+        [
+          'added in remote',
+          '  their  100644 57d0e502d5855bd14208313fa99a4cecac1faeee .vault/_Vault-Home.md',
+          '@@ -0,0 +1,20 @@',
+          '+---',
+          '+type: index',
+        ].join('\n'),
+      );
+      const filteredResult = await useCase.execute(addParams({ filePath: '/gated/filtered.md' }));
+      expect(filteredResult.isOk()).toBe(true);
+      expect(outcomeOf(filteredResult)?.skipped).toBe('terminal');
+    });
+
+    it('T6 outcome marker — ordinary successful ingest carries no skip marker', async () => {
+      stubIngestPath();
+      mockFileMemoryTrackerService.getIngestGateState.mockResolvedValueOnce(
+        gateStateOf('stored-different-hash'),
+      );
+
+      const result = await useCase.execute(addParams());
+
+      expect(result.isOk()).toBe(true);
+      expect(mockIngestChunkUseCase.execute).toHaveBeenCalled();
+      expect(outcomeOf(result)?.skipped ?? undefined).toBeUndefined();
+    });
+  });
+
   describe('execute with DELETE event', () => {
     it('should get memoryIds, call forgetByFile, then deleteByFilePath on delete', async () => {
       const filePath = '/path/to/file.md';
@@ -943,6 +1414,11 @@ describe('ProcessFileUseCase', () => {
       const filePath = '/path/to/file.md';
       const sourceId = 'test-source';
       const sourceConfig = aSourceConfig({ id: sourceId, memoryBank: 'test-memoryBank' });
+
+      // Self-contained content stub: this suite shares the fs/promises
+      // auto-mock across tests (clearAllMocks keeps implementations), and the
+      // task must reach the chunker — empty content would end earlier.
+      (fs.readFile as jest.Mock).mockResolvedValue('# regular ingestable note');
 
       let capturedTask: (() => Promise<void>) | undefined;
       mockProcessingQueue.addToQueue.mockImplementation(async task => {
@@ -1380,7 +1856,12 @@ describe('R1 defect — normalized sources at the params seam (live 14/14 reject
   });
 
   const errorText = (result: Result<unknown>): string =>
-    result.isKo() ? result.getErrors().map(e => e.message).join('|') : '';
+    result.isKo()
+      ? result
+          .getErrors()
+          .map(e => e.message)
+          .join('|')
+      : '';
 
   it('accepts a config-normalized TWO-ROOT source (parsed through the real schema)', async () => {
     const normalized = watchSourceConfigSchema.parse({

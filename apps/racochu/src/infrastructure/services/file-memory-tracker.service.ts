@@ -1,4 +1,5 @@
 import { FileMemoryTracker } from '@/domain/file-memory-tracker.aggregate';
+import { FileTrackerSkipReason } from '@/domain/file-tracker.aggregate';
 import { generateId } from '@/utils/big-endian-id';
 import { Injectable } from '@nestjs/common';
 import { FileMemoryTrackerRepository } from '../repositories/file-memory-tracker.repository';
@@ -132,6 +133,59 @@ export class FileMemoryTrackerService {
 
   async getMemoryIds(filePath: string): Promise<string[]> {
     return this.repository.getMemoryIds(filePath);
+  }
+
+  /**
+   * Read the ingest-gate state for a filePath — the inputs the hash-gate needs
+   * (stored hash + terminal skip reason) plus whether the file is tracked at all.
+   * Untracked paths return { storedHash: null, skipReason: null, tracked: false }.
+   *
+   * A repository read failure THROWS here (service style, matching the other
+   * wrappers). Fail-open degradation is deliberately NOT decided at this layer —
+   * the gate caller (ProcessFileUseCase, wired in a later task) catches this
+   * and proceeds ungated so a dead DB can never suppress ingestion (spec C5).
+   */
+  async getIngestGateState(
+    filePath: string,
+  ): Promise<{ storedHash: string | null; skipReason: string | null; tracked: boolean }> {
+    const result = await this.repository.findHashAndSkipReasonByFilePath(filePath);
+    if (result.isKo()) {
+      throw new Error('Failed to read ingest gate state: ' + result.getErrors()[0].message);
+    }
+    const row = result.getValue();
+    if (!row) {
+      return { storedHash: null, skipReason: null, tracked: false };
+    }
+    return { storedHash: row.fileHash, skipReason: row.skipReason, tracked: true };
+  }
+
+  /**
+   * Record a terminal-skip decision for a file (never-ingestable content): a
+   * FileTracker row carrying the content hash and the skip reason, with zero
+   * memory association changes. Delegates to the repository; throws on a ko
+   * result (consistent with service style). Recording is non-fatal by design —
+   * callers MUST wrap in try/catch and treat a throw as "re-tried until
+   * success" (today's behavior), never as a processing failure (spec C7).
+   */
+  async recordTerminalSkip(
+    filePath: string,
+    sourceId: string,
+    memoryBank: string,
+    fileHash: string | null,
+    hardwareId: string | null,
+    skipReason: FileTrackerSkipReason,
+  ): Promise<void> {
+    const result = await this.repository.upsertTerminalSkip(
+      filePath,
+      sourceId,
+      memoryBank,
+      fileHash,
+      hardwareId,
+      skipReason,
+    );
+    if (result.isKo()) {
+      throw new Error('Failed to record terminal skip: ' + result.getErrors()[0].message);
+    }
   }
 
   async deleteByFilePath(filePath: string): Promise<void> {

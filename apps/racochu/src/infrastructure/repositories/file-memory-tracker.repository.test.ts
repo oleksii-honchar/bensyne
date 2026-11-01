@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FileMemoryTrackerRepository } from './file-memory-tracker.repository';
 import {
   aFileMemoryTracker,
+  aFileTrackerTableFake,
   aPrismaFileMemoryTracker,
   aPrismaFileMemoryTrackerMemory,
   PrismaFileMemoryTrackerRecord,
@@ -409,29 +410,29 @@ describe('FileMemoryTrackerRepository', () => {
   });
 
   describe('updateFileTrackerHash', () => {
-    it('updates both fileHash and hardwareId when both provided', async () => {
+    it('updates both fileHash and hardwareId when both provided and clears skipReason alongside the hash', async () => {
       prismaFileTracker.updateMany.mockResolvedValue({ count: 1 });
 
       await repository.updateFileTrackerHash('/test/file.txt', 'sha256-abc', 'hw-123');
 
       expect(prismaFileTracker.updateMany).toHaveBeenCalledWith({
         where: { filePath: '/test/file.txt' },
-        data: { fileHash: 'sha256-abc', hardwareId: 'hw-123' },
+        data: { fileHash: 'sha256-abc', hardwareId: 'hw-123', skipReason: null },
       });
     });
 
-    it('updates only fileHash when hardwareId is undefined', async () => {
+    it('updates only fileHash when hardwareId is undefined (still clears skipReason)', async () => {
       prismaFileTracker.updateMany.mockResolvedValue({ count: 1 });
 
       await repository.updateFileTrackerHash('/test/file.txt', 'sha256-abc', undefined);
 
       expect(prismaFileTracker.updateMany).toHaveBeenCalledWith({
         where: { filePath: '/test/file.txt' },
-        data: { fileHash: 'sha256-abc' },
+        data: { fileHash: 'sha256-abc', skipReason: null },
       });
     });
 
-    it('updates only hardwareId when fileHash is undefined', async () => {
+    it('updates only hardwareId when fileHash is undefined — no skipReason write without a hash', async () => {
       prismaFileTracker.updateMany.mockResolvedValue({ count: 1 });
 
       await repository.updateFileTrackerHash('/test/file.txt', undefined, 'hw-123');
@@ -449,8 +450,247 @@ describe('FileMemoryTrackerRepository', () => {
 
       expect(prismaFileTracker.updateMany).toHaveBeenCalledWith({
         where: { filePath: '/test/file.txt' },
-        data: { fileHash: '', hardwareId: 'hw-123' },
+        data: { fileHash: '', hardwareId: 'hw-123', skipReason: null },
       });
+    });
+  });
+
+  describe('findHashAndSkipReasonByFilePath', () => {
+    it('returns Result.ok(null) for an untracked filePath (no FileTracker row)', async () => {
+      prismaFileTracker.findUnique.mockResolvedValue(null);
+
+      const result = await repository.findHashAndSkipReasonByFilePath('/nonexistent/file.txt');
+
+      expect(prismaFileTracker.findUnique).toHaveBeenCalledWith({
+        where: { filePath: '/nonexistent/file.txt' },
+        select: { fileHash: true, skipReason: true },
+      });
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toBeNull();
+    });
+
+    it('passes fileHash and skipReason through exactly for a tracked terminal-skip row', async () => {
+      prismaFileTracker.findUnique.mockResolvedValue({
+        fileHash: 'sha-known-abc',
+        skipReason: 'zero-chunks',
+      });
+
+      const result = await repository.findHashAndSkipReasonByFilePath('/skip/file.txt');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ fileHash: 'sha-known-abc', skipReason: 'zero-chunks' });
+    });
+
+    it('passes null columns through for a tracked row without hash or skip reason', async () => {
+      prismaFileTracker.findUnique.mockResolvedValue({
+        fileHash: null,
+        skipReason: null,
+      });
+
+      const result = await repository.findHashAndSkipReasonByFilePath('/legacy/file.txt');
+
+      expect(result.isOk()).toBe(true);
+      expect(result.getValue()).toEqual({ fileHash: null, skipReason: null });
+    });
+
+    it('converts a Prisma read failure into Result.ko instead of throwing', async () => {
+      prismaFileTracker.findUnique.mockRejectedValue(new Error('DB connection failed'));
+
+      const result = await repository.findHashAndSkipReasonByFilePath('/test/file.txt');
+
+      expect(result.isKo()).toBe(true);
+      expect(result.getErrors()[0].message).toContain('DB connection failed');
+    });
+  });
+});
+
+describe('FileMemoryTrackerRepository — upsertTerminalSkip', () => {
+  // Stateful FileTracker-table fake; its fileMemoryTracker mock is wired but
+  // never expected to be called — a terminal skip must never touch memory rows.
+  async function buildRepositoryWithFileTrackerTable(
+    seeds: Parameters<typeof aFileTrackerTableFake>[0] = [],
+  ) {
+    const fake = aFileTrackerTableFake(seeds);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FileMemoryTrackerRepository,
+        {
+          provide: PrismaService,
+          useValue: { fileTracker: fake.fileTracker, fileMemoryTracker: fake.fileMemoryTracker },
+        },
+      ],
+    }).compile();
+
+    return { repository: module.get<FileMemoryTrackerRepository>(FileMemoryTrackerRepository), fake };
+  }
+
+  function expectNoMemoryModelOps(
+    fileMemoryTracker: ReturnType<typeof aFileTrackerTableFake>['fileMemoryTracker'],
+  ) {
+    for (const op of Object.values(fileMemoryTracker)) {
+      expect(op).not.toHaveBeenCalled();
+    }
+  }
+
+  it('creates the FileTracker row with hash, hardwareId and skipReason and zero FileMemoryTracker writes', async () => {
+    const { repository, fake } = await buildRepositoryWithFileTrackerTable();
+
+    const result = await repository.upsertTerminalSkip(
+      '/skip/zero-chunks.txt',
+      'src-1',
+      'bank-a',
+      'sha-skip-1',
+      'hw-9',
+      'zero-chunks',
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(fake.rows).toHaveLength(1);
+    expect(fake.rows[0]).toMatchObject({
+      filePath: '/skip/zero-chunks.txt',
+      sourceId: 'src-1',
+      memoryBank: 'bank-a',
+      fileHash: 'sha-skip-1',
+      hardwareId: 'hw-9',
+      skipReason: 'zero-chunks',
+    });
+    expect(typeof fake.rows[0].id).toBe('bigint');
+    expect(fake.fileTracker.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { filePath: '/skip/zero-chunks.txt' } }),
+    );
+    expectNoMemoryModelOps(fake.fileMemoryTracker);
+  });
+
+  it('updates an existing row in place (hash/hardwareId/skipReason) without creating a second row and without touching its memories', async () => {
+    const filePath = '/skip/grew.txt';
+    const { repository, fake } = await buildRepositoryWithFileTrackerTable([
+      {
+        id: 5001n,
+        filePath,
+        sourceId: 'orig-src',
+        memoryBank: 'orig-bank',
+        fileHash: 'sha-old',
+        hardwareId: null,
+        skipReason: 'empty-content',
+        memories: [{ id: 7001n, memoryId: 'mem-keep', fileTrackerId: 5001n }],
+      },
+    ]);
+
+    const result = await repository.upsertTerminalSkip(
+      filePath,
+      'other-src',
+      'other-bank',
+      'sha-new',
+      'hw-2',
+      'zero-chunks',
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(fake.rows).toHaveLength(1);
+    expect(fake.rows[0]).toMatchObject({
+      id: 5001n,
+      fileHash: 'sha-new',
+      hardwareId: 'hw-2',
+      skipReason: 'zero-chunks',
+    });
+    // The update path sets only fileHash/hardwareId/skipReason — identity and
+    // association columns of the existing row are left untouched.
+    expect(fake.rows[0].sourceId).toBe('orig-src');
+    expect(fake.rows[0].memoryBank).toBe('orig-bank');
+    // Memory side of the row is undamaged.
+    expect(fake.rows[0].memories).toEqual([{ id: 7001n, memoryId: 'mem-keep', fileTrackerId: 5001n }]);
+    expectNoMemoryModelOps(fake.fileMemoryTracker);
+  });
+
+  it('converts a Prisma write failure into Result.ko instead of throwing', async () => {
+    const { repository, fake } = await buildRepositoryWithFileTrackerTable();
+    fake.fileTracker.upsert.mockRejectedValue(new Error('SQLITE_BUSY'));
+
+    const result = await repository.upsertTerminalSkip(
+      '/skip/busy.txt',
+      'src-1',
+      'bank-a',
+      'sha-1',
+      null,
+      'content-filtered',
+    );
+
+    expect(result.isKo()).toBe(true);
+    expect(result.getErrors()[0].message).toContain('SQLITE_BUSY');
+    expectNoMemoryModelOps(fake.fileMemoryTracker);
+  });
+});
+
+describe('FileMemoryTrackerRepository — successful ingest clears skip rows (spec C3 step 5)', () => {
+  async function buildRepositoryWithFileTrackerTable(
+    seeds: Parameters<typeof aFileTrackerTableFake>[0] = [],
+  ) {
+    const fake = aFileTrackerTableFake(seeds);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FileMemoryTrackerRepository,
+        {
+          provide: PrismaService,
+          useValue: { fileTracker: fake.fileTracker, fileMemoryTracker: fake.fileMemoryTracker },
+        },
+      ],
+    }).compile();
+
+    return { repository: module.get<FileMemoryTrackerRepository>(FileMemoryTrackerRepository), fake };
+  }
+
+  async function readBackState(repository: FileMemoryTrackerRepository, filePath: string) {
+    const result = await repository.findHashAndSkipReasonByFilePath(filePath);
+    expect(result.isOk()).toBe(true);
+    return result.getValue();
+  }
+
+  it('writing a new fileHash nulls skipReason on the end-state row (terminal skip cleared by change + reingest)', async () => {
+    const filePath = '/skip/grew-then-ingested.txt';
+    const { repository } = await buildRepositoryWithFileTrackerTable([
+      {
+        filePath,
+        fileHash: 'sha-of-skipped-bytes',
+        hardwareId: 'hw-old',
+        skipReason: 'empty-content',
+      },
+    ]);
+
+    await repository.updateFileTrackerHash(filePath, 'sha-new-content', 'hw-new');
+
+    expect(await readBackState(repository, filePath)).toEqual({
+      fileHash: 'sha-new-content',
+      skipReason: null,
+    });
+  });
+
+  it('a row without skipReason: hash update leaves skipReason null (no new behavior)', async () => {
+    const filePath = '/normally-ingested.txt';
+    const { repository } = await buildRepositoryWithFileTrackerTable([
+      { filePath, fileHash: 'sha-old', skipReason: null },
+    ]);
+
+    await repository.updateFileTrackerHash(filePath, 'sha-rotated', undefined);
+
+    expect(await readBackState(repository, filePath)).toEqual({
+      fileHash: 'sha-rotated',
+      skipReason: null,
+    });
+  });
+
+  it('hardwareId-only update does NOT clear a recorded skip reason (clearing is bound to the hash write)', async () => {
+    const filePath = '/still-skipped.txt';
+    const { repository } = await buildRepositoryWithFileTrackerTable([
+      { filePath, fileHash: 'sha-skipped', skipReason: 'zero-chunks' },
+    ]);
+
+    await repository.updateFileTrackerHash(filePath, undefined, 'hw-later');
+
+    expect(await readBackState(repository, filePath)).toEqual({
+      fileHash: 'sha-skipped',
+      skipReason: 'zero-chunks',
     });
   });
 });
