@@ -220,6 +220,9 @@ describe('RecoverService', () => {
           eventType: 'add',
           sourceId: 'source-1',
           memoryBank: 'bank-1',
+          // T4/DEC-A3 step 4: FILE_NOT_FOUND on a tracked row is proven bank-side
+          // loss — the corrective re-ingest must bypass the hash gate.
+          forceIngest: true,
         }),
       );
       expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
@@ -238,7 +241,13 @@ describe('RecoverService', () => {
 
       expect(deps.processFileUseCase.execute).toHaveBeenCalledTimes(1);
       expect(deps.processFileUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ filePath: FILE_PATH, eventType: 'change' }),
+        expect.objectContaining({
+          filePath: FILE_PATH,
+          eventType: 'change',
+          // T4 defensive: the gate cannot fire on a differing hash, but the
+          // corrective path declares the override explicitly (DEC-A3).
+          forceIngest: true,
+        }),
       );
       expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
     });
@@ -387,6 +396,38 @@ describe('RecoverService', () => {
         2,
         expect.not.objectContaining({ skipEnrichment: true }),
       );
+    });
+  });
+
+  describe('recoverFile untracked pass-through (C4 stays gated)', () => {
+    it('runs ProcessFileUseCase for an untracked file WITHOUT forceIngest — default absent ⇒ gate active', async () => {
+      // No tracker row for the file → the pass-through "treat as new file" path.
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([]);
+
+      await service.recoverFile(FILE_PATH, 'source-1', [aSource()]);
+
+      expect(deps.processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      const params = deps.processFileUseCase.execute.mock.calls[0][0] as {
+        filePath: string;
+        eventType: string;
+        forceIngest?: boolean;
+      };
+      expect(params.filePath).toBe(FILE_PATH);
+      expect(params.eventType).toBe('add');
+      // DEC-A3: never a corrective override — an untracked file must go through
+      // the hash gate + terminal-skip check like any other ingest (M2 waste).
+      expect(params.forceIngest).toBeUndefined();
+    });
+
+    it('does not fall through to the decision table for an untracked file', async () => {
+      deps.fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([]);
+
+      await service.recoverFile(FILE_PATH, 'source-1', [aSource()]);
+
+      // The pass-through returns immediately after execute — no bank read,
+      // no repair submit.
+      expect(deps.bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(deps.ingestChunkUseCase.execute).not.toHaveBeenCalled();
     });
   });
 

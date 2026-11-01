@@ -218,17 +218,21 @@ export class RecoverService {
     const fileChunks = chunksResult.getValue();
 
     // 4. FILE_NOT_FOUND → full re-ingest (add) — the file was never ingested.
+    //    C4/DEC-A3: FILE_NOT_FOUND on a tracked row is proven bank-side loss;
+    //    local hash equality must not veto the repair → forceIngest: true.
     if (fileChunks.status === 'FILE_NOT_FOUND') {
       this.logger.info(`File absent on bensyne side, full re-ingest: path="${filePath}", event="add"`);
-      await this.runProcessFile(tracker, source, 'add');
+      await this.runProcessFile(tracker, source, 'add', { forceIngest: true });
       return { status: 'reingested', eventType: 'add' };
     }
 
     // 5. Hash gate — a changed file goes through change semantics (forget stale
     //    + ingest). Legacy null tracker fileHash skips the gate.
+    //    forceIngest true is defensive (the gate cannot fire on a differing
+    //    hash) — the corrective path declares the override explicitly.
     if (tracker.fileHash !== null && fileHash !== undefined && tracker.fileHash !== fileHash) {
       this.logger.info(`File changed since ingest, full re-ingest: path="${filePath}", event="change"`);
-      await this.runProcessFile(tracker, source, 'change');
+      await this.runProcessFile(tracker, source, 'change', { forceIngest: true });
       return { status: 'reingested', eventType: 'change' };
     }
 
@@ -327,11 +331,15 @@ export class RecoverService {
   /**
    * Full re-ingest via ProcessFileUseCase — it already enqueues itself, so no
    * extra queue wrapping here (mirrors ForceReprocessService).
+   * `opts.forceIngest` (C4/DEC-A3) marks the deliberate corrective re-ingest
+   * and bypasses the ingest hash gate; both decision-table re-ingest paths
+   * (steps 4 and 5) pass true.
    */
   private async runProcessFile(
     tracker: FileTracker,
     source: WatchSourceConfig,
     eventType: 'add' | 'change',
+    opts: { forceIngest: boolean },
   ): Promise<void> {
     const result = await this.processFileUseCase.execute({
       filePath: tracker.filePath,
@@ -339,6 +347,7 @@ export class RecoverService {
       sourceId: source.id,
       memoryBank: source.memoryBank,
       sourceConfig: source,
+      forceIngest: opts.forceIngest,
     });
 
     if (result.isKo()) {

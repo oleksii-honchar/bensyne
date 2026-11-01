@@ -5,12 +5,30 @@ import * as path from 'path';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
-import { isFileHealthy } from '../utils/file-health';
 import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
-import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
-import { isPathExcluded } from '../glob-matcher';
+import { ProcessFileOutcome, ProcessFileUseCase } from '../../use-cases/process-file.use-case';
+import { Result } from '../../utils/result';
 import { isPastDue } from '../../utils/ttl-activity';
+import { isPathExcluded } from '../glob-matcher';
+import { isFileHealthy } from '../utils/file-health';
+
+/**
+ * Per-run classification counters for the C8 batch summary line (spec C8,
+ * T6). Accumulated in the existing batch loops from what the loop already
+ * knows; emitted by the public entry methods as
+ * `<mode> finished: files=…, gated-skips=…, terminal-skip-skips=…,
+ * verified-skips=…, re-ingested=…` and returned as the run's summary DATA
+ * (callers in main.ts keep ignoring the return value — exit-code and
+ * early-exit behavior are untouched).
+ */
+export interface BatchRunSummary {
+  files: number;
+  gatedSkips: number;
+  terminalSkipSkips: number;
+  verifiedSkips: number;
+  reIngested: number;
+}
 
 @Injectable()
 export class ForceReprocessService {
@@ -26,47 +44,116 @@ export class ForceReprocessService {
     this.logger = logger.child({ component: 'ForceReprocessService' });
   }
 
-  async forceReprocessAll(sources: WatchSourceConfig[]): Promise<void> {
-    this.logger.info(`Force reprocessing all sources: count=${sources.length}`);
-
-    for (const source of sources) {
-      await this.processSource(source);
-    }
+  // C8 (T6) summary primitives — zero-value summaries are logged too: a
+  // FLAT summary across repeated manual starts IS the acceptance signal
+  // (spec §9 amended), so it only works if quiet runs say so explicitly.
+  private newBatchRunSummary(): BatchRunSummary {
+    return { files: 0, gatedSkips: 0, terminalSkipSkips: 0, verifiedSkips: 0, reIngested: 0 };
   }
 
-  async forceReprocessSource(sourceId: string, sources: WatchSourceConfig[]): Promise<void> {
+  /**
+   * Classify ONE file the loop actually processed (an execute() call):
+   * `files` counts every processed file; ok-payloads carrying the additive
+   * `skipped` marker split into gated vs terminal (no extra DB reads);
+   * any other ok outcome is real ingest work → re-ingested; ko outcomes
+   * are counted in `files` only (their error log already names them).
+   */
+  private countProcessedFile(summary: BatchRunSummary, result: Result<unknown>): void {
+    summary.files += 1;
+    if (result.isKo()) {
+      return;
+    }
+    const outcome = result.getValue() as ProcessFileOutcome | undefined;
+    if (outcome?.skipped === 'unchanged') {
+      summary.gatedSkips += 1;
+      return;
+    }
+    if (outcome?.skipped === 'terminal') {
+      summary.terminalSkipSkips += 1;
+      return;
+    }
+    summary.reIngested += 1;
+  }
+
+  private logBatchSummary(
+    mode: 'resume finished' | 'force-reprocess finished',
+    summary: BatchRunSummary,
+  ): void {
+    this.logger.info(
+      `${mode}: files=${summary.files}, gated-skips=${summary.gatedSkips}, terminal-skip-skips=${summary.terminalSkipSkips}, verified-skips=${summary.verifiedSkips}, re-ingested=${summary.reIngested}`,
+    );
+  }
+
+  // `forceIngest` (C4/DEC-A3): true = deliberate override — bypass the
+  // ProcessFileUseCase hash gate; false = gated walk. Force-reprocess modes
+  // default to true (their documented operator-override semantics, DEC-A6);
+  // the --process-only dispatch passes false explicitly (main.ts).
+  async forceReprocessAll(
+    sources: WatchSourceConfig[],
+    opts: { forceIngest: boolean } = { forceIngest: true },
+  ): Promise<BatchRunSummary> {
+    this.logger.info(`Force reprocessing all sources: count=${sources.length}`);
+
+    const summary = this.newBatchRunSummary();
+    for (const source of sources) {
+      await this.processSource(source, opts, summary);
+    }
+    this.logBatchSummary('force-reprocess finished', summary);
+    return summary;
+  }
+
+  async forceReprocessSource(
+    sourceId: string,
+    sources: WatchSourceConfig[],
+    opts: { forceIngest: boolean } = { forceIngest: true },
+  ): Promise<BatchRunSummary> {
     this.logger.info(`Force reprocessing source; id="${sourceId}"`);
 
     const source = sources.find(s => s.id === sourceId);
     if (!source) {
       this.logger.error(`Source not found; id="${sourceId}"`);
-      return;
+      // Early exit untouched: no run happened, so NO summary is logged — an
+      // empty summary value is returned only for the type's totalness.
+      return this.newBatchRunSummary();
     }
 
-    await this.processSource(source);
+    const summary = this.newBatchRunSummary();
+    await this.processSource(source, opts, summary);
+    this.logBatchSummary('force-reprocess finished', summary);
+    return summary;
   }
 
-  async resumeAll(sources: WatchSourceConfig[]): Promise<void> {
+  async resumeAll(sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
     this.logger.info(`Resuming missing chunks for all sources: count=${sources.length}`);
 
+    const summary = this.newBatchRunSummary();
     for (const source of sources) {
-      await this.resumeSourceInternal(source);
+      await this.resumeSourceInternal(source, summary);
     }
+    this.logBatchSummary('resume finished', summary);
+    return summary;
   }
 
-  async resumeSource(sourceId: string, sources: WatchSourceConfig[]): Promise<void> {
+  async resumeSource(sourceId: string, sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
     this.logger.info(`Resuming missing chunks for source; id="${sourceId}"`);
 
     const source = sources.find(s => s.id === sourceId);
     if (!source) {
       this.logger.error(`Source not found; id="${sourceId}"`);
-      return;
+      return this.newBatchRunSummary();
     }
 
-    await this.resumeSourceInternal(source);
+    const summary = this.newBatchRunSummary();
+    await this.resumeSourceInternal(source, summary);
+    this.logBatchSummary('resume finished', summary);
+    return summary;
   }
 
-  async forceReprocessFile(filePath: string, source: WatchSourceConfig): Promise<void> {
+  async forceReprocessFile(
+    filePath: string,
+    source: WatchSourceConfig,
+    opts: { forceIngest: boolean } = { forceIngest: true },
+  ): Promise<void> {
     this.logger.info(`Force reprocessing single file; path="${filePath}", source="${source.id}"`);
 
     const result = await this.processFileUseCase.execute({
@@ -75,23 +162,31 @@ export class ForceReprocessService {
       sourceId: source.id,
       memoryBank: source.memoryBank,
       sourceConfig: source,
+      forceIngest: opts.forceIngest,
     });
 
     if (result.isKo()) {
-      this.logger.error(`File reprocessing failed: path="${filePath}", error="${result.getFormattedErrors()}"`);
+      this.logger.error(
+        `File reprocessing failed: path="${filePath}", error="${result.getFormattedErrors()}"`,
+      );
     }
   }
 
   /** Startup population: resume only sources that have not opted out. */
-  async autoPopulateSources(sources: WatchSourceConfig[]): Promise<void> {
+  async autoPopulateSources(sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
     const targets = sources.filter(s => s.autoPopulate !== false);
+    const summary = this.newBatchRunSummary();
     for (const source of targets) {
       this.logger.info(`Auto-populating source: id="${source.id}", path="${source.path}"`);
-      await this.resumeSourceInternal(source);
+      await this.resumeSourceInternal(source, summary);
     }
+    // Spec §9 (amended): the auto-populate pass IS a resume pass and its
+    // flat C8 summary across manual watch starts is the acceptance signal.
+    this.logBatchSummary('resume finished', summary);
+    return summary;
   }
 
-  private async resumeSourceInternal(source: WatchSourceConfig): Promise<void> {
+  private async resumeSourceInternal(source: WatchSourceConfig, summary: BatchRunSummary): Promise<void> {
     try {
       const files = await this.getFiles(source);
       this.logger.info(
@@ -142,6 +237,9 @@ export class ForceReprocessService {
           const fileChunks = chunksResult.getValue();
 
           if (isFileHealthy(fileChunks)) {
+            // C8 (T6): loop-level classification — a bank-verified healthy
+            // file never reaches execute(); it is counted as a verified skip.
+            summary.verifiedSkips += 1;
             this.logger.debug(
               `Skipping verified file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
             );
@@ -155,13 +253,24 @@ export class ForceReprocessService {
           this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
         }
 
+        // C4/DEC-A3 split of the shared execute path (only reachable past the
+        // verified-healthy and bank-error skips): memoryIds.length > 0 here
+        // means the stale-tracker branch — bank verification already proved
+        // the memories lost, so the hash gate must not veto the repair (G3).
+        // Untracked files stay gated (false): the hash gate + skip-rows stop
+        // the M2 retry loop at zero bank/LLM cost.
+        const forceReingest = memoryIds.length > 0;
+
         const result = await this.processFileUseCase.execute({
           filePath: file,
           eventType: 'add',
           sourceId: source.id,
           memoryBank: source.memoryBank,
           sourceConfig: source,
+          forceIngest: forceReingest,
         });
+
+        this.countProcessedFile(summary, result);
 
         if (result.isKo()) {
           this.logger.error(`File resume failed: path="${file}", error="${result.getFormattedErrors()}"`);
@@ -192,7 +301,11 @@ export class ForceReprocessService {
     }
   }
 
-  private async processSource(source: WatchSourceConfig): Promise<void> {
+  private async processSource(
+    source: WatchSourceConfig,
+    opts: { forceIngest: boolean },
+    summary: BatchRunSummary,
+  ): Promise<void> {
     try {
       const files = await this.getFiles(source);
       this.logger.info(
@@ -215,7 +328,10 @@ export class ForceReprocessService {
           sourceId: source.id,
           memoryBank: source.memoryBank,
           sourceConfig: source,
+          forceIngest: opts.forceIngest,
         });
+
+        this.countProcessedFile(summary, result);
 
         if (result.isKo()) {
           this.logger.error(

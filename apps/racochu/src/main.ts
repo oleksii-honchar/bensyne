@@ -13,8 +13,8 @@ import { AppModule } from './app.module';
 import { ExcludeReconciliationService } from './application/services/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/services/force-reprocess.service';
 import { ReEmbedService } from './application/services/re-embed.service';
-import { ReprocessEdgesService } from './application/services/reprocess-edges.service';
 import { RecoverService } from './application/services/recover.service';
+import { ReprocessEdgesService } from './application/services/reprocess-edges.service';
 import { TtlReconciliationService } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
@@ -22,6 +22,7 @@ import { NestjsPinoLogger } from './infrastructure/logging/nestjs-pino-logger';
 import { CliArgsService } from './infrastructure/services/cli-args.service';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
 import { FileWatcherService } from './infrastructure/services/file-watcher.service';
+import { InstanceLockService, resolveWatchLockPath } from './infrastructure/services/instance-lock.service';
 
 export async function bootstrap(): Promise<void> {
   // Parse CLI args before NestJS bootstrap (need minimal logger for help/version)
@@ -171,13 +172,15 @@ export async function bootstrap(): Promise<void> {
         await app.close();
         process.exit(1);
       }
-      await forceReprocessService.forceReprocessFile(args.file, source);
+      // C4: --force-reprocess is the documented operator override — pass the
+      // explicit gate bypass at every entry mode.
+      await forceReprocessService.forceReprocessFile(args.file, source, { forceIngest: true });
     } else if (args.source) {
       logger.info(`Force reprocessing source: ${args.source}`);
-      await forceReprocessService.forceReprocessSource(args.source, sources);
+      await forceReprocessService.forceReprocessSource(args.source, sources, { forceIngest: true });
     } else {
       logger.info('Force reprocessing all sources');
-      await forceReprocessService.forceReprocessAll(sources);
+      await forceReprocessService.forceReprocessAll(sources, { forceIngest: true });
     }
 
     // If --process-only with --force-reprocess, wait for queue
@@ -220,11 +223,13 @@ export async function bootstrap(): Promise<void> {
 
   // Handle process-only (no force-reprocess and no resume)
   if (args.processOnly && !args.forceReprocess && !args.resume) {
+    // DEC-A6: reuses the same walk methods but is GATED (the approved behavior
+    // change) — safe as a catch-up pass; --force-reprocess remains the override.
     logger.info('Process-only mode: processing existing files without watching');
     if (args.source) {
-      await forceReprocessService.forceReprocessSource(args.source, sources);
+      await forceReprocessService.forceReprocessSource(args.source, sources, { forceIngest: false });
     } else {
-      await forceReprocessService.forceReprocessAll(sources);
+      await forceReprocessService.forceReprocessAll(sources, { forceIngest: false });
     }
     await processingQueue.waitForEmpty();
     logger.info('Processing complete, exiting');
@@ -244,7 +249,12 @@ export async function bootstrap(): Promise<void> {
         await app.close();
         process.exit(1);
       }
-      await recoverService.recoverFile(args.file, args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+      await recoverService.recoverFile(
+        args.file,
+        args.source,
+        sources,
+        args.dryRun ? { dryRun: true } : undefined,
+      );
     } else if (args.source) {
       logger.info(`Recovering missing chunks for source: ${args.source}`);
       await recoverService.recoverSource(args.source, sources, args.dryRun ? { dryRun: true } : undefined);
@@ -266,7 +276,12 @@ export async function bootstrap(): Promise<void> {
         await app.close();
         process.exit(1);
       }
-      await reEmbedService.reEmbedFile(args.file, args.source, sources, args.dryRun ? { dryRun: true } : undefined);
+      await reEmbedService.reEmbedFile(
+        args.file,
+        args.source,
+        sources,
+        args.dryRun ? { dryRun: true } : undefined,
+      );
     } else if (args.source) {
       logger.info(`Re-embedding files with missing embeddings for source: ${args.source}`);
       await reEmbedService.reEmbedSource(args.source, sources, args.dryRun ? { dryRun: true } : undefined);
@@ -282,6 +297,23 @@ export async function bootstrap(): Promise<void> {
 
   // Start file watcher (default watch mode)
   if (args.watch) {
+    // C6 (amended DEC-A5): with manual CLI starts as the operating model, this
+    // lock is the only guard against overlapping watchers — acquire it BEFORE
+    // auto-populate runs. One-shot modes exited above and never touch it.
+    const instanceLock = new InstanceLockService(resolveWatchLockPath());
+    const lockResult = instanceLock.acquire();
+    if (!lockResult.acquired) {
+      logger.error(`another racochu watch instance holds the lock (pid ${lockResult.holderPid}) — exiting`);
+      await app.close();
+      process.exit(1);
+      return;
+    }
+    // Release the lock on shutdown — the service removes it only while this
+    // process holds it (a non-holder release is a no-op).
+    const removeWatchLock = () => instanceLock.release();
+    process.on('SIGINT', removeWatchLock);
+    process.on('SIGTERM', removeWatchLock);
+
     // Startup auto-population (default true per source). Guard: run only in
     // plain watch mode — --resume / --force-reprocess / --re-embed without --process-only
     // fall through here and must not re-run the same pass.
@@ -292,7 +324,7 @@ export async function bootstrap(): Promise<void> {
       // and per-source errors; .catch guards the outer promise.
       forceReprocessService
         .autoPopulateSources(sources)
-        .catch((error) =>
+        .catch(error =>
           logger.error(`Auto-population failed: ${error instanceof Error ? error.message : String(error)}`),
         );
     }

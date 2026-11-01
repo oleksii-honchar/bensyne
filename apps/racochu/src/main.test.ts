@@ -1,5 +1,9 @@
 import { NestFactory } from '@nestjs/core';
+import * as child_process from 'child_process';
+import * as fs from 'fs';
 import { Logger } from 'nestjs-pino';
+import * as os from 'os';
+import * as path from 'path';
 import {
   ExcludeReconciliationService,
   ReconciliationSummary,
@@ -11,6 +15,7 @@ import { ConfigurationService } from './infrastructure/config/configuration.serv
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
 import { FileProcessingQueue } from './infrastructure/services/file-processing-queue.service';
 import { FileWatcherService } from './infrastructure/services/file-watcher.service';
+import { resolveWatchLockPath } from './infrastructure/services/instance-lock.service';
 import { bootstrap } from './main';
 
 // Mock NestFactory so bootstrap() never constructs a real Nest application.
@@ -19,6 +24,29 @@ jest.mock('@nestjs/core', () => ({
     createApplicationContext: jest.fn(),
   },
 }));
+
+// C6 test seam: the REAL InstanceLockService runs against real fs in a temp
+// dir; only the data-dir path resolution is redirected per test.
+jest.mock('./infrastructure/services/instance-lock.service', () => {
+  const actual = jest.requireActual('./infrastructure/services/instance-lock.service');
+  return {
+    ...actual,
+    resolveWatchLockPath: jest.fn((): string => path.join(os.tmpdir(), 'racochu-unconfigured.watch.lock')),
+  };
+});
+const mockedResolveWatchLockPath = jest.mocked(resolveWatchLockPath);
+
+// Pid above every supported OS pid ceiling — process.kill(pid, 0) ESRCHs,
+// so the real liveness check treats the holder as dead.
+const DEAD_PID = 2147483647;
+
+const createdLockDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of createdLockDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const EMPTY_SUMMARY: ReconciliationSummary = {
   sourcesChecked: 0,
@@ -47,6 +75,8 @@ const EMPTY_TTL_SUMMARY: TtlSweepSummary = {
 };
 
 interface Harness {
+  logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
+  watchLockPath: string;
   excludeReconciliationService: { run: jest.MockedFunction<() => Promise<ReconciliationSummary>> };
   forceReprocessService: {
     resumeSource: jest.Mock;
@@ -73,12 +103,20 @@ const setupBootstrap = (argv: string[]): Harness => {
 
   services.set(Logger, { child: jest.fn().mockReturnThis() });
 
-  services.set(BasePinoLogger, {
+  const logger = {
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
     child: jest.fn().mockReturnThis(),
-  });
+  };
+  services.set(BasePinoLogger, logger);
+
+  // C6: every bootstrap run drives the real InstanceLockService against a
+  // throwaway lock path so watch-mode tests never touch the repo data dir.
+  const lockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'racochu-main-lock-'));
+  createdLockDirs.push(lockDir);
+  const watchLockPath = path.join(lockDir, 'racochu.watch.lock');
+  mockedResolveWatchLockPath.mockReturnValue(watchLockPath);
 
   services.set(ConfigurationService, {
     getWatchSources: jest.fn().mockReturnValue([{ id: 'src-1', path: '/src/1' }]),
@@ -131,6 +169,8 @@ const setupBootstrap = (argv: string[]): Harness => {
   process.argv = argv;
 
   return {
+    logger,
+    watchLockPath,
     excludeReconciliationService,
     forceReprocessService,
     recoverService,
@@ -196,6 +236,11 @@ describe('main bootstrap — startup exclude reconciliation wiring', () => {
     expect(excludeReconciliationService.run).toHaveBeenCalledTimes(1);
     expect(ttlReconciliationService.run).toHaveBeenCalledWith(false);
     expect(forceReprocessService.forceReprocessAll).toHaveBeenCalledTimes(1);
+    // T4/C4: the --force-reprocess dispatch is the operator override — it must
+    // pass the explicit bypass flag to the shared walk methods.
+    expect(forceReprocessService.forceReprocessAll).toHaveBeenCalledWith(expect.any(Array), {
+      forceIngest: true,
+    });
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
@@ -211,6 +256,11 @@ describe('main bootstrap — startup exclude reconciliation wiring', () => {
     expect(excludeReconciliationService.run).toHaveBeenCalledTimes(1);
     expect(ttlReconciliationService.run).toHaveBeenCalledWith(false);
     expect(forceReprocessService.forceReprocessAll).toHaveBeenCalledTimes(1);
+    // T4/DEC-A6: --process-only reuses the same methods but stays GATED —
+    // the explicit false is the approved behavior change.
+    expect(forceReprocessService.forceReprocessAll).toHaveBeenCalledWith(expect.any(Array), {
+      forceIngest: false,
+    });
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
@@ -407,5 +457,106 @@ describe('main bootstrap — startup auto-population wiring', () => {
 
     expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
     expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
+  });
+});
+
+describe('main bootstrap — watch instance lock (C6)', () => {
+  let exitSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it('watch start with a live foreign holder: exits 1 with the holder pid, never reaches auto-populate', async () => {
+    const { logger, watchLockPath, forceReprocessService, fileWatcherService } = setupBootstrap([
+      'node',
+      'main.js',
+    ]);
+    // A real short-lived child process as the foreign live holder — the real
+    // process.kill liveness check must refuse us because of it.
+    const holder = child_process.spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)']);
+    fs.writeFileSync(watchLockPath, String(holder.pid));
+
+    try {
+      await bootstrap();
+    } finally {
+      holder.kill();
+    }
+
+    // Operator-facing refusal contract (spec C6 / plan T5-AC2).
+    const refusal = logger.error.mock.calls
+      .flat()
+      .find(
+        (arg: unknown) =>
+          typeof arg === 'string' && arg.includes('another racochu watch instance holds the lock'),
+      );
+    expect(refusal).toBeDefined();
+    expect(refusal).toContain(`pid ${holder.pid}`);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    // The refusal happens BEFORE auto-populate and never starts the watcher.
+    expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
+    expect(fileWatcherService.start).not.toHaveBeenCalled();
+    // The refusal leaves the foreign holder's lock file untouched.
+    expect(fs.readFileSync(watchLockPath, 'utf-8')).toBe(String(holder.pid));
+  });
+
+  it('watch start with a stale holder file: reclaims it and proceeds normally', async () => {
+    const { watchLockPath, forceReprocessService, fileWatcherService } = setupBootstrap(['node', 'main.js']);
+    fs.writeFileSync(watchLockPath, String(DEAD_PID));
+
+    await bootstrap();
+
+    // Reclaimed: the file now carries THIS process's pid (real liveness probe).
+    expect(fs.readFileSync(watchLockPath, 'utf-8')).toBe(String(process.pid));
+    // And startup proceeds: auto-populate then watcher start, no exit.
+    expect(forceReprocessService.autoPopulateSources).toHaveBeenCalledTimes(1);
+    expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('watch start takes the lock, and signal shutdown removes the lock this process holds', async () => {
+    const sigtermBefore = new Set(process.listeners('SIGTERM'));
+    const { watchLockPath } = setupBootstrap(['node', 'main.js']);
+
+    await bootstrap();
+
+    expect(fs.readFileSync(watchLockPath, 'utf-8')).toBe(String(process.pid));
+
+    // Invoke the signal handlers this bootstrap run registered (the lock
+    // remover and the keep-alive exit handler — exit is mocked).
+    for (const listener of process.listeners('SIGTERM')) {
+      if (!sigtermBefore.has(listener)) {
+        (listener as NodeJS.SignalsListener)('SIGTERM');
+      }
+    }
+
+    expect(fs.existsSync(watchLockPath)).toBe(false);
+  });
+
+  it('non-watch code paths never reference the lock (import-only isolation)', () => {
+    const srcRoot = path.join(__dirname);
+    const consumers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+          if (fs.readFileSync(full, 'utf-8').includes('instance-lock.service')) {
+            consumers.push(path.relative(srcRoot, full));
+          }
+        }
+      }
+    };
+    walk(srcRoot);
+
+    // Only the entry point consumes the lock — no other production file in
+    // src may reference the module (import-only isolation, plan T5-AC1).
+    expect(consumers.sort()).toEqual(['main.ts']);
   });
 });

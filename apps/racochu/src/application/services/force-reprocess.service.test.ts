@@ -20,7 +20,12 @@ import { ProcessFileUseCase } from '../../use-cases/process-file.use-case';
 import { aProcessFileUseCase } from '../../use-cases/process-file.use-case.test-utils';
 import { Result } from '../../utils/result';
 import { mockDirStats, mockDirent, mockFileStats } from '../../utils/test-utils';
-import { ForceReprocessService } from './force-reprocess.service';
+import { BatchRunSummary, ForceReprocessService } from './force-reprocess.service';
+import {
+  aZeroRunSummary,
+  scriptOutcomesByPath,
+  summaryLinesFrom,
+} from './force-reprocess.service.test-utils';
 
 jest.mock('fs/promises');
 const fsMock = fsPromises as jest.Mocked<typeof fsPromises>;
@@ -288,6 +293,8 @@ describe('ForceReprocessService', () => {
         sourceId: 'my-source',
         memoryBank: 'my-source',
         sourceConfig: source,
+        // T4: force-reprocess paths carry the explicit override flag.
+        forceIngest: true,
       });
       expect(processingQueue.addToQueue).not.toHaveBeenCalled();
     });
@@ -384,6 +391,8 @@ describe('ForceReprocessService', () => {
         sourceId: 'test',
         memoryBank: 'test',
         sourceConfig: source,
+        // T4: resume untracked stays gated (stops the M2 retry loop).
+        forceIngest: false,
       });
     });
 
@@ -404,6 +413,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'test',
         memoryBank: 'test',
         sourceConfig: source,
+        forceIngest: false,
       });
     });
 
@@ -439,6 +449,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'source-1',
         memoryBank: 'source-1',
         sourceConfig: sources[0],
+        forceIngest: false,
       });
       expect(processFileUseCase.execute).toHaveBeenNthCalledWith(2, {
         filePath: '/tmp/source-2/untracked.md',
@@ -446,6 +457,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'source-2',
         memoryBank: 'source-2',
         sourceConfig: sources[1],
+        forceIngest: false,
       });
     });
 
@@ -506,6 +518,8 @@ describe('ForceReprocessService', () => {
         sourceId: 'test',
         memoryBank: 'test',
         sourceConfig: source,
+        // T4: bank verification proved loss — the repair must never be gated.
+        forceIngest: true,
       });
     });
 
@@ -554,6 +568,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'test',
         memoryBank: 'test',
         sourceConfig: source,
+        forceIngest: true,
       });
     });
 
@@ -583,6 +598,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'test',
         memoryBank: 'test',
         sourceConfig: source,
+        forceIngest: true,
       });
     });
 
@@ -735,6 +751,7 @@ describe('ForceReprocessService', () => {
         sourceId: 'source-2',
         memoryBank: 'source-2',
         sourceConfig: sources[1],
+        forceIngest: false,
       });
     });
 
@@ -910,9 +927,7 @@ describe('ForceReprocessService', () => {
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('once.md', false)]);
 
-      await service.forceReprocessAll([
-        aTwoRootSource({ resolvedPaths: ['/dup', '/dup/'] }),
-      ]);
+      await service.forceReprocessAll([aTwoRootSource({ resolvedPaths: ['/dup', '/dup/'] })]);
 
       const processed = processFileUseCase.execute.mock.calls.map(
         call => (call[0] as { filePath: string }).filePath,
@@ -1077,6 +1092,9 @@ describe('ForceReprocessService', () => {
       expect(statTargets).toEqual(['/tmp/plain']);
     });
 
+    // NOTE: resume/reprocess paths that reach execute() also carry the
+    // forceIngest matrix — see the 'forceIngest propagation (C4 / DEC-A3)'
+    // describe at the end of this file.
     it('keeps zero ingest work across repeat resumes of the same past-due set (idempotent w.r.t. restarts)', async () => {
       const source = aTtlSource();
       stubFileMtimes(
@@ -1093,6 +1111,378 @@ describe('ForceReprocessService', () => {
       expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
       expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('forceIngest propagation (C4 / DEC-A3)', () => {
+    // The execute() params ARE the observable boundary for this task: they are
+    // the only input the ProcessFileUseCase hash gate reads (T3 C3).
+    interface CapturedParams {
+      filePath: string;
+      eventType: string;
+      forceIngest?: boolean;
+    }
+    const capturedParams = (): CapturedParams[] =>
+      processFileUseCase.execute.mock.calls.map(call => call[0] as CapturedParams);
+
+    const oneFileSource = (id = 'test', root = '/tmp/test') => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('file1.md', false)]);
+      return aWatchSourceConfig({ id, path: root });
+    };
+
+    describe('force-reprocess entry modes', () => {
+      it('forceReprocessAll with {forceIngest:true} ⇒ every execute() carries forceIngest: true', async () => {
+        await service.forceReprocessAll([oneFileSource()], { forceIngest: true });
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(true);
+      });
+
+      it('forceReprocessAll without opts keeps the operator-override default ⇒ forceIngest: true', async () => {
+        // --force-reprocess semantics are unchanged (DEC-A6): the force paths
+        // are the designated full-rebuild override even when called directly.
+        await service.forceReprocessAll([oneFileSource()]);
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(true);
+      });
+
+      it('forceReprocessAll with {forceIngest:false} (the --process-only dispatch) ⇒ forceIngest: false — walk stays gated', async () => {
+        await service.forceReprocessAll([oneFileSource()], { forceIngest: false });
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(false);
+      });
+
+      it('forceReprocessSource passes the option through — true stays true', async () => {
+        const source = oneFileSource('source-1', '/tmp/source-1');
+        await service.forceReprocessSource('source-1', [source], { forceIngest: true });
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(true);
+      });
+
+      it('forceReprocessSource passes the option through — false stays false (process-only dispatch)', async () => {
+        const source = oneFileSource('source-1', '/tmp/source-1');
+        await service.forceReprocessSource('source-1', [source], { forceIngest: false });
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(false);
+      });
+
+      it('forceReprocessFile (same direct-execute path) carries forceIngest: true by default and with explicit true', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+        await service.forceReprocessFile('/tmp/test/one.md', source);
+        await service.forceReprocessFile('/tmp/test/two.md', source, { forceIngest: true });
+
+        const params = capturedParams();
+        expect(params).toHaveLength(2);
+        expect(params[0].forceIngest).toBe(true);
+        expect(params[1].forceIngest).toBe(true);
+      });
+    });
+
+    describe('resume branch split', () => {
+      it('stale-tracker branch (bank verification proved loss) ⇒ forceIngest: true — repair never gated (G3)', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+        bensyneClient.getFileChunks.mockResolvedValue(
+          Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
+        );
+
+        await service.resumeAll([source]);
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].filePath).toBe('/tmp/test/stale.md');
+        expect(params[0].forceIngest).toBe(true);
+      });
+
+      it('untracked branch ⇒ forceIngest: false — the M2 retry loop is gated', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+        await service.resumeAll([source]);
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].filePath).toBe('/tmp/test/untracked.md');
+        expect(params[0].forceIngest).toBe(false);
+      });
+
+      it('healthy verified files stay skipped by the bank check — no execute regardless of the flag (no-change guard)', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('healthy.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
+        bensyneClient.getFileChunks.mockResolvedValue(
+          Result.ok(
+            aFileChunksInfo({
+              chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
+            }),
+          ),
+        );
+
+        await service.resumeAll([source]);
+
+        expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      });
+
+      it('untracked via autoPopulateSources (same internal path) ⇒ forceIngest: false too', async () => {
+        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+        fsMock.stat.mockResolvedValue(mockDirStats());
+        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
+        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+
+        await service.autoPopulateSources([source]);
+
+        const params = capturedParams();
+        expect(params).toHaveLength(1);
+        expect(params[0].forceIngest).toBe(false);
+      });
+    });
+  });
+
+  describe('C8 per-run summary (T6 / spec C8)', () => {
+    // The counter machine is tested as DATA: the summary the run composes and
+    // returns must equal the scripted outcome counts. The line itself is only
+    // format-asserted once per prefix (narrow log-format exception).
+    const ROOT = '/tmp/c8';
+    const fileAt = (name: string) => `${ROOT}/${name}`;
+
+    const c8Source = (id = 'c8-source', root = ROOT) => aWatchSourceConfig({ id, path: root });
+
+    const enumerate = (...names: string[]) => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue(names.map(n => mockDirent(n, false)));
+    };
+
+    const bankStateOf = (stateOf: Record<string, 'healthy' | 'lost'>) => {
+      bensyneClient.getFileChunks.mockImplementation(async (filePath: string) =>
+        Result.ok(
+          stateOf[filePath] === 'lost'
+            ? aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })
+            : aFileChunksInfo({
+                chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
+              }),
+        ),
+      );
+    };
+
+    it('resume run: returned summary DATA equals the scripted outcome mix', async () => {
+      // Scripted stream: real ingest (with memoryIds), hash-gate skip,
+      // terminal skip — both from the untracked branch through execute();
+      // a loop-level verified-healthy skip; and a stale-tracker forced re-ingest.
+      enumerate('a-fresh.md', 'b-gated.md', 'c-terminal.md', 'd-verified.md', 'e-stale.md');
+      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
+        filePath === fileAt('d-verified.md')
+          ? ['mem-keep-1']
+          : filePath === fileAt('e-stale.md')
+            ? ['mem-lost-1']
+            : [],
+      );
+      bankStateOf({ [fileAt('d-verified.md')]: 'healthy', [fileAt('e-stale.md')]: 'lost' });
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [fileAt('a-fresh.md')]: 'ingest',
+        [fileAt('b-gated.md')]: 'gated-skip',
+        [fileAt('c-terminal.md')]: 'terminal-skip',
+        [fileAt('e-stale.md')]: 'ingest',
+      });
+
+      const summary: BatchRunSummary = await service.resumeAll([c8Source()]);
+
+      expect(summary).toEqual({
+        files: 4, // execute() calls only — the verified-healthy skip never reaches it
+        gatedSkips: 1,
+        terminalSkipSkips: 1,
+        verifiedSkips: 1,
+        reIngested: 2, // fresh ingest + stale-tracker forced re-ingest
+      });
+    });
+
+    it('resume summary accumulates across sources of one run', async () => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('gated.md', false), mockDirent('ingest.md', false)])
+        .mockResolvedValueOnce([mockDirent('verified.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
+        filePath === '/tmp/c8-1/verified.md' ? ['mem-keep-1'] : [],
+      );
+      bankStateOf({ '/tmp/c8-1/verified.md': 'healthy' });
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        '/tmp/c8-0/gated.md': 'gated-skip',
+        '/tmp/c8-0/ingest.md': 'ingest',
+      });
+
+      const summary = await service.resumeAll([c8Source('c8-0', '/tmp/c8-0'), c8Source('c8-1', '/tmp/c8-1')]);
+
+      expect(summary).toEqual({
+        files: 2,
+        gatedSkips: 1,
+        terminalSkipSkips: 0,
+        verifiedSkips: 1,
+        reIngested: 1,
+      });
+    });
+
+    it('single-source run (resumeSource) still composes and returns the summary', async () => {
+      const sources = [c8Source('c8-0'), c8Source('keep-me')];
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('gated.md', false)]);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('gated.md')]: 'gated-skip' });
+
+      const summary = await service.resumeSource('c8-0', sources);
+
+      expect(summary).toEqual({
+        files: 1,
+        gatedSkips: 1,
+        terminalSkipSkips: 0,
+        verifiedSkips: 0,
+        reIngested: 0,
+      });
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
+      ]);
+    });
+
+    it('auto-populate run (resume shape) composes and logs the summary', async () => {
+      // Spec §9 (amended): the flat C8 summary of the auto-populate pass IS
+      // the acceptance check — the run path must carry the summary too.
+      enumerate('gated.md', 'verified.md');
+      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
+        filePath === fileAt('verified.md') ? ['mem-keep-1'] : [],
+      );
+      bankStateOf({ [fileAt('verified.md')]: 'healthy' });
+      scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('gated.md')]: 'gated-skip' });
+
+      const summary = await service.autoPopulateSources([c8Source()]);
+
+      expect(summary).toEqual({
+        files: 1,
+        gatedSkips: 1,
+        terminalSkipSkips: 0,
+        verifiedSkips: 1,
+        reIngested: 0,
+      });
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=1, re-ingested=0',
+      ]);
+    });
+
+    it('failed outcomes count as files only (never as a skip or a re-ingest)', async () => {
+      enumerate('broken.md');
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('broken.md')]: 'failure' });
+
+      const summary = await service.resumeAll([c8Source()]);
+
+      // Counted as a processed file — NOT as a skip and NOT as a re-ingest.
+      expect(summary).toEqual({
+        files: 1,
+        gatedSkips: 0,
+        terminalSkipSkips: 0,
+        verifiedSkips: 0,
+        reIngested: 0,
+      });
+    });
+
+    it('force-reprocess run summary uses the force-reprocess prefix, same tokens', async () => {
+      enumerate('a.md', 'b.md');
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [fileAt('a.md')]: 'ingest',
+        [fileAt('b.md')]: 'ingest',
+      });
+
+      const summary = await service.forceReprocessAll([c8Source()]);
+
+      expect(summary).toEqual({
+        files: 2,
+        gatedSkips: 0,
+        terminalSkipSkips: 0,
+        verifiedSkips: 0,
+        reIngested: 2,
+      });
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'force-reprocess finished: files=2, gated-skips=0, terminal-skip-skips=0, verified-skips=0, re-ingested=2',
+      ]);
+    });
+
+    it('process-only walk (forceIngest:false) classifies gated and terminal skips', async () => {
+      // The process-only dispatch runs the SAME batch path with the gate on,
+      // so the same tokens classify its outcomes — no separate vocabulary.
+      enumerate('gate-hit.md', 'skip-row.md', 'changed.md');
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [fileAt('gate-hit.md')]: 'gated-skip',
+        [fileAt('skip-row.md')]: 'terminal-skip',
+        [fileAt('changed.md')]: 'ingest',
+      });
+
+      const summary = await service.forceReprocessAll([c8Source()], { forceIngest: false });
+
+      expect(summary).toEqual({
+        files: 3,
+        gatedSkips: 1,
+        terminalSkipSkips: 1,
+        verifiedSkips: 0,
+        reIngested: 1,
+      });
+    });
+
+    it('zero-activity runs still log zero-value summaries (flat summaries are the signal)', async () => {
+      enumerate();
+      const resumeSummary = await service.resumeAll([c8Source()]);
+
+      expect(resumeSummary).toEqual(aZeroRunSummary());
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'resume finished: files=0, gated-skips=0, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
+      ]);
+
+      logger.info.mockClear();
+      const forceSummary = await service.forceReprocessAll([c8Source()]);
+
+      expect(forceSummary).toEqual(aZeroRunSummary());
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'force-reprocess finished: files=0, gated-skips=0, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
+      ]);
+    });
+
+    it('emits exactly one summary line per completed run (prefix token + key order)', async () => {
+      enumerate('b-gated.md');
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('b-gated.md')]: 'gated-skip' });
+
+      await service.resumeAll([c8Source()]);
+
+      const lines = summaryLinesFrom(logger.info);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^resume finished: files=\d+, gated-skips=\d+, terminal-skip-skips=\d+, verified-skips=\d+, re-ingested=\d+$/,
+      );
+      expect(lines[0]).toBe(
+        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
+      );
+    });
+
+    it('source-not-found early exits are untouched — no run, no summary', async () => {
+      const sources = [c8Source('real')];
+
+      await service.resumeSource('missing', sources);
+      await service.forceReprocessSource('missing', sources);
+
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(summaryLinesFrom(logger.info)).toEqual([]);
     });
   });
 });
