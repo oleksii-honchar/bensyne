@@ -36,7 +36,7 @@ services:
       # Rebuild when the LiteLLM cert changes:
       #   openssl s_client -connect lite-llm.lan:443 -servername lite-llm.lan -showcerts </dev/null | \
       #     awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' > src/e2e/env-setup/litellm-ca.pem
-      - /Users/oleksii.honchar/www/olho/bensyne/apps/racochu/src/e2e/env-setup/litellm-ca.pem:/usr/local/share/ca-certificates/litellm-ca.crt:ro
+      - ./litellm-ca.pem:/usr/local/share/ca-certificates/litellm-ca.crt:ro
       # E2E data dir is injected per-run by global-setup.ts (fresh temp dir) so
       # each e2e run starts with a clean Bensyne state (no cross-run pollution).
       # Falls back to the repo data/e2e dir for manual `npm run bensyne:start`.
@@ -46,8 +46,12 @@ services:
     # Install numpy (required by bensyne embeddings.py for _embed_api) and
     # the Caddy CA cert before starting the server. The locally-built image
     # uses mnemosyne-memory[mcp] which doesn't include numpy.
+    # The image runs as nobody (USER nobody, d0ec18d security), but
+    # update-ca-certificates needs root; bootstrap as root and drop to the
+    # image user (65534=nobody) for the app process, preserving non-root runtime.
+    user: root
     command:
-      ['sh', '-c', 'pip install -q "numpy>=1.26.0,<2.0.0" && update-ca-certificates && exec python main.py']
+      ['sh', '-c', 'pip install -q "numpy>=1.26.0,<2.0.0" && update-ca-certificates && exec runuser -u nobody -- env HOME=/tmp python main.py']
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 5s

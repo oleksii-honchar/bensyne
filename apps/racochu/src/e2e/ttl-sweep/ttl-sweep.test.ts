@@ -129,7 +129,9 @@ describe('[E2E] TTL Sweep — ingest → dry-run → real sweep (tombstone, idem
   }
 
   /** Run a batch/explicit operation and drain the processing pipeline. */
-  async function runAndDrain(work: () => Promise<void>): Promise<void> {
+  // BatchRunSummary is returned (data) by the batch entry points since T6 —
+  // the helper ignores the value, so accept any resolved type.
+  async function runAndDrain(work: () => Promise<unknown>): Promise<void> {
     await work();
     await processingQueue!.waitForEmpty();
     await new Promise(resolve => setTimeout(resolve, SETTLE_WAIT_MS));

@@ -66,6 +66,12 @@ module.exports = async (): Promise<void> => {
   // ConfigurationModule reads APP_CONFIG_PATH at bootstrap time.
   const dynamicConfigPath = path.join(e2eRoot, 'test-config.yaml');
   const dynamicConfig = {
+    // ADR-1 user-source guard (user-source.validation.ts, since 2026-08-26)
+    // rejects startup without exactly one `user` section. The e2e config declares
+    // a synthetic test user; bank defaults to `user_<id>` per userConfigSchema.
+    user: {
+      id: 'e2e-test-user',
+    },
     mcp: {
       url: 'http://localhost:3001',
       apiKey: 'e2e-test-token',
@@ -116,7 +122,9 @@ module.exports = async (): Promise<void> => {
     enrichment: {
       enabled: true,
       llmUrl: 'https://lite-llm.lan/v1',
-      llmModel: 'qwopus3.6-27b-instruct',
+      // Must name a model currently served by the lite-llm gateway (/v1/models); retired
+      // 'qwopus3.6-27b-instruct' removed gateway-side — swapped 2026-11-01 after /v1/models audit + smoke test (no-think instruct variant: chat-shape + 16k-doc context verified).
+      llmModel: 'qwen3.8-flash-next-no-think',
       apiKey: '$LLM_API_KEY',
       maxConcurrency: 1,
       timeoutMs: 15000,

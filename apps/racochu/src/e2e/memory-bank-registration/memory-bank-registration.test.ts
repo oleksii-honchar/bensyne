@@ -53,6 +53,9 @@ describe('[E2E] Memory Bank Registration — racochu registers memory banks on b
       throw new Error('E2E_WATCH_DIR not set');
     }
     const uniqueConfig = {
+      // ADR-1 user-source guard rejects startup without exactly one `user`
+      // section; same synthetic e2e user as the global test config.
+      user: { id: 'e2e-test-user' },
       mcp: {
         url: 'http://localhost:3001',
         apiKey: 'e2e-test-token',

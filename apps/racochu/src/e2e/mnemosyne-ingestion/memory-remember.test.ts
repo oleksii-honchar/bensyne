@@ -26,6 +26,10 @@ describe('[E2E] Chunking and Mnemosyne Ingestion Flow', () => {
     description: '',
     exclude: [],
     debounceMs: 3000,
+    // autoPopulate became a required prop of the resolved WatchSourceConfig
+    // type (config-schemas autoPopulate default(true), 2026-09-24). Preserve
+    // prior behavior: schema default was true.
+    autoPopulate: true,
     contentFilter: DEFAULT_CONTENT_FILTER_OPTIONS,
   };
 

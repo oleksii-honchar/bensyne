@@ -58,6 +58,9 @@ describe('[E2E] FileWatcher Multi-Root — paths fan-out into one bank (ADR-8)',
       'multiroot-config.yaml',
     );
     const config = {
+      // ADR-1 user-source guard rejects startup without exactly one `user`
+      // section; same synthetic e2e user as the global test config.
+      user: { id: 'e2e-test-user' },
       mcp: {
         url: 'http://localhost:3001',
         apiKey: 'e2e-test-token',

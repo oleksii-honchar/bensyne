@@ -22,14 +22,29 @@ Racochu = RAg COntent CHUnker
    npm run start:dev
    ```
 
-   Watches `./watch-folder-dev` by default.
+   Watches `./watch-folder-dev` by default. Startup applies any pending Prisma
+   migrations automatically (`prisma migrate deploy`) against the SQLite database in
+   the app's `data/` directory — on a development database you never run schema
+   commands by hand. Fresh databases are built from the committed migrations on first
+   start.
 
 3. Drop files into `watch-folder-dev/` — they are auto-chunked and ingested.
 
 ### Production
 
 1. Create `~/.config/racochu.yaml` (see [Configuration](#configuration))
-2. Run:
+2. **Only for a database that predates migration tracking** (it was previously
+   created without a migration history): mark the baseline migration as applied
+   **once**, before the very first start of the new build — otherwise
+   `prisma migrate deploy` fails when it tries to re-create existing tables:
+
+   ```bash
+   npx prisma migrate resolve --applied 0_init
+   ```
+
+   Fresh databases need nothing here — startup `migrate deploy` creates the schema
+   from the committed migrations on its own.
+3. Run:
    ```bash
    npm install
    npm run build
@@ -60,7 +75,7 @@ ProcessFileUseCase
             └─► MnemosyneClient → MCP memory_remember tool
 ```
 
-**Processing model:** Files are processed sequentially via a bounded async queue to avoid overwhelming Mnemosyne. Duplicate processing is prevented by tracking in-memory hashes of recently processed files.
+**Processing model:** Files are processed sequentially via a bounded async queue to avoid overwhelming Mnemosyne. Duplicate processing is prevented by the persistent **content-hash gate**: the hash recorded on each file's tracker row is matched against the current bytes before any work is scheduled — an unchanged file costs one indexed tracker read plus its SHA-256, no chunking and no bank calls (see [Hash gate & terminal skips](#hash-gate--terminal-skips)).
 
 **Key components:**
 
@@ -225,9 +240,10 @@ and shared verbatim by the TTL sweep, `--resume`, and startup auto-population:
 - `ttlDays` is strictly **opt-in per source**. A source that omits it (e.g.
   permanent material like an obsidian bank) has no age gate anywhere and is
   never swept.
-- Explicit intent is **never gated**: `--force-reprocess` (all, one source, or
+- Explicit intent is **never age-gated**: `--force-reprocess` (all, one source, or
   one file), watch `add`/`change` events, `--recover`, and re-embed all act on
-  a past-due file exactly as before. A file coming back through one of those
+  a past-due file exactly as before — the only batch path that also bypasses the
+  content-hash gate is `--force-reprocess`. A file coming back through one of those
   doors is ingested with a fresh tracker row and a fresh retention period.
 - There are deliberately **no "do not re-ingest" markers**: a genuine update
   (a real mtime change) re-arms the file by design, and the next batch pass
@@ -242,11 +258,11 @@ Pass the flag to select the mode (help: `racochu --help`):
 
 | Flag | Mode |
 | ---- | ---- |
-| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup, processing existing files to seed the Mnemosyne database. |
-| `--process-only` | Process existing files once, then exit (no watching) |
-| `-f, --force-reprocess` | Force re-process all sources (sequential reprocess of every file) |
+| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup to pick up everything that changed since the last run — cheap for unchanged files, gated (see [Hash gate & terminal skips](#hash-gate--terminal-skips)). Watch runs are single-instance: see [Running the watcher](#running-the-watcher-manual-operations--single-instance). |
+| `--process-only` | Process existing files once, then exit (no watching). **Gated**: this is a safe catch-up pass — unchanged bytes are skipped by the content-hash gate at the cost of an indexed tracker read + a SHA-256, with no bank or LLM work. |
+| `-f, --force-reprocess` | **Full rebuild, run on purpose** — re-chunks and re-ingests every file regardless of hash (the gate's documented override). Also the escape hatch for stale `CONTENT_FILTERED` skip-rows: after changing a source's `contentFilter` configuration, run `--force-reprocess` for that source to re-evaluate what is now processable. |
 | `--reprocess-edges` | Two-pass reprocessing: after re-chunking files, re-resolve all edge targets via `resolve_file_ref` to fix ghost edges (see [Ghost-Edge Cleanup](#ghost-edge-cleanup--reprocess-edges)) |
-| `-r, --resume` | Resume missing chunks: re-process only files with missing stored chunks |
+| `-r, --resume` | **Cheap catch-up pass with bank-verified repair**: tracked files are verified against the bank first and proven loss is re-ingested (repair runs bypass the gate); everything else is re-queued only through the gate. Ends with a `resume finished:` summary. Note: bare `--resume` (and bare `--force-reprocess`) then stay in watch mode — pair with `--process-only` for an exit-only run. |
 | `--recover` | Recover missing chunks for DB-tracked files, then exit |
 | `--ttl-sweep` | Run the TTL sweep once, then exit (optionally scoped with `-s/--source`) |
 
@@ -260,10 +276,111 @@ compares it against the stored chunk set via bensyne's read-only `getFileChunks`
 tool, and re-ingests only the missing chunks (with enrichment when enabled).
 Untracked files are never touched, and the process exits after the pass.
 
-`--resume` now includes verification that detects and repairs stub rows
-(incomplete file tracker entries). Files with missing or partial chunk records
-are automatically re-processed, eliminating the need for manual intervention
-to fix stub row issues.
+`--resume` / `--resume` are repair-first catch-up passes: files with a tracker
+row are **verified against the bank before being trusted**, and any entry proven
+absent from the bank (including stub rows — incomplete tracker entries) is
+re-ingested even when its bytes are unchanged (verified repair bypasses the
+hash gate). Every other file in the pass goes through the gate, so a second
+resume over an unchanged corpus does near-zero work. Every run ends with a
+`resume finished:` summary line (see [Hash gate & terminal skips](#hash-gate--terminal-skips)).
+Stub and chunk-gap repair stays automatic — no manual intervention needed.
+
+## Running the watcher (manual operations · single instance)
+
+Racochu is a CLI tool the operator **starts manually, on purpose** — by design
+there is no daemon and no supervisor, no auto-restart on crash or reboot, and
+no scheduled reconciliation job. An optional cron of `--resume` is possible but
+is deliberately **not part of this design**. Starting the watcher again after a
+downtime window is cheap and safe: the startup auto-population pass skips
+every unchanged file at the gate.
+
+**Catching up without watching:** run a one-shot pass — `--process-only` (gated,
+safe as catch-up) or, for the deliberate full rebuild, `npm run start:reprocess`
+(`--force-reprocess`). `npm run start:resume` runs the same catch-up pass as
+`--resume` and likewise stays watching afterwards (see below; add
+`--process-only` to the underlying command for an exit-only run).
+
+**Single instance.** A second watcher started while one is already running exits
+with **exit code 1** and names the holder's pid:
+
+```
+another racochu watch instance holds the lock (pid <PID>) — exiting
+```
+
+The lock is the file `data/racochu.watch.lock` under the application root (the
+same resolved data directory as the SQLite database file); it contains the holder
+pid. It is removed when the holding process shuts down on SIGINT/SIGTERM. A
+watcher killed hard leaves its lock file behind — the **stale pid is detected
+and the lock is reclaimed automatically** on the next start (dead or unreadable
+pid → the lock file is replaced, once, and acquisition retried; a live pid from
+any live process still refuses).
+
+**Modes that participate:** anything that keeps the watcher on participates in
+the lock — the default watch start, and bare `--resume` / bare
+`--force-reprocess`, which do not switch watching off: each first performs its
+batch pass, then **continues as a watcher** and participates in the lock (if a
+watcher already holds it, the batch pass still completes — only the watch
+continuation is refused, with exit code 1). Auto-population does not re-run
+in that combined flow: the batch pass already covered it. `--process-only`
+forces watching off. Flags that always run and exit —
+`--recover`, `--ttl-sweep`, `--re-embed`, `--reprocess-edges`,
+and `--force-reprocess --process-only` — neither take the lock nor honor it.
+
+**Downtime is a designed recovery case, not an incident.** While no watcher
+runs, filesystem changes accumulate quietly. On the next watch start the startup
+auto-population reconciles what was missed — an operation that is cheap for
+unchanged content since the hash gate exists, so running
+the watcher in short manual sessions is a supported operating style.
+
+## Hash gate & terminal skips
+
+Racochu does not re-ingest unchanged content. Every batch path (watch events,
+`--process-only`, `--resume`, startup auto-population) first compares the
+file's current SHA-256 against the hash stored on its tracker row. Only a
+stored hash that equals the current bytes skips a file; every other case —
+new file, no stored hash — proceeds normally.
+
+- **Unchanged bytes** — one indexed lookup + the file's own hash read; no
+  chunking, no classification, no bank calls. The log line (see
+  [Logs](#logs)):
+
+  ```
+  Skipping unchanged file (hash gate): path="…", fileHash="a1b2c3d4e5f6"
+  ```
+
+- **Never-ingestable files** — empty/whitespace-only content, content excluded
+  by the source's content filter, and files that produce zero chunks — are
+  **recorded once, per their content hash**, as a *terminal skip*. The file is
+  neither re-chunked nor re-classified on any later pass while its bytes are
+  unchanged; the recorded verdict is reused. When the **content changes**, the
+  new bytes no longer match the recorded hash and the file **is re-evaluated
+  automatically** — a terminal skip is bound to bytes, never to a path
+  forever. Each recording logs:
+
+  ```
+  terminal-skip-recorded reason=<EMPTY_CONTENT|CONTENT_FILTERED|ZERO_CHUNKS> path="…"
+  ```
+
+  The only forced re-evaluation is `--force-reprocess`, which bypasses the
+  gate (for filtered files: the escape hatch after a `contentFilter` change,
+  see the modes table).
+- **The gate fails open.** If its inputs are unreadable (database error, no
+  hash computable), the file is processed as if no gate existed — a degraded
+  racochu may repeat work but never silently loses a file.
+
+**Observing outcomes.** The per-file lines above plus the per-pass summary tell
+you exactly what a run did — batch runs (resume, force-reprocess, auto-populate)
+end with:
+
+```
+resume finished: files=…, gated-skips=…, terminal-skip-skips=…, verified-skips=…, re-ingested=…
+force-reprocess finished: files=…, gated-skips=…, terminal-skip-skips=…, verified-skips=…, re-ingested=…
+```
+
+All of this is plain structured-log content (see [Logs](#logs)): grepping these
+tokens after a run reproduces the per-outcome histogram — expect high
+`gated-skips`/`verified-skips` and near-zero `re-ingested` on repeat starts over
+unchanged data.
 
 ## Ghost-Edge Cleanup (`--reprocess-edges`)
 
@@ -539,7 +656,11 @@ node -e "const https=require('https');const r=https.request('https://lite-llm.la
 no code change needed. Do **not** commit the CA PEM to the repo (machine-local trust).
 
 **Duplicate chunk processing:**
-Normal on restart — in-memory dedup is reset. Mnemosyne handles dedup at storage level.
+Not expected for unchanged files since the content-hash gate — repeats are
+reported as `Skipping unchanged file (hash gate)`. Files that genuinely changed,
+untracked files whose bytes differ from their recorded hash, or anything
+processed via `--force-reprocess` is re-ingested by design; Mnemosyne also
+handles dedup at storage level.
 
 ## Requirements
 
