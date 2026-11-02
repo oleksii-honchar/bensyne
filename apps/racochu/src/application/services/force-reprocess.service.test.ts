@@ -23,8 +23,10 @@ import { mockDirStats, mockDirent, mockFileStats } from '../../utils/test-utils'
 import { BatchRunSummary, ForceReprocessService } from './force-reprocess.service';
 import {
   aZeroRunSummary,
+  heartbeatLinesFrom,
   scriptOutcomesByPath,
   summaryLinesFrom,
+  type ScriptedOutcomeKind,
 } from './force-reprocess.service.test-utils';
 
 jest.mock('fs/promises');
@@ -1483,6 +1485,242 @@ describe('ForceReprocessService', () => {
 
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
       expect(summaryLinesFrom(logger.info)).toEqual([]);
+    });
+  });
+
+  describe('progress heartbeat in batch loops (Ad-Hoc F — operator visibility)', () => {
+    // The payfit incident: a --resume over 8304 files ran 45+ minutes emitting
+    // nothing between "Files found for resume" and the final summary (healthy
+    // files log only at DEBUG). The heartbeat line IS the user-visible feature:
+    // its format is pinned under the narrow C8/T6 log-contract exception
+    // (one format test per prefix); cadence and counting tests pin the exact
+    // cumulative strings from independently computed milestones.
+    const RESUME_HB_RE =
+      /^resume progress: \d+\/\d+ processed \(verified=\d+, gated=\d+, stale-repair=\d+, untracked=\d+, failures=\d+\)$/;
+    const FORCE_HB_RE =
+      /^force-reprocess progress: \d+\/\d+ processed \(verified=\d+, gated=\d+, stale-repair=\d+, untracked=\d+, failures=\d+\)$/;
+
+    const HB_ROOT = '/tmp/hb';
+    const hbName = (n: number) => `file-${String(n).padStart(3, '0')}.md`;
+    const hbPath = (n: number) => `${HB_ROOT}/${hbName(n)}`;
+    const hbIndex = (filePath: string) => Number(/file-(\d+)\.md$/.exec(filePath)?.[1] ?? NaN);
+    const hbSource = () => aWatchSourceConfig({ id: 'hb-source', path: HB_ROOT });
+
+    const enumerateHb = (count: number) => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue(
+        Array.from({ length: count }, (_, i) => mockDirent(hbName(i + 1), false)),
+      );
+    };
+
+    // Deterministic role assignment for the mixed stream (pairwise-disjoint
+    // residues: verified≡0 mod 50, stale≡7 mod 100, failure≡3 mod 50, gated≡11 mod 25).
+    const isVerifiedAt = (n: number) => n % 50 === 0; // bank-verified healthy skip (never executes)
+    const isStaleAt = (n: number) => n % 100 === 7; // stale-tracker branch pre-classification
+    const isFailureAt = (n: number) => n % 50 === 3; // execute → Result.ko
+    const isGatedAt = (n: number) => n % 25 === 11; // execute → ok + skipped='unchanged'
+
+    const countUpTo = (pred: (n: number) => boolean, limit: number): number => {
+      let total = 0;
+      for (let n = 1; n <= limit; n++) {
+        if (pred(n)) total += 1;
+      }
+      return total;
+    };
+
+    const scriptResumeRoles = (count: number) => {
+      enumerateHb(count);
+      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) => {
+        const n = hbIndex(filePath);
+        return isVerifiedAt(n) || isStaleAt(n) ? [`mem-tracker-${n}`] : [];
+      });
+      bensyneClient.getFileChunks.mockImplementation(async (filePath: string) =>
+        Result.ok(
+          isStaleAt(hbIndex(filePath))
+            ? aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })
+            : aFileChunksInfo({
+                chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
+              }),
+        ),
+      );
+      const script: Record<string, ScriptedOutcomeKind> = {};
+      for (let n = 1; n <= count; n++) {
+        if (isVerifiedAt(n)) continue; // verified-healthy files never reach execute()
+        script[hbPath(n)] = isFailureAt(n) ? 'failure' : isGatedAt(n) ? 'gated-skip' : 'ingest';
+      }
+      scriptOutcomesByPath(processFileUseCase.execute, script);
+    };
+
+    const scriptForceRoles = (count: number) => {
+      enumerateHb(count);
+      const script: Record<string, ScriptedOutcomeKind> = {};
+      for (let n = 1; n <= count; n++) {
+        script[hbPath(n)] = isFailureAt(n) ? 'failure' : isGatedAt(n) ? 'gated-skip' : 'ingest';
+      }
+      scriptOutcomesByPath(processFileUseCase.execute, script);
+    };
+
+    const withNoRoles = (count: number) => {
+      enumerateHb(count);
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      // scriptOutcomesByPath default → every file is an ordinary successful ingest.
+      scriptOutcomesByPath(processFileUseCase.execute, {});
+    };
+
+    const resumeHeartbeat = (
+      processed: number,
+      total: number,
+      fields: [verified: number, gated: number, stale: number, untracked: number, failures: number],
+    ) =>
+      `resume progress: ${processed}/${total} processed (verified=${fields[0]}, gated=${fields[1]}, stale-repair=${fields[2]}, untracked=${fields[3]}, failures=${fields[4]})`;
+
+    const forceHeartbeat = (processed: number, total: number, gated: number, failures: number) =>
+      `force-reprocess progress: ${processed}/${total} processed (verified=0, gated=${gated}, stale-repair=0, untracked=0, failures=${failures})`;
+
+    // Cumulative field values for the resume role-stream at milestone k — read
+    // straight off the role definitions (pairwise disjoint, so untracked =
+    // everything the loop classifies into neither verified nor stale).
+    const fieldsAt = (k: number): [number, number, number, number, number] => {
+      const verified = countUpTo(isVerifiedAt, k);
+      const stale = countUpTo(isStaleAt, k);
+      const gated = countUpTo(isGatedAt, k);
+      const failures = countUpTo(isFailureAt, k);
+      const untracked = k - verified - stale;
+      return [verified, gated, stale, untracked, failures];
+    };
+
+    it('resumes of 250 mixed files emit heartbeats EXACTLY at 100 and 200 with correct cumulative fields (none at 50/150/250)', async () => {
+      scriptResumeRoles(250);
+
+      await service.resumeAll([hbSource()]);
+
+      expect(heartbeatLinesFrom(logger.info)).toEqual([
+        resumeHeartbeat(100, 250, fieldsAt(100)),
+        resumeHeartbeat(200, 250, fieldsAt(200)),
+      ]);
+    });
+
+    it('a run of exactly 100 files emits one 100/100 heartbeat and then only the normal final summary (no duplicate)', async () => {
+      scriptResumeRoles(100);
+
+      await service.resumeAll([hbSource()]);
+
+      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 100, fieldsAt(100))]);
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'resume finished: files=98, gated-skips=4, terminal-skip-skips=0, verified-skips=2, re-ingested=92',
+      ]);
+    });
+
+    it('runs below 100 files emit zero heartbeats in either loop, per-file log volume unchanged (count-probe)', async () => {
+      scriptResumeRoles(99);
+      await service.resumeAll([hbSource()]);
+      expect(heartbeatLinesFrom(logger.info)).toEqual([]);
+
+      scriptForceRoles(99);
+      await service.forceReprocessAll([hbSource()]);
+      expect(heartbeatLinesFrom(logger.info)).toEqual([]);
+      // Unchanged per-file volume: the existing per-file INFO still fires
+      // exactly once per processed file, and NOTHING else was added.
+      const perFileProcessLines = logger.info.mock.calls
+        .map(call => String(call[0]))
+        .filter(line => line.startsWith('Processing file [')).length;
+      expect(perFileProcessLines).toBe(99);
+    });
+
+    it('resume progress line matches the contracted format exactly (format contract, resume prefix)', async () => {
+      withNoRoles(130);
+
+      await service.resumeAll([hbSource()]);
+
+      const lines = heartbeatLinesFrom(logger.info);
+      expect(lines).toEqual([
+        'resume progress: 100/130 processed (verified=0, gated=0, stale-repair=0, untracked=100, failures=0)',
+      ]);
+      expect(lines[0]).toMatch(RESUME_HB_RE);
+    });
+
+    it('process-only walk of the force-reprocess loop mirrors the field list under the force prefix — non-zero outcomes count, branch fields stay 0 (format contract)', async () => {
+      scriptForceRoles(250);
+
+      // Run with forceIngest:false — the --process-only dispatch. The prefix is
+      // produced by the loop, not the flag: force-reprocess entries share this
+      // exact code path (single newLoopProgress call site), so the same
+      // contract holds for both — documented shared-path argument.
+      await service.forceReprocessAll([hbSource()], { forceIngest: false });
+
+      const lines = heartbeatLinesFrom(logger.info);
+      expect(lines).toEqual([
+        forceHeartbeat(100, 250, countUpTo(isGatedAt, 100), countUpTo(isFailureAt, 100)),
+        forceHeartbeat(200, 250, countUpTo(isGatedAt, 200), countUpTo(isFailureAt, 200)),
+      ]);
+      for (const line of lines) {
+        expect(line).toMatch(FORCE_HB_RE);
+      }
+    });
+
+    it('auto-populate passes the resume prefix to its heartbeats (same loop, shared signal)', async () => {
+      scriptResumeRoles(150);
+
+      await service.autoPopulateSources([hbSource()]);
+
+      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 150, fieldsAt(100))]);
+    });
+
+    it('field provenance: terminal-skip files never appear as a heartbeat field; stale/untracked are branch classifications; ko adds failures on top', async () => {
+      // Files 1–3 are bank-verified healthy; 97 untracked files reach execute
+      // (1 terminal-skip, 1 gated, 1 ko, 94 ingests). At processed=100 the
+      // line carries: verified=3, gated=1, stale-repair=0, untracked=97
+      // (ALL non-verified branch files — terminal-skip and ko files included,
+      // that is their branch), failures=1. The terminal-skip file contributes
+      // to no field of its own; a stale-branch ko would count in BOTH
+      // stale-repair and failures (documented overlap semantics).
+      enumerateHb(100);
+      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) => {
+        const n = hbIndex(filePath);
+        return n <= 3 ? [`mem-tracker-${n}`] : [];
+      });
+      bensyneClient.getFileChunks.mockResolvedValue(
+        Result.ok(
+          aFileChunksInfo({ chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })] }),
+        ),
+      );
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [hbPath(97)]: 'terminal-skip',
+        [hbPath(98)]: 'gated-skip',
+        [hbPath(99)]: 'failure',
+      });
+
+      await service.resumeAll([hbSource()]);
+
+      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 100, [3, 1, 0, 97, 1])]);
+    });
+
+    it('per-loop heartbeats reset per source run: a 60-file second source adds no heartbeat (loop-local processed)', async () => {
+      const sources = [
+        aWatchSourceConfig({ id: 'hb-1', path: '/tmp/hb-1' }),
+        aWatchSourceConfig({ id: 'hb-2', path: '/tmp/hb-2' }),
+      ];
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce(Array.from({ length: 150 }, (_, i) => mockDirent(hbName(i + 1), false)))
+        .mockResolvedValueOnce(Array.from({ length: 60 }, (_, i) => mockDirent(hbName(i + 1), false)));
+      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      scriptOutcomesByPath(processFileUseCase.execute, {});
+
+      await service.resumeAll(sources);
+
+      // Source 1 (150 files): ONE heartbeat at its own 100 with total=150.
+      // Source 2 (60 files): below its loop threshold — nothing.
+      expect(heartbeatLinesFrom(logger.info)).toEqual([
+        'resume progress: 100/150 processed (verified=0, gated=0, stale-repair=0, untracked=100, failures=0)',
+      ]);
+    });
+
+    it('source-not-found early exits log no heartbeat (untouched early-exit path)', async () => {
+      await service.resumeSource('missing', [hbSource()]);
+      await service.forceReprocessSource('missing', [hbSource()]);
+
+      expect(heartbeatLinesFrom(logger.info)).toEqual([]);
     });
   });
 });

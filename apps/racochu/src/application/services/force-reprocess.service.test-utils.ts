@@ -68,3 +68,11 @@ export const aZeroRunSummary = (): BatchRunSummary => ({
 /** Info-log lines carrying a per-run summary (format + presence assertions). */
 export const summaryLinesFrom = (infoMock: { mock: { calls: unknown[][] } }): string[] =>
   infoMock.mock.calls.map(call => String(call[0])).filter(line => line.includes('finished: files='));
+
+/**
+ * Info-log lines carrying a mid-run progress heartbeat (Ad-Hoc Task F).
+ * Matches both prefixes ('resume progress:', 'force-reprocess progress:');
+ * no other line this service emits contains the leading-space token.
+ */
+export const heartbeatLinesFrom = (infoMock: { mock: { calls: unknown[][] } }): string[] =>
+  infoMock.mock.calls.map(call => String(call[0])).filter(line => line.includes(' progress: '));

@@ -30,6 +30,41 @@ export interface BatchRunSummary {
   reIngested: number;
 }
 
+/**
+ * Heartbeat cadence for the batch loops (Ad-Hoc Task F — operator
+ * visibility): ONE INFO progress line per this many files handled inside a
+ * loop run, so a long `--resume`/`--force-reprocess` distinguishes slow
+ * steady progress from a hang (payfit incident: 45+ minutes of silence
+ * between "Files found for resume" and the final summary — healthy files
+ * log only at DEBUG). O(corpus/100) lines; per-file volumes unchanged.
+ */
+const PROGRESS_HEARTBEAT_FILES = 100;
+
+/**
+ * Progress state for ONE loop run (one source enumeration) feeding the
+ * heartbeat. Carries only signals the loop already has: loop-local
+ * pre-branch/outcome tallies (stale-tracker, untracked, ko) plus the run's
+ * BatchRunSummary reference — `verified=` and `gated=` are read as
+ * loop-scoped deltas of its existing counters (no new DB reads; the summary
+ * semantics and the final summary lines are untouched). Terminal skips are
+ * deliberately NOT a heartbeat field (fixed operator field list); the final
+ * summary remains the run's terminal artifact.
+ */
+interface LoopProgressState {
+  prefix: 'resume progress' | 'force-reprocess progress';
+  /** Files enumerated for THIS loop run — the heartbeat denominator. */
+  total: number;
+  runSummary: BatchRunSummary;
+  baseVerifiedSkips: number;
+  baseGatedSkips: number;
+  /** Files classified through the stale-tracker pre-branch (loop-local). */
+  staleRepairCount: number;
+  /** Files classified through the untracked pre-branch (loop-local). */
+  untrackedCount: number;
+  /** Result.ko outcomes of THIS loop run (loop-local). */
+  failureCount: number;
+}
+
 @Injectable()
 export class ForceReprocessService {
   private readonly logger: BasePinoLogger;
@@ -81,6 +116,47 @@ export class ForceReprocessService {
   ): void {
     this.logger.info(
       `${mode}: files=${summary.files}, gated-skips=${summary.gatedSkips}, terminal-skip-skips=${summary.terminalSkipSkips}, verified-skips=${summary.verifiedSkips}, re-ingested=${summary.reIngested}`,
+    );
+  }
+
+  private newLoopProgress(
+    prefix: LoopProgressState['prefix'],
+    runSummary: BatchRunSummary,
+  ): LoopProgressState {
+    return {
+      prefix,
+      total: 0,
+      runSummary,
+      baseVerifiedSkips: runSummary.verifiedSkips,
+      baseGatedSkips: runSummary.gatedSkips,
+      staleRepairCount: 0,
+      untrackedCount: 0,
+      failureCount: 0,
+    };
+  }
+
+  /**
+   * Heartbeat (Ad-Hoc F): called once per file the loop has finished
+   * handling (every classification path), emitted only at every
+   * PROGRESS_HEARTBEAT-th handled file. Field sources —
+   * verified= loop delta of summary.verifiedSkips (bank-verified healthy
+   * skip branch); gated= loop delta of summary.gatedSkips (ok outcome with
+   * skipped='unchanged'); stale-repair / untracked= the loop's own branch
+   * classifications; failures= Result.ko outcomes. Branch fields and
+   * outcome fields may overlap by design (a ko'd untracked file counts in
+   * both) — the line reads as branch provenance + failure visibility,
+   * exactly per the fixed operator field list. Format is the user-specified
+   * contract: `<prefix>: <processed>/<total> processed (verified=…, gated=…,
+   * stale-repair=…, untracked=…, failures=…)`.
+   */
+  private noteLoopProgress(progress: LoopProgressState, processed: number): void {
+    if (processed % PROGRESS_HEARTBEAT_FILES !== 0) {
+      return;
+    }
+    const verified = progress.runSummary.verifiedSkips - progress.baseVerifiedSkips;
+    const gated = progress.runSummary.gatedSkips - progress.baseGatedSkips;
+    this.logger.info(
+      `${progress.prefix}: ${processed}/${progress.total} processed (verified=${verified}, gated=${gated}, stale-repair=${progress.staleRepairCount}, untracked=${progress.untrackedCount}, failures=${progress.failureCount})`,
     );
   }
 
@@ -193,6 +269,11 @@ export class ForceReprocessService {
         `Files found for resume: source="${source.id}", path="${source.path}", count=${files.length}`,
       );
 
+      // Ad-Hoc F heartbeat: per-loop progress state over THIS enumeration;
+      // all fields come from signals the loop already has (see noteLoopProgress).
+      const progress = this.newLoopProgress('resume progress', summary);
+      progress.total = files.length;
+
       // [i/totalFilesInQueue] is the 1-based queue position (not a stored index).
       const totalFilesInQueue = files.length;
       for (let i = 0; i < files.length; i++) {
@@ -206,6 +287,7 @@ export class ForceReprocessService {
           this.logger.info(
             `Skipping activity-expired file [${position}/${totalFilesInQueue}]: path="${file}"`,
           );
+          this.noteLoopProgress(progress, position);
           continue;
         }
 
@@ -216,6 +298,7 @@ export class ForceReprocessService {
           this.logger.warn(
             `Skipping file for resume; failed to read stored memory count [${position}/${totalFilesInQueue}]: path="${file}", error="${error instanceof Error ? error.message : String(error)}"`,
           );
+          this.noteLoopProgress(progress, position);
           continue;
         }
 
@@ -231,6 +314,7 @@ export class ForceReprocessService {
             this.logger.warn(
               `Bank read error for resume [${position}/${totalFilesInQueue}]: path="${file}", error="${chunksResult.getFormattedErrors()}" — skipping (preserving existing memories)`,
             );
+            this.noteLoopProgress(progress, position);
             continue;
           }
 
@@ -243,13 +327,20 @@ export class ForceReprocessService {
             this.logger.debug(
               `Skipping verified file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
             );
+            // Ad-Hoc F: the healthy-verified files are exactly the DEBUG-only
+            // ones whose silence caused the payfit incident — heartbeat here.
+            this.noteLoopProgress(progress, position);
             continue;
           }
 
+          // Ad-Hoc F field source: stale-tracker pre-branch classification.
+          progress.staleRepairCount += 1;
           this.logger.info(
             `Resuming stale-tracker file (absent from bank) [${position}/${totalFilesInQueue}]: path="${file}"`,
           );
         } else {
+          // Ad-Hoc F field source: untracked pre-branch classification.
+          progress.untrackedCount += 1;
           this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
         }
 
@@ -273,8 +364,11 @@ export class ForceReprocessService {
         this.countProcessedFile(summary, result);
 
         if (result.isKo()) {
+          // Ad-Hoc F field source: failures of this loop run (ko outcomes).
+          progress.failureCount += 1;
           this.logger.error(`File resume failed: path="${file}", error="${result.getFormattedErrors()}"`);
         }
+        this.noteLoopProgress(progress, position);
       }
     } catch (error) {
       this.logger.error(
@@ -312,6 +406,13 @@ export class ForceReprocessService {
         `Files found for reprocessing: source="${source.id}", path="${source.path}", count=${files.length}`,
       );
 
+      // Ad-Hoc F heartbeat mirror for the force-reprocess/process-only loop.
+      // This loop has no pre-branch classifications, so verified/stale/untracked
+      // stay 0 by construction — the field LIST is the fixed contract (documented
+      // reading of "batch loops", plural), gated/failures come from outcomes.
+      const progress = this.newLoopProgress('force-reprocess progress', summary);
+      progress.total = files.length;
+
       // Execute directly — execute() → executeInternal() → addToQueue() already
       // serializes via the queue. Awaiting keeps processing strictly sequential.
       // [i/totalFilesInQueue] is the 1-based queue position (not a stored index).
@@ -334,10 +435,13 @@ export class ForceReprocessService {
         this.countProcessedFile(summary, result);
 
         if (result.isKo()) {
+          // Ad-Hoc F field source: failures of this loop run (ko outcomes).
+          progress.failureCount += 1;
           this.logger.error(
             `File reprocessing failed [${position}/${totalFilesInQueue}]: path="${file}", error="${result.getFormattedErrors()}"`,
           );
         }
+        this.noteLoopProgress(progress, position);
       }
     } catch (error) {
       this.logger.error(
