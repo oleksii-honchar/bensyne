@@ -34,16 +34,21 @@ Racochu = RAg COntent CHUnker
 
 1. Create `~/.config/racochu.yaml` (see [Configuration](#configuration))
 2. **Only for a database that predates migration tracking** (it was previously
-   created without a migration history): mark the baseline migration as applied
-   **once**, before the very first start of the new build — otherwise
-   `prisma migrate deploy` fails when it tries to re-create existing tables:
+   created without a migration history): before the very first start of the new
+   build, run the idempotent baseline reconciler once — it handles the first-deploy
+   `P3005 The database schema is not empty` error (and the known duplicate-column
+   follow-up) by marking already-present migrations as applied, metadata-only —
+   never destructive, never `db push`; on an already-current database it is a
+   no-op:
 
    ```bash
-   npx prisma migrate resolve --applied 0_init
+   npm run db:baseline
    ```
 
    Fresh databases need nothing here — startup `migrate deploy` creates the schema
-   from the committed migrations on its own.
+   from the committed migrations on its own. The script also works as a safe
+   "is my schema current?" check (exit 0 = current; exit 1 = human review needed,
+   nothing was changed).
 3. Run:
    ```bash
    npm install

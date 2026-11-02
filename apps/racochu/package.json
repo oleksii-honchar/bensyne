@@ -39,7 +39,8 @@
     "tests:e2e": "nx run racochu:tests:e2e",
     "build:docker": "nx run racochu:build:docker",
     "start:docker": "nx run racochu:start:docker",
-    "bump-version": "node scripts/bump-version.mjs --app apps/racochu"
+    "bump-version": "node scripts/bump-version.mjs --app apps/racochu",
+    "db:baseline": "node scripts/db-baseline.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.52",
