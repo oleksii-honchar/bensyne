@@ -8,6 +8,11 @@
 #   scripts/reprocess-edges.sh --passes 3        # run N passes (default 3)
 #   scripts/reprocess-edges.sh --build           # rebuild dist first
 #
+# NOTE: racochu now self-heals persona decision-tree edges automatically at
+# startup (start / --resume / process-only flows; opt out with
+# --skip-edge-reconcile). This script remains for operator-driven MULTI-PASS
+# ghost-edge sweeps over ALL sources with full logging.
+#
 # The edge reprocessing process:
 # 1. Builds a file ID map for all files in the source (pass 1)
 # 2. For each file, calls expand_file_relations to get its edges

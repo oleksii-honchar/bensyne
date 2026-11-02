@@ -10,6 +10,7 @@ import {
 } from './application/services/exclude-reconciliation.service';
 import { ForceReprocessService } from './application/services/force-reprocess.service';
 import { RecoverService } from './application/services/recover.service';
+import { ReprocessEdgesService } from './application/services/reprocess-edges.service';
 import { TtlReconciliationService, TtlSweepSummary } from './application/services/ttl-reconciliation.service';
 import { ConfigurationService } from './infrastructure/config/configuration.service';
 import { BasePinoLogger } from './infrastructure/logging/base-pino-logger';
@@ -89,6 +90,10 @@ interface Harness {
     recoverSource: jest.Mock;
     recoverAll: jest.Mock;
   };
+  reprocessEdgesService: {
+    reprocessAll: jest.Mock;
+    reprocessSource: jest.Mock;
+  };
   fileWatcherService: { start: jest.Mock };
   ttlReconciliationService: {
     run: jest.MockedFunction<(dryRun?: boolean, sourceId?: string) => Promise<TtlSweepSummary>>;
@@ -97,7 +102,10 @@ interface Harness {
   app: { close: jest.Mock };
 }
 
-const setupBootstrap = (argv: string[]): Harness => {
+const setupBootstrap = (
+  argv: string[],
+  watchSources: { id: string; path: string }[] = [{ id: 'src-1', path: '/src/1' }],
+): Harness => {
   // Map keyed by Nest DI tokens (the class constructors) -> mock instance.
   const services = new Map<unknown, unknown>();
 
@@ -119,7 +127,7 @@ const setupBootstrap = (argv: string[]): Harness => {
   mockedResolveWatchLockPath.mockReturnValue(watchLockPath);
 
   services.set(ConfigurationService, {
-    getWatchSources: jest.fn().mockReturnValue([{ id: 'src-1', path: '/src/1' }]),
+    getWatchSources: jest.fn().mockReturnValue(watchSources),
     getMcpConfig: jest.fn().mockReturnValue({ url: 'http://mcp:8080' }),
   });
 
@@ -137,6 +145,12 @@ const setupBootstrap = (argv: string[]): Harness => {
     recoverAll: jest.fn().mockResolvedValue(undefined),
   };
   services.set(RecoverService, recoverService);
+
+  const reprocessEdgesService = {
+    reprocessAll: jest.fn().mockResolvedValue(undefined),
+    reprocessSource: jest.fn().mockResolvedValue(undefined),
+  };
+  services.set(ReprocessEdgesService, reprocessEdgesService);
 
   const fileWatcherService = {
     start: jest.fn().mockResolvedValue({ isOk: () => true }),
@@ -174,6 +188,7 @@ const setupBootstrap = (argv: string[]): Harness => {
     excludeReconciliationService,
     forceReprocessService,
     recoverService,
+    reprocessEdgesService,
     fileWatcherService,
     ttlReconciliationService,
     app,
@@ -457,6 +472,125 @@ describe('main bootstrap — startup auto-population wiring', () => {
 
     expect(recoverService.recoverAll).toHaveBeenCalledTimes(1);
     expect(forceReprocessService.autoPopulateSources).not.toHaveBeenCalled();
+  });
+});
+
+describe('main bootstrap — startup persona edge reconciliation wiring', () => {
+  let exitSpy: jest.SpyInstance;
+
+  const PERSONA_SOURCES = [
+    { id: 'agent-persona_worker', path: '/p/worker' },
+    { id: 'src-1', path: '/src/1' },
+  ];
+
+  // Flushes the fire-and-forget auto-populate → edge-reconcile microtask chain.
+  const flushAsync = () => new Promise(resolve => setImmediate(resolve));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it('watch mode: reconciles only persona sources after auto-population, watcher unaffected', async () => {
+    const { reprocessEdgesService, forceReprocessService, fileWatcherService } = setupBootstrap(
+      ['node', 'main.js'],
+      PERSONA_SOURCES,
+    );
+
+    await bootstrap();
+    await flushAsync();
+
+    expect(forceReprocessService.autoPopulateSources).toHaveBeenCalledTimes(1);
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledTimes(1);
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledWith([PERSONA_SOURCES[0]]);
+    expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('watch mode without persona sources: reconciliation does not run', async () => {
+    const { reprocessEdgesService } = setupBootstrap(['node', 'main.js']);
+
+    await bootstrap();
+    await flushAsync();
+
+    expect(reprocessEdgesService.reprocessAll).not.toHaveBeenCalled();
+  });
+
+  it('resume --process-only: reconciliation runs before exit', async () => {
+    const { reprocessEdgesService, app } = setupBootstrap(
+      ['node', 'main.js', '--resume', '--process-only'],
+      PERSONA_SOURCES,
+    );
+
+    await bootstrap();
+
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledTimes(1);
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledWith([PERSONA_SOURCES[0]]);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(app.close).toHaveBeenCalled();
+  });
+
+  it('force-reprocess --process-only (no explicit flag): auto persona pass runs before exit', async () => {
+    const { reprocessEdgesService } = setupBootstrap(
+      ['node', 'main.js', '--force-reprocess', '--process-only'],
+      PERSONA_SOURCES,
+    );
+
+    await bootstrap();
+
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledTimes(1);
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledWith([PERSONA_SOURCES[0]]);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('force-reprocess --process-only --reprocess-edges: explicit all-sources pass runs once; auto pass skipped', async () => {
+    const { reprocessEdgesService } = setupBootstrap(
+      ['node', 'main.js', '--force-reprocess', '--process-only', '--reprocess-edges'],
+      PERSONA_SOURCES,
+    );
+
+    await bootstrap();
+
+    // The operator's explicit all-sources pass runs; the automatic persona
+    // pass must never double-run behind it. (With process.exit mocked this
+    // harness continues into the standalone --reprocess-edges branch, so the
+    // real signal is: no persona-filtered call ever occurs.)
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalled();
+    const personaFilteredCalls = reprocessEdgesService.reprocessAll.mock.calls.filter(
+      call => Array.isArray(call[0]) && call[0].length === 1,
+    );
+    expect(personaFilteredCalls).toHaveLength(0);
+  });
+
+  it('--skip-edge-reconcile suppresses the automatic pass in watch mode', async () => {
+    const { reprocessEdgesService, fileWatcherService } = setupBootstrap(
+      ['node', 'main.js', '--skip-edge-reconcile'],
+      PERSONA_SOURCES,
+    );
+
+    await bootstrap();
+    await flushAsync();
+
+    expect(reprocessEdgesService.reprocessAll).not.toHaveBeenCalled();
+    expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciliation failure is non-fatal: watcher still starts, process stays alive', async () => {
+    const { reprocessEdgesService, fileWatcherService } = setupBootstrap(
+      ['node', 'main.js'],
+      PERSONA_SOURCES,
+    );
+    reprocessEdgesService.reprocessAll.mockRejectedValueOnce(new Error('edge pass boom'));
+
+    await bootstrap();
+    await flushAsync();
+
+    expect(reprocessEdgesService.reprocessAll).toHaveBeenCalledTimes(1);
+    expect(fileWatcherService.start).toHaveBeenCalledTimes(1);
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });
 

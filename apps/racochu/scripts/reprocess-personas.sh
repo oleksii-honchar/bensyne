@@ -7,6 +7,10 @@
 # decision_next / folder_hierarchy edges are materialized into file_relations.
 #
 # How it works:
+#   0. NOTE: racochu now self-heals persona decision-tree edges automatically at
+#      startup (start / --resume / process-only flows; opt out with
+#      --skip-edge-reconcile). This script remains for the FORCED full re-ingest
+#      (--build, temp persona config) and the per-bank file_relations report.
 #   1. Optionally rebuilds dist and/or kills a running racochu (to avoid DB
 #      lock contention) — both opt-in via flags.
 #   2. Single source (--source): uses global config directly with --source flag.

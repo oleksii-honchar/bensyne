@@ -97,6 +97,39 @@ export async function bootstrap(): Promise<void> {
   const mcpConfig = configurationService.getMcpConfig();
   logger.info(`MCP endpoint: ${mcpConfig.url}`);
 
+  // Startup persona edge reconciliation — the repair pass that operators used to
+  // run manually via scripts/reprocess-personas.sh / reprocess-edges.sh. Edge
+  // definitions ride on processing (AgentPersonaChunkingStrategy), but drift
+  // (DB restores, pre-feature ingests) can leave persona trees with files that
+  // never got their decision_next edges materialized. This pass re-resolves
+  // edges and prunes ghosts so changed decision nodes converge automatically.
+  // Default-on in start/resume/process-only flows; never fatal. Skipped when
+  // the operator ran the explicit all-sources --reprocess-edges pass, or asked
+  // out via --skip-edge-reconcile. `drainQueue` mirrors the exit-mode pattern
+  // (wait for queue before process.exit).
+  const runPersonaEdgeReconcile = async (drainQueue = false): Promise<void> => {
+    if (args.skipEdgeReconcile || args.reprocessEdges) {
+      return;
+    }
+    const personaSources = sources.filter(s => /^agent-persona_/.test(s.id));
+    if (personaSources.length === 0) {
+      return;
+    }
+    logger.info(`Startup persona edge reconciliation: personaSources=${personaSources.length}`);
+    try {
+      await reprocessEdgesService.reprocessAll(personaSources);
+      if (drainQueue) {
+        await processingQueue.waitForEmpty();
+      }
+    } catch (error) {
+      logger.warn(
+        `Persona edge reconciliation failed, continuing: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+
   // Startup exclude reconciliation: forget tracked files that match exclude
   // patterns and still exist on disk. Runs in ALL four modes (placed before
   // mode-specific dispatch) and is never fatal — a failure is logged, startup
@@ -151,6 +184,10 @@ export async function bootstrap(): Promise<void> {
     // If --process-only with --resume, wait for queue then exit
     if (args.processOnly) {
       await processingQueue.waitForEmpty();
+
+      // Self-heal persona trees before exiting (no-op for non-persona setups).
+      await runPersonaEdgeReconcile(true);
+
       logger.info('Resume complete, exiting');
       await app.close();
       process.exit(0);
@@ -199,6 +236,10 @@ export async function bootstrap(): Promise<void> {
         }
         await processingQueue.waitForEmpty();
       }
+
+      // Persona trees additionally converge via the automatic repair pass —
+      // a no-op when the operator just ran the explicit --reprocess-edges above.
+      await runPersonaEdgeReconcile(true);
 
       logger.info('Exiting');
       await app.close();
@@ -321,12 +362,23 @@ export async function bootstrap(): Promise<void> {
       logger.info('Auto-populating sources before watch');
       // Non-blocking: start the watcher immediately; the serialized queue drains
       // the pass in the background. resumeSourceInternal already catches per-file
-      // and per-source errors; .catch guards the outer promise.
+      // and per-source errors; .catch guards the outer promise. The persona edge
+      // reconciliation chains after the pass so it repairs the settled state.
       forceReprocessService
         .autoPopulateSources(sources)
         .catch(error =>
           logger.error(`Auto-population failed: ${error instanceof Error ? error.message : String(error)}`),
-        );
+        )
+        .then(() => runPersonaEdgeReconcile());
+    } else {
+      // Fall-through flows (--resume/--force-reprocess without --process-only):
+      // their ingest pass already ran above; repair persona edges in the
+      // background, same non-blocking shape as auto-populate.
+      runPersonaEdgeReconcile().catch(error =>
+        logger.error(
+          `Persona edge reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
     }
 
     logger.info('Starting file watcher');

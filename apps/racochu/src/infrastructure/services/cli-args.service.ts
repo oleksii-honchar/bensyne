@@ -18,6 +18,7 @@ export interface ParsedCliArgs {
   recover: boolean;
   reEmbed: boolean;
   reprocessEdges: boolean;
+  skipEdgeReconcile: boolean;
   source: string | null;
   file: string | null;
 }
@@ -43,6 +44,7 @@ Options:
   --recover                 Recover missing chunks for DB-tracked files, then exit
   --re-embed                Re-embed files with missing embeddings, then exit
   --reprocess-edges         Reprocess file edges (fix ghost-edge stubs after reprocessing)
+  --skip-edge-reconcile     Skip the automatic persona edge reconciliation that runs at startup in start/resume/process-only flows
   -s, --source <id>         Specify source ID to process (use with --force-reprocess, --resume, --process-only, --re-embed, or --reprocess-edges)
   --file <path>             Process a single file (use with --source and --force-reprocess or --re-embed)
   --ttl-sweep               Run TTL sweep once and exit
@@ -72,6 +74,7 @@ Options:
       recover: false,
       reEmbed: false,
       reprocessEdges: false,
+      skipEdgeReconcile: false,
       source: null,
       file: null,
     };
@@ -135,6 +138,9 @@ Options:
         case '--reprocess-edges':
           result.reprocessEdges = true;
           result.watch = false;
+          break;
+        case '--skip-edge-reconcile':
+          result.skipEdgeReconcile = true;
           break;
       }
     }

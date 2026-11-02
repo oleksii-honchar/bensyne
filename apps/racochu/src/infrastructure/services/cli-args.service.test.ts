@@ -39,8 +39,19 @@ describe('CliArgsService', () => {
         resume: false,
         ttlSweep: false,
         recover: false,
+        reEmbed: false,
+        reprocessEdges: false,
+        skipEdgeReconcile: false,
         source: null,
+        file: null,
       });
+    });
+
+    it('should enable skipEdgeReconcile with --skip-edge-reconcile (watch stays true)', () => {
+      const result = service.parse(['--skip-edge-reconcile']);
+
+      expect(result.skipEdgeReconcile).toBe(true);
+      expect(result.watch).toBe(true);
     });
 
     it('should override config path with --config', () => {
@@ -217,6 +228,7 @@ describe('CliArgsService', () => {
       expect(output).toContain('--process-only');
       expect(output).toContain('--ttl-sweep');
       expect(output).toContain('--recover');
+      expect(output).toContain('--skip-edge-reconcile');
       expect(output).toContain('Recover missing chunks for DB-tracked files, then exit');
       expect(output).toContain('Run TTL sweep once and exit');
       writeSpy.mockRestore();
