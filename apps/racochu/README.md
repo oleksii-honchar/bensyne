@@ -10,6 +10,20 @@ Racochu = RAg COntent CHUnker
 
 ### Development
 
+First-time setup on a fresh checkout:
+
+```bash
+npm install
+npm run build
+```
+
+`npm run build` triggers the `prebuild` hook (`prisma generate`), which regenerates
+the Prisma client into `src/generated/prisma/` — that directory is git-ignored and
+never committed, so a fresh checkout only needs the two commands above; there is no
+manual `prisma generate` step. Every later `npm run build` (including `nx run
+racochu:build` and CI) regenerates the client from the current schema automatically,
+which keeps it from going stale against schema changes.
+
 1. Start Mnemosyne MCP (Docker):
 
    ```bash
