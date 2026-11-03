@@ -11,8 +11,18 @@
  *    source (same pattern as Scenario D), so no live FileWatcher ever observes
  *    it and the "already present at boot, not yet ingested" precondition is
  *    race-free by construction.
- * B. Stub repair — file with stub rows (file row + chunk rows, no memories)
- *    → startup re-ingests and creates live memories.
+ * A2. Second-run re-baseline (DEC-A7, spec §8) — the SAME scoped source is
+ *    auto-populated again after A's full first pass: the queue is
+ *    new-files-only, the fixture now has a FileTracker row ⇒ the returned
+ *    summary DATA is all zero (files=0 — the healthy repeat-run signature,
+ *    structural via row-subtraction, not gate-dependent) and the bank state
+ *    is untouched.
+ * B. Lost-in-bank repair ownership (RE-BASELINED per DEC-A7) — a file whose
+ *    row remains while its bank content is forgotten is NOT repaired by
+ *    auto-populate any more (the new-files-only queue excludes every file
+ *    with a row — bank verification retired from resume); the scenario proves
+ *    the ownership move end-to-end: auto-populate leaves it untouched, then
+ *    --recover (the mode that owns guarantee (a)) restores it.
  * C. Healthy source — source with live memories → startup skips, no
  *    re-ingestion (memory count unchanged).
  * D. Opt-out — source with autoPopulate: false → startup skips, files not
@@ -22,10 +32,12 @@
 import { INestApplication } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ConfigurationService } from '../../infrastructure/config/configuration.service';
 import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
-import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { ForceReprocessService } from '../../application/services/force-reprocess.service';
+import { RecoverService } from '../../application/services/recover.service';
+import type { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { ConfigurationService } from '../../infrastructure/config/configuration.service';
+import { SOURCE_TYPES } from '../../infrastructure/config/source-types';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
 import { createTestApplication } from '../main.test-application';
@@ -36,6 +48,7 @@ const PROCESSING_WAIT_MS = 20000;
 describe('[E2E] Auto-Population on Startup', () => {
   let app: INestApplication | null = null;
   let forceReprocessService: ForceReprocessService | null = null;
+  let recoverService: RecoverService | null = null;
   let bensyneClient: BensyneClient | null = null;
   let processingQueue: FileProcessingQueue | null = null;
   let watchDir: string | undefined;
@@ -46,6 +59,10 @@ describe('[E2E] Auto-Population on Startup', () => {
   let bootFixtureDir: string | undefined;
   let bootFixtureFilePath: string | undefined;
   let bootFixtureMarker: string | undefined;
+  // Scenario A2 (DEC-A7 second-run re-baseline) — shared with Scenario A
+  // across the two sequential tests (maxWorkers: 1).
+  let bootSource: WatchSourceConfig | null = null;
+  let bootFixtureChunksAfterFirstPass = -1;
 
   beforeAll(async () => {
     watchDir = process.env.E2E_WATCH_DIR;
@@ -89,6 +106,7 @@ describe('[E2E] Auto-Population on Startup', () => {
     console.log(`[E2E-AutoPopulate] Memory bank: ${memoryBank}`);
 
     forceReprocessService = app.get(ForceReprocessService);
+    recoverService = app.get(RecoverService);
     bensyneClient = app.get(BensyneClient);
     processingQueue = app.get(FileProcessingQueue);
   }, 90000);
@@ -148,7 +166,7 @@ describe('[E2E] Auto-Population on Startup', () => {
     // scoped source. Field shape mirrors Scenario D (resolved-config required
     // props at schema defaults); autoPopulate stays true (the default — this
     // scenario is the opt-IN path).
-    const bootSource = {
+    bootSource = {
       id: 'e2e-autopop-boot-source',
       path: bootFixtureDir!,
       resolvedPaths: [bootFixtureDir!],
@@ -196,16 +214,49 @@ describe('[E2E] Auto-Population on Startup', () => {
     // Verify file chunks exist in bank.
     const chunkCount = await getFileChunkCount(filePath);
     expect(chunkCount).toBeGreaterThan(0);
+    bootFixtureChunksAfterFirstPass = chunkCount;
 
     console.log(
       `[E2E-AutoPopulate-A] SUCCESS: pre-existing file discovered by boot-time auto-populate, ${chunkCount} chunks in bank`,
     );
   }, 180000);
 
-  it('Scenario B: untracked file re-ingested via auto-population', async () => {
-    // This simulates "stub repair" at the racochu level: a file that has
-    // been forgotten (all memories deleted) but still has a file row is
-    // detected as untracked and re-ingested.
+  it('Scenario A2 (DEC-A7 re-baseline): second auto-populate over the same scope queues nothing — all-zero summary, bank untouched', async () => {
+    // Spec §8 re-baseline per DEC-A7 (AMENDED 2026-11-02): resume/auto-populate
+    // queues NEW FILES ONLY. Scenario A's fixture now has a FileTracker row,
+    // so the row-subtraction queue is EMPTY up front — files=0 is structural,
+    // not gate-dependent. Asserted on the returned DATA (no log scraping).
+    expect(bootSource).not.toBeNull();
+    console.log('[E2E-AutoPopulate-A2] Running second autoPopulateSources over the SAME scope...');
+    const summary = await forceReprocessService!.autoPopulateSources([bootSource!]);
+    await processingQueue!.waitForEmpty();
+
+    expect(summary).toEqual({
+      files: 0,
+      gatedSkips: 0,
+      terminalSkipSkips: 0,
+      verifiedSkips: 0,
+      reIngested: 0,
+    });
+
+    // Bank observation: a known file never enters the pipeline — the chunks
+    // created by A's first pass are exactly unchanged (zero churn).
+    const chunksAfter = await getFileChunkCount(bootFixtureFilePath!);
+    expect(chunksAfter).toBe(bootFixtureChunksAfterFirstPass);
+    expect(chunksAfter).toBeGreaterThan(0);
+
+    console.log(
+      `[E2E-AutoPopulate-A2] SUCCESS: second pass all-zero (files=0, queue structurally empty), bank chunks unchanged (${chunksAfter})`,
+    );
+  }, 120000);
+
+  it('Scenario B (DEC-A7 re-baseline): known file with lost bank content is NOT repaired by auto-populate — --recover restores it', async () => {
+    // Pre-DEC-A7 this scenario proved auto-populate repairing a zero-bank
+    // known file. The amended contract moves that duty: resume/auto-populate
+    // queues NEW FILES ONLY — a file WITH a row is known and never re-enters
+    // this path; lost-in-bank repair is --recover's guarantee (a). The
+    // scenario now proves the ownership move: auto-populate no-op, recover
+    // repair, same fixture.
     const uniqueId = `auto-b-${Date.now()}`;
     const marker = `AUTOPOP-B-${uniqueId}`;
     const fileName = `${uniqueId}.md`;
@@ -234,22 +285,40 @@ describe('[E2E] Auto-Population on Startup', () => {
     hasMemories = await fileHasMemories(filePath, marker);
     expect(hasMemories).toBe(false);
 
-    // Run auto-populate — it should detect the untracked file and re-ingest.
-    console.log('[E2E-AutoPopulate-B] Running autoPopulateSources...');
+    // Amended contract (DEC-A7): the file has a FileTracker row, so the
+    // new-files-only queue excludes it — auto-populate must NOT re-ingest.
+    // The file is known; zero work, zero repair (bank-verification retired
+    // from resume).
+    console.log('[E2E-AutoPopulate-B] Running autoPopulateSources (re-baselined: expects NO repair)...');
     await forceReprocessService!.autoPopulateSources(sources!);
     await processingQueue!.waitForEmpty();
     await new Promise(r => setTimeout(r, PROCESSING_WAIT_MS));
 
+    hasMemories = await fileHasMemories(filePath, marker);
+    expect(hasMemories).toBe(false);
+    expect(await getFileChunkCount(filePath)).toBe(0);
+    console.log('[E2E-AutoPopulate-B] Known file untouched by auto-populate (duty moved to --recover)');
+
+    // The owner of lost-in-bank repair (guarantee (a)) — --recover — must
+    // restore it: recover step 4 sees FILE_NOT_FOUND on the bank side and
+    // force-ingests despite the unchanged hash.
+    console.log('[E2E-AutoPopulate-B] Running recoverSource (the owning mode)...');
+    await recoverService!.recoverSource('e2e-test-source', sources!);
+    await processingQueue!.waitForEmpty();
+    await new Promise(r => setTimeout(r, PROCESSING_WAIT_MS));
+
     // Verify memories are restored.
-    console.log('[E2E-AutoPopulate-B] Verifying memories restored...');
+    console.log('[E2E-AutoPopulate-B] Verifying memories restored by --recover...');
     hasMemories = await fileHasMemories(filePath, marker);
     expect(hasMemories).toBe(true);
 
     const chunkCount = await getFileChunkCount(filePath);
     expect(chunkCount).toBeGreaterThan(0);
 
-    console.log(`[E2E-AutoPopulate-B] SUCCESS: untracked file re-ingested, ${chunkCount} chunks restored`);
-  }, 300000);
+    console.log(
+      `[E2E-AutoPopulate-B] SUCCESS: auto-populate skipped the known file (by design), --recover repaired it, ${chunkCount} chunks restored`,
+    );
+  }, 420000);
 
   it('Scenario C: healthy file skipped by auto-population (no re-ingestion)', async () => {
     const uniqueId = `auto-c-${Date.now()}`;

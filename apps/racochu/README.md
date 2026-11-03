@@ -277,32 +277,63 @@ Pass the flag to select the mode (help: `racochu --help`):
 
 | Flag | Mode |
 | ---- | ---- |
-| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup to pick up everything that changed since the last run — cheap for unchanged files, gated (see [Hash gate & terminal skips](#hash-gate--terminal-skips)). Watch runs are single-instance: see [Running the watcher](#running-the-watcher-manual-operations--single-instance). |
+| *(no flag)* | **Watch** — default: watch sources and ingest new/changed files continuously. **Auto-populates** all watched sources on startup with the same **new-files-only** queue as `--resume`: it queues only files with no `FileTracker` row at all, so work missed while nothing ran is picked up without re-touching anything already decided. Watch runs are single-instance: see [Running the watcher](#running-the-watcher-manual-operations--single-instance). |
 | `--process-only` | Process existing files once, then exit (no watching). **Gated**: this is a safe catch-up pass — unchanged bytes are skipped by the content-hash gate at the cost of an indexed tracker read + a SHA-256, with no bank or LLM work. |
 | `-f, --force-reprocess` | **Full rebuild, run on purpose** — re-chunks and re-ingests every file regardless of hash (the gate's documented override). Also the escape hatch for stale `CONTENT_FILTERED` skip-rows: after changing a source's `contentFilter` configuration, run `--force-reprocess` for that source to re-evaluate what is now processable. |
 | `--reprocess-edges` | Two-pass reprocessing: after re-chunking files, re-resolve all edge targets via `resolve_file_ref` to fix ghost edges (see [Ghost-Edge Cleanup](#ghost-edge-cleanup--reprocess-edges)) |
-| `-r, --resume` | **Cheap catch-up pass with bank-verified repair**: tracked files are verified against the bank first and proven loss is re-ingested (repair runs bypass the gate); everything else is re-queued only through the gate. Ends with a `resume finished:` summary. Note: bare `--resume` (and bare `--force-reprocess`) then stay in watch mode — pair with `--process-only` for an exit-only run. |
-| `--recover` | Recover missing chunks for DB-tracked files, then exit |
+| `-r, --resume` | **New files only** — the queue is every enumerated file with **no `FileTracker` row at all** (`known` = one indexed row-set subtraction per source; terminal-skip rows count as known — a row is a row). Repeat run on a steady corpus ⇒ `files=0`, zero per-file bank calls, zero per-file hashes. What moved out of this mode: bank-loss repair, content-changed known files and skip-row healing are **`--recover`'s contract** (see below). Ends with a `resume finished:` summary. Note: bare `--resume` (and bare `--force-reprocess`) then stay in watch mode — pair with `--process-only` for an exit-only run. |
+| `--recover` | **The complete reconciler** — files × tracker × bank, then exit: lost-in-bank repair, content-changed known files, changed skip-rows healed (see the operating contract under this table). Also reconciles chunk-level gaps for tracked files. Run it on a deliberate cadence: weekly or after any watched-downtime window. |
 | `--ttl-sweep` | Run the TTL sweep once, then exit (optionally scoped with `-s/--source`) |
 
 `-s/--source <id>` scopes the one-shot modes (`--force-reprocess`, `--resume`,
 `--process-only`, `--recover`, `--ttl-sweep`) to a single source id.
 `--dry-run` reports what *would* change without changing anything.
 
-`--recover` repairs chunk-level gaps for files already tracked in the local
-database: it computes the expected chunk set locally (without LLM enrichment),
-compares it against the stored chunk set via bensyne's read-only `getFileChunks`
-tool, and re-ingests only the missing chunks (with enrichment when enabled).
-Untracked files are never touched, and the process exits after the pass.
+**`--recover` is the complete reconciler** — the mode that owns the correctness
+of known files. It walks every file that has a tracker row against the bank and
+the current bytes, and carries all three repair duties:
 
-`--resume` / `--resume` are repair-first catch-up passes: files with a tracker
-row are **verified against the bank before being trusted**, and any entry proven
-absent from the bank (including stub rows — incomplete tracker entries) is
-re-ingested even when its bytes are unchanged (verified repair bypasses the
-hash gate). Every other file in the pass goes through the gate, so a second
-resume over an unchanged corpus does near-zero work. Every run ends with a
-`resume finished:` summary line (see [Hash gate & terminal skips](#hash-gate--terminal-skips)).
-Stub and chunk-gap repair stays automatic — no manual intervention needed.
+- **(a) lost-in-bank repair** — a row whose stored chunks are gone from the
+  bank (`FILE_NOT_FOUND`) is re-ingested whole, via the forced path: a proven
+  bank loss is never vetoed by an unchanged hash.
+- **(b) content-changed known files are reconciled regardless of reason** —
+  including edits made while nothing was watching (watcher-downtime
+  windows); a differing hash triggers the full change re-ingest.
+- **(c) healing changed skip-rows** — a terminal-skip row whose content changed
+  goes through the same forced re-evaluation into a full ingest, which records
+  the new hash and clears the skip verdict.
+
+Everything whose bytes are unchanged and whose chunks are present is a no-op —
+equal-hash paths never re-ingest (that is the design, not a miss). The pass also
+reconciles chunk-level gaps for tracked files: it computes the expected chunk set
+locally (without LLM enrichment), compares it against the stored chunk set via
+bensyne's read-only `getFileChunks` tool, and re-ingests only the missing chunks
+(with enrichment when enabled). Untracked files are never touched — genuinely-new
+files belong to `--resume`/auto-populate — and the process exits after the pass.
+
+**Operator cadence (deliberate, documented, not scheduled):** `--recover` is the
+periodic reconciliation pass for everything `--resume` no longer inspects.
+Suggested rhythm: run it **weekly or after any watched-downtime window** —
+`racochu --recover` or `npm run start:recover`, optionally scoped with
+`-s/--source`. It is **deliberately not automated** (no scheduler, no daemon —
+see [Running the watcher](#running-the-watcher-manual-operations--single-instance));
+the cadence is the operator's, and `--force-reprocess` stays the panic-button
+full rebuild. Between runs, a known-file bank loss is a knowingly accepted repair
+gap, not a duplicate-ingestion risk.
+
+**`--resume` (and startup auto-populate) queue new files only.** The queue is a
+pure set subtraction: enumerated files minus every file that already has a
+`FileTracker` row — a row is a final decision, normally-ingested **or**
+terminal-skip, and both count as known. Known files are never queued, hashed, or
+verified for this pass: zero per-file bank calls, zero per-file hashes — a
+repeat run over a steady corpus queues nothing, and its healthy repeat-run
+signature is `files=0` (see **Observing outcomes** under [Hash gate & terminal
+skips](#hash-gate--terminal-skips) for the exact summary and queue lines).
+Queued files take the normal ingest path once (`forceIngest` is never set here).
+What this mode no longer does — the bank verification of known files with its
+`verified-skips`-style repair accounting — is **`--recover`'s contract** now
+(guarantees (a)–(c) above); run `--recover` on the cadence and a steady-corpus
+`--resume` stays the free no-op it advertises.
 
 ## Running the watcher (manual operations · single instance)
 
@@ -310,14 +341,18 @@ Racochu is a CLI tool the operator **starts manually, on purpose** — by design
 there is no daemon and no supervisor, no auto-restart on crash or reboot, and
 no scheduled reconciliation job. An optional cron of `--resume` is possible but
 is deliberately **not part of this design**. Starting the watcher again after a
-downtime window is cheap and safe: the startup auto-population pass skips
-every unchanged file at the gate.
+downtime window is cheap and safe: the startup auto-population pass queues only
+files that were never seen — anything with a row (normal or skipped) costs
+nothing per file, not even a hash.
 
-**Catching up without watching:** run a one-shot pass — `--process-only` (gated,
-safe as catch-up) or, for the deliberate full rebuild, `npm run start:reprocess`
-(`--force-reprocess`). `npm run start:resume` runs the same catch-up pass as
-`--resume` and likewise stays watching afterwards (see below; add
-`--process-only` to the underlying command for an exit-only run).
+**Catching up without watching:** run a one-shot pass — `--resume` (new files
+only), `--process-only` (gated, safe as catch-up), `--recover` (the
+reconciler pass for changes that happened while nothing was watching —
+`npm run start:recover`), or, for the deliberate full rebuild,
+`npm run start:reprocess` (`--force-reprocess`). `npm run start:resume` runs
+the same new-files-only pass as `--resume` and likewise stays watching
+afterwards (see below; add `--process-only` to the underlying command for an
+exit-only run).
 
 **Single instance.** A second watcher started while one is already running exits
 with **exit code 1** and names the holder's pid:
@@ -347,17 +382,24 @@ and `--force-reprocess --process-only` — neither take the lock nor honor it.
 
 **Downtime is a designed recovery case, not an incident.** While no watcher
 runs, filesystem changes accumulate quietly. On the next watch start the startup
-auto-population reconciles what was missed — an operation that is cheap for
-unchanged content since the hash gate exists, so running
-the watcher in short manual sessions is a supported operating style.
+auto-population reconciles any files that are genuinely new (that is what its
+new-files-only queue is for), and **changes to files racochu already decided
+about are reconciled by `--recover`** — run it after watched-downtime windows
+(operator cadence, see [CLI Modes](#cli-modes)). Both halves are deliberate
+under the no-daemon directive, so running the watcher in short manual sessions
+remains a supported operating style.
 
 ## Hash gate & terminal skips
 
-Racochu does not re-ingest unchanged content. Every batch path (watch events,
-`--process-only`, `--resume`, startup auto-population) first compares the
-file's current SHA-256 against the hash stored on its tracker row. Only a
-stored hash that equals the current bytes skips a file; every other case —
-new file, no stored hash — proceeds normally.
+Racochu does not re-ingest unchanged content. Watch `change` events and the
+`--process-only` walk compare the file's current SHA-256 against the hash
+stored on its tracker row first. Only a stored hash that equals the current
+bytes skips a file; every other case — new file, no stored hash — proceeds
+normally. `--resume` and startup auto-populate never reach this gate: known
+files are subtracted before the queue is built and never-known files have no
+stored hash to match — hash-gate skip evidence appears on the
+**watcher/CHANGE path** and on genuinely-new `add` events only (see
+**Observing outcomes** below).
 
 - **Unchanged bytes** — one indexed lookup + the file's own hash read; no
   chunking, no classification, no bank calls. The log line (see
@@ -382,24 +424,59 @@ new file, no stored hash — proceeds normally.
 
   The only forced re-evaluation is `--force-reprocess`, which bypasses the
   gate (for filtered files: the escape hatch after a `contentFilter` change,
-  see the modes table).
+  see the modes table). If a skipped file's content changed while nothing was
+  watching, `--recover` is the designed healing path for its stale skip verdict
+  (guarantee (c) in [CLI Modes](#cli-modes)); `--resume`/auto-populate never
+  revisit a skipped file — its row makes it known, by design.
 - **The gate fails open.** If its inputs are unreadable (database error, no
   hash computable), the file is processed as if no gate existed — a degraded
   racochu may repeat work but never silently loses a file.
 
 **Observing outcomes.** The per-file lines above plus the per-pass summary tell
-you exactly what a run did — batch runs (resume, force-reprocess, auto-populate)
-end with:
+you exactly what a run did. Batch runs end with a summary line, and the fields
+differ by mode — the resume/auto-populate line reports what the new-files-only
+queue actually did, the force-reprocess line keeps the full field set of a
+full-corpus walk:
 
 ```
-resume finished: files=…, gated-skips=…, terminal-skip-skips=…, verified-skips=…, re-ingested=…
+resume finished: files=…, ingested=…, failed=…
 force-reprocess finished: files=…, gated-skips=…, terminal-skip-skips=…, verified-skips=…, re-ingested=…
 ```
 
+On a `resume finished:` line, `files=` is the size of the never-known queue built
+for the pass — nothing more. A repeat run over a steady corpus queues nothing:
+`files=0, ingested=0, failed=0` — this is **the healthy repeat-run signature**,
+and the old bank-verification counter (`verified-skips`) retired from resume
+output together with the verification itself; its sibling fields cannot
+structurally fire on these paths because a known file never enters a queue.
+`--force-reprocess` still walks everything and still reports the complete set.
+
+Resume passes also emit a zero-cost visibility line per source, then one line
+per queued file:
+
+```
+Resume queue built: source="…", enumerated=…, known=…, new=…
+Resuming new file [1/1]: path="…"
+```
+
+`Resume queue built:` explains the subtraction for one source — `enumerated=`
+files found on disk, `known=` files subtracted (every file with a `FileTracker`
+row — skipped files included: a row is a row), `new=` files actually queued —
+and `new=0` is what a steady corpus looks like before the summary even prints.
+`Resuming new file` is the only per-file queue label; the retired
+`stale-tracker` / `untracked` labels left the logs together with the branch
+they belonged to (their duties are `--recover`'s). The per-100-files progress
+heartbeats (`resume progress:` / `force-reprocess progress:`, fields pinned by
+the operator contract) are format-unchanged — the removed classifiers simply
+render as 0 — and are quiet by construction on steady resumes: an empty queue
+has no 100th file.
+
 All of this is plain structured-log content (see [Logs](#logs)): grepping these
-tokens after a run reproduces the per-outcome histogram — expect high
-`gated-skips`/`verified-skips` and near-zero `re-ingested` on repeat starts over
-unchanged data.
+tokens after a run reproduces the per-outcome histogram — on repeat starts over
+unchanged data expect `Resume queue built: … new=0` and
+`resume finished: files=0, ingested=0, failed=0`; `Skipping unchanged file (hash
+gate)` activity belongs to the watcher/CHANGE path and genuinely-new adds (see
+above).
 
 ## Ghost-Edge Cleanup (`--reprocess-edges`)
 
@@ -675,11 +752,14 @@ node -e "const https=require('https');const r=https.request('https://lite-llm.la
 no code change needed. Do **not** commit the CA PEM to the repo (machine-local trust).
 
 **Duplicate chunk processing:**
-Not expected for unchanged files since the content-hash gate — repeats are
-reported as `Skipping unchanged file (hash gate)`. Files that genuinely changed,
-untracked files whose bytes differ from their recorded hash, or anything
-processed via `--force-reprocess` is re-ingested by design; Mnemosyne also
-handles dedup at storage level.
+Not expected — files an earlier pass reached a final decision about are never
+re-queued (a repeat resume/auto-populate run prints `new=0` and
+`resume finished: files=0, ingested=0, failed=0`). Where an unchanged file does
+flow through the pipeline again — a watch `change` event from a no-op touch, or
+the `--process-only` walk — it surfaces as `Skipping unchanged file (hash
+gate)`. Files that genuinely changed, untracked files whose bytes differ from
+their recorded hash, or anything processed via `--force-reprocess` is
+re-ingested by design; Mnemosyne also handles dedup at storage level.
 
 ## Requirements
 

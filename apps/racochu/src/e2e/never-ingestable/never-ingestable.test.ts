@@ -19,15 +19,21 @@
  *     (deterministic pure-function heuristics, no LLM) and records
  *     skipReason='content-filtered' — same quarantine (DEC-A2).
  *   - An ordinary note is fully ingested (memories tracked + bank chunks).
- * RUN 2 — same call again (what a second manual watch-start does):
+ * RUN 2 — same call again (what a second manual watch-start does),
+ * expectations re-baselined per DEC-A7 (spec §8 / §3 mode table):
+ *   - The resume/auto-populate queue is NEW-FILES-ONLY: every corpus file now
+ *     has a FileTracker row — skip-rows ARE rows ⇒ known — so the queue is
+ *     STRUCTURALLY EMPTY before any per-file work. The returned
+ *     BatchRunSummary is ALL ZERO (files=0; gated-skips / terminal-skip-skips
+ *     / verified-skips / re-ingested 0: with nothing queued these counters
+ *     are structurally 0 on this path — the bank-verification counter is
+ *     retired with DEC-A7). files=0 is the healthy repeat-run signature.
  *   - ZERO chunk operations for the never-ingestable files: bank chunk counts
  *     stay 0 and their FileTracker rows (hash, skipReason, updatedAt) are
- *     byte-identical — the M2 retry loop is stopped at zero bank/LLM cost.
- *   - 0 re-ingests: skip-row files re-enter the loop as "untracked" and are
- *     hash-GATED (gatedSkips), the healthy file is bank-verified
- *     (verifiedSkips), re-ingested=0 — asserted on the BatchRunSummary
- *     RETURNED AS DATA (T6/C8), the strongest e2e surface of the summary
- *     tokens without log scraping.
+ *     byte-identical — the M2 retry loop is now closed at queue-construction
+ *     level (row subtraction), at literally zero per-file cost. Summary
+ *     asserted on the BatchRunSummary RETURNED AS DATA (T6/C8), the strongest
+ *     e2e surface without log scraping.
  *
  * Deliberate scope limit (stated in the T9 report): the 'zero-chunks' class
  * needs a fixture that deterministically produces zero chunks from nonempty,
@@ -255,7 +261,7 @@ describe('[E2E] Never-ingestable quarantine — terminal skips on run 1, zero ch
     console.log(`[E2E-NeverIngestable] ordinary note: memories=${healthyMemories}, ingested normally`);
   }, 240000);
 
-  it('run 2 (re-reconcile): skip rows are gated, healthy note verified — zero chunk ops, zero re-ingests, state identical', async () => {
+  it('run 2 (re-reconcile): new-files-only queue structurally empty — all-zero summary, zero chunk ops, state identical', async () => {
     // Capture every observable BEFORE the second pass.
     const before = new Map<string, FileStateSnapshot>();
     for (const file of corpus) {
@@ -266,16 +272,17 @@ describe('[E2E] Never-ingestable quarantine — terminal skips on run 1, zero ch
     const summary = await forceReprocessService!.autoPopulateSources([testSource!]);
     await processingQueue!.waitForEmpty();
 
-    // Exact, hermetic counters for the second pass:
-    // skip-row files have zero FileMemoryTracker rows ⇒ the resume loop treats
-    // them as untracked and calls execute(forceIngest:false) — where the
-    // add-path hash gate now stops them (the M2 loop, closed). The healthy
-    // note is bank-verified before execute is ever reached.
+    // Exact, hermetic counters for the second pass, re-baselined per DEC-A7
+    // (AMENDED 2026-11-02): resume/auto-populate queues NEW FILES ONLY —
+    // every corpus file has a FileTracker row by now (terminal-skip rows ARE
+    // rows), so the queue is EMPTY up front. Nothing reaches the gate, the
+    // bank, or the LLM: the returned DATA is all zero, files=0 being the
+    // healthy repeat-run signature.
     expect(summary).toEqual({
-      files: 3,
-      gatedSkips: 3,
+      files: 0,
+      gatedSkips: 0,
       terminalSkipSkips: 0,
-      verifiedSkips: 1,
+      verifiedSkips: 0,
       reIngested: 0,
     });
 

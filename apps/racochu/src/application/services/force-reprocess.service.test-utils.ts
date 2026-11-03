@@ -9,6 +9,7 @@
  * scripted through the other fakes by the tests themselves.
  */
 
+import { FileTracker, FileTrackerSkipReason } from '../../domain/file-tracker.aggregate';
 import { Result } from '../../utils/result';
 import { BatchRunSummary } from './force-reprocess.service';
 
@@ -76,3 +77,44 @@ export const summaryLinesFrom = (infoMock: { mock: { calls: unknown[][] } }): st
  */
 export const heartbeatLinesFrom = (infoMock: { mock: { calls: unknown[][] } }): string[] =>
   infoMock.mock.calls.map(call => String(call[0])).filter(line => line.includes(' progress: '));
+
+/**
+ * Build a FileTracker aggregate row for the queue-subtraction seam
+ * (T10 / DEC-A7: the resume queue = enumerated files minus any file with a
+ * row). Mirrors `recover.service.test.ts`'s local `aTracker` builder: domain
+ * aggregates through `FileTracker.of`, returned concrete (props validated).
+ * `skipReason` marks a terminal-skip row (a row IS known — queued never);
+ * `fileHash: undefined` leaves the row without a stored hash; the queue path
+ * never reads hashes (row presence alone decides), which tests pin directly.
+ */
+export function aFileTrackerRow(
+  filePath: string,
+  overrides: { skipReason?: FileTrackerSkipReason; fileHash?: string } = {},
+): FileTracker {
+  return FileTracker.of({
+    filePath,
+    ...(overrides.skipReason !== undefined ? { skipReason: overrides.skipReason } : {}),
+    ...(overrides.fileHash !== undefined ? { fileHash: overrides.fileHash } : {}),
+  }).getValue();
+}
+
+/**
+ * Wire the faked `FileTrackerRepository.findTrackedBySourceId` to return rows
+ * for the given file paths (T10 new-files-only queue). Optional `skipOf`
+ * marks one path as a terminal-skip row; optional `hashOf` gives one path a
+ * stored hash differing from anything the queue could compute.
+ */
+export function scriptKnownRows(
+  findTracked: { mockResolvedValue(value: FileTracker[]): unknown },
+  knownPaths: string[],
+  opts: { skipOf?: string; hashOf?: string } = {},
+): void {
+  findTracked.mockResolvedValue(
+    knownPaths.map(p =>
+      aFileTrackerRow(p, {
+        ...(opts.skipOf === p ? { skipReason: 'content-filtered' as const } : {}),
+        ...(opts.hashOf === p ? { fileHash: 'stored-hash-differs-from-disk' } : {}),
+      }),
+    ),
+  );
+}

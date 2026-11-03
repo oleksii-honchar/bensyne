@@ -6,6 +6,7 @@ import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../../infrastructure/logging/logger.test-utils';
+import { FileTrackerRepository } from '../../infrastructure/repositories/file-tracker.repository';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import {
   aBensyneClientService,
@@ -22,8 +23,10 @@ import { Result } from '../../utils/result';
 import { mockDirStats, mockDirent, mockFileStats } from '../../utils/test-utils';
 import { BatchRunSummary, ForceReprocessService } from './force-reprocess.service';
 import {
+  aFileTrackerRow,
   aZeroRunSummary,
   heartbeatLinesFrom,
+  scriptKnownRows,
   scriptOutcomesByPath,
   summaryLinesFrom,
   type ScriptedOutcomeKind,
@@ -38,6 +41,7 @@ describe('ForceReprocessService', () => {
   let processingQueue: ReturnType<typeof aFileProcessingQueueService>;
   let fileMemoryTrackerService: ReturnType<typeof aFileMemoryTrackerService>;
   let bensyneClient: ReturnType<typeof aBensyneClientService>;
+  let fileTrackerRepository: { findTrackedBySourceId: jest.Mock };
   let logger: ReturnType<typeof aLogger>;
 
   beforeEach(async () => {
@@ -50,6 +54,9 @@ describe('ForceReprocessService', () => {
     processingQueue = aFileProcessingQueueService();
     fileMemoryTrackerService = aFileMemoryTrackerService();
     bensyneClient = aBensyneClientService();
+    // T10 queue-subtraction seam (same fake shape as recover.service.test.ts):
+    // default = no rows (all files new). Tests script rows per source.
+    fileTrackerRepository = { findTrackedBySourceId: jest.fn().mockResolvedValue([]) };
     logger = aLogger();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -59,6 +66,7 @@ describe('ForceReprocessService', () => {
         { provide: FileProcessingQueue, useValue: processingQueue },
         { provide: FileMemoryTrackerService, useValue: fileMemoryTrackerService },
         { provide: BensyneClient, useValue: bensyneClient },
+        { provide: FileTrackerRepository, useValue: fileTrackerRepository },
         { provide: BasePinoLogger, useValue: logger },
       ],
     }).compile();
@@ -364,89 +372,141 @@ describe('ForceReprocessService', () => {
     });
   });
 
-  describe('resumeAll (tracker-only heuristic)', () => {
-    it('should skip a file that already has memories', async () => {
+  describe('resumeAll (new-files-only queue — T10 / DEC-A7)', () => {
+    // Amended C4: queue = enumerated files with NO FileTracker row at all
+    // (terminal-skip rows ARE rows → known). One findTrackedBySourceId call
+    // per source; zero per-file getMemoryIds/getFileChunks reads.
+    const rowFor = (name: string, root = '/tmp/test') => aFileTrackerRow(`${root}/${name}`);
+
+    it('AC1 mixed 4-file corpus: normal row + skip-row + 2 never-seen ⇒ execute ONLY for the never-seen, zero bank/tracker reads', async () => {
       const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('normal-row.md', false),
+        mockDirent('skip-row.md', false),
+        mockDirent('fresh-a.md', false),
+        mockDirent('fresh-b.md', false),
+      ]);
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([
+        rowFor('normal-row.md'),
+        aFileTrackerRow('/tmp/test/skip-row.md', { skipReason: 'content-filtered' }),
+      ]);
 
       await service.resumeAll([source]);
 
+      // ONE seam call per source, never per-file.
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenCalledTimes(1);
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenCalledWith('test');
+
+      const queued = processFileUseCase.execute.mock.calls.map(
+        call => (call[0] as { filePath: string }).filePath,
+      );
+      expect(queued).toEqual(['/tmp/test/fresh-a.md', '/tmp/test/fresh-b.md']);
+
+      // The retired classifiers: zero calls on the resume path (AC1 guard).
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+    });
+
+    it('operator visibility: emits `Resume queue built: source=…, enumerated=…, known=…, new=` once per source with the exact queue arithmetic (reviewer in-review pin — T10 accepted deviation is README-documented, plan Global rule 2: one contract test per operator string)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('normal-row.md', false),
+        mockDirent('fresh-a.md', false),
+        mockDirent('fresh-b.md', false),
+      ]);
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([rowFor('normal-row.md')]);
+
+      await service.resumeAll([source]);
+
+      const queueLines = logger.info.mock.calls
+        .map(call => String(call[0]))
+        .filter(line => line.includes('Resume queue built:'));
+      // ONE line per source, exact contract-shaped fields: 3 enumerated,
+      // 1 known by row, 2 new — the arithmetic the §11 repeat-run
+      // measurements depend on.
+      expect(queueLines).toEqual(['Resume queue built: source="test", enumerated=3, known=1, new=2']);
+    });
+
+    it('AC2 known file whose stored hash differs from current content is NOT queued (row presence alone decides; hash never read)', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('changed-on-disk.md', false)]);
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, ['/tmp/test/changed-on-disk.md'], {
+        hashOf: '/tmp/test/changed-on-disk.md',
+      });
+
+      await service.resumeAll([source]);
+
+      // Content-changed known files are RECOVER's duty (DEC-A7 guarantee (b)),
+      // never resume's: no queue entry, and the hash is not even consulted.
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
     });
 
-    it('should process a file that has no memories', async () => {
+    it('AC3+AC4 every queued execute carries forceIngest explicitly present-and-false (captured literals; defense-in-depth pin per DEC-A3/A7)', async () => {
       const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('known.md', false),
+        mockDirent('fresh-a.md', false),
+        mockDirent('fresh-b.md', false),
+      ]);
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, ['/tmp/test/known.md']);
+
+      await service.resumeAll([source]);
+
+      const params = processFileUseCase.execute.mock.calls.map(call => call[0] as Record<string, unknown>);
+      expect(params).toHaveLength(2);
+      for (const p of params) {
+        // Present AND false: a queue change that drops the explicit flag must
+        // fail this pin even though an absent flag would behave identically
+        // today (the gate default) — that silent drift is what we guard.
+        expect(Object.hasOwn(p, 'forceIngest')).toBe(true);
+        expect(p.forceIngest).toBe(false);
+      }
+      // The gate itself stays the use-case's responsibility (faked seam ⇒
+      // the flag reaches execute verbatim; internal hash-gate untouched).
+      expect(params[0].filePath).toBe('/tmp/test/fresh-a.md');
+      expect(params[1].filePath).toBe('/tmp/test/fresh-b.md');
+    });
+
+    it('should not read or hash a queued file for the queueing decision', async () => {
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([mockDirent('fresh.md', false)]);
 
       await service.resumeAll([source]);
 
       expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(processFileUseCase.execute).toHaveBeenCalledWith({
-        filePath: '/tmp/test/untracked.md',
-        eventType: 'add',
-        sourceId: 'test',
-        memoryBank: 'test',
-        sourceConfig: source,
-        // T4: resume untracked stays gated (stops the M2 retry loop).
-        forceIngest: false,
-      });
-    });
-
-    it('should only process files without memories in a mixed set', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false), mockDirent('untracked.md', false)]);
-      // First file has memories (skip), second has none (process).
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValueOnce(['mem-1']).mockResolvedValueOnce([]);
-
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(processFileUseCase.execute).toHaveBeenCalledWith({
-        filePath: '/tmp/test/untracked.md',
-        eventType: 'add',
-        sourceId: 'test',
-        memoryBank: 'test',
-        sourceConfig: source,
-        forceIngest: false,
-      });
-    });
-
-    it('should not read the file or chunk it for the decision', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
-
-      await service.resumeAll([source]);
-
-      // The decision must be a pure tracker lookup — no file read for the decision.
+      // The decision is a pure row-set subtraction — no file read.
       expect(fsMock.readFile).not.toHaveBeenCalled();
     });
 
-    it('should process untracked files from all sources via direct execute calls', async () => {
+    it('should queue new files from all sources with one row-set call per source', async () => {
       const sources = [
         aWatchSourceConfig({ id: 'source-1', path: '/tmp/source-1' }),
         aWatchSourceConfig({ id: 'source-2', path: '/tmp/source-2' }),
       ];
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      fsMock.readdir.mockResolvedValue([mockDirent('fresh.md', false)]);
 
       await service.resumeAll(sources);
 
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenCalledTimes(2);
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenNthCalledWith(1, 'source-1');
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenNthCalledWith(2, 'source-2');
       expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
       expect(processFileUseCase.execute).toHaveBeenNthCalledWith(1, {
-        filePath: '/tmp/source-1/untracked.md',
+        filePath: '/tmp/source-1/fresh.md',
         eventType: 'add',
         sourceId: 'source-1',
         memoryBank: 'source-1',
@@ -454,7 +514,7 @@ describe('ForceReprocessService', () => {
         forceIngest: false,
       });
       expect(processFileUseCase.execute).toHaveBeenNthCalledWith(2, {
-        filePath: '/tmp/source-2/untracked.md',
+        filePath: '/tmp/source-2/fresh.md',
         eventType: 'add',
         sourceId: 'source-2',
         memoryBank: 'source-2',
@@ -462,27 +522,26 @@ describe('ForceReprocessService', () => {
         forceIngest: false,
       });
     });
-
-    it('should skip a file when the tracker read throws', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('error.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockRejectedValue(new Error('tracker error'));
-
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).not.toHaveBeenCalled();
-    });
   });
 
-  describe('resumeAll (bank-verified skip logic)', () => {
-    it('should skip a tracked file the bank confirms present with chunks (verified skip)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
+  describe('resumeAll (bank verification retired — T10 / DEC-A7)', () => {
+    // The bank-verification block (getFileChunks × isFileHealthy + isKo()
+    // defensive skip + verified-skip counting) is DELETED from the resume
+    // path. Its whole old vocabulary (healthy/stale/zero-chunks/stub/mixed
+    // chunk states) must now be invisible to the resume loop: row-present
+    // files are excluded by the row set ALONE. Bank-loss repair belongs to
+    // --recover (DEC-A7 guarantee (a)) — pinned by recover suites, not here.
+    const rowFile = (name: string) => aFileTrackerRow(`/tmp/test/${name}`);
 
+    const enumerateOne = (name: string) => {
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('verified.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+      fsMock.readdir.mockResolvedValue([mockDirent(name, false)]);
+    };
+
+    it('a healthy row-present file is never queued and never bank-queried (verification retired)', async () => {
+      enumerateOne('known-healthy.md');
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([rowFile('known-healthy.md')]);
+      // Bank WOULD report healthy — must not be consulted at all.
       bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok(
           aFileChunksInfo({
@@ -495,158 +554,56 @@ describe('ForceReprocessService', () => {
         ),
       );
 
-      await service.resumeAll([source]);
+      await service.resumeAll([aWatchSourceConfig({ id: 'test', path: '/tmp/test' })]);
 
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
-      expect(bensyneClient.getFileChunks).toHaveBeenCalledWith('/tmp/test/verified.md', 'test');
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
     });
 
-    it('should re-ingest a tracked file the bank reports absent (stale-tracker — the fix)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+    it('a row-present file the bank lost (old stale-tracker repair target) is NOT queued and NOT bank-queried', async () => {
+      enumerateOne('bank-lost.md');
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([rowFile('bank-lost.md')]);
       bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
       );
 
-      await service.resumeAll([source]);
+      await service.resumeAll([aWatchSourceConfig({ id: 'test', path: '/tmp/test' })]);
 
-      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(processFileUseCase.execute).toHaveBeenCalledWith({
-        filePath: '/tmp/test/stale.md',
-        eventType: 'add',
-        sourceId: 'test',
-        memoryBank: 'test',
-        sourceConfig: source,
-        // T4: bank verification proved loss — the repair must never be gated.
-        forceIngest: true,
-      });
-    });
-
-    it('should process an untracked file without a bank check (new-file regression)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('newfile.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
-
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
+      // Old behavior: re-ingest with forceIngest:true. New contract: recover's job.
+      expect(processFileUseCase.execute).not.toHaveBeenCalled();
       expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
     });
 
-    it('should skip a tracked file defensively when the bank read errors', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('bank-error.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+    it('a row-present file whose bank read errors is NOT queued — the isKo() defensive skip retired with the read', async () => {
+      enumerateOne('bank-error.md');
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([rowFile('bank-error.md')]);
       bensyneClient.getFileChunks.mockResolvedValue(Result.ko([new Error('boom')]));
 
-      await service.resumeAll([source]);
+      await service.resumeAll([aWatchSourceConfig({ id: 'test', path: '/tmp/test' })]);
 
+      // No execute either way — but now through row exclusion, not a
+      // defensive skip on a bank read that no longer happens.
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
     });
 
-    it('should re-ingest a tracked file the bank reports present with zero chunks (defensive edge)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('empty.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
+    it('a skip-row file is excluded by its row alone (health vocabulary never read)', async () => {
+      enumerateOne('skip-row.md');
+      fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([
+        aFileTrackerRow('/tmp/test/skip-row.md', { skipReason: 'zero-chunks' }),
+      ]);
+      // Old code would have bank-verified this row (zero tracked memories ⇒
+      // zeroChunks present path or untracked path). New: row = known, end.
       bensyneClient.getFileChunks.mockResolvedValue(
         Result.ok(aFileChunksInfo({ status: 'present', chunks: [] })),
       );
 
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(processFileUseCase.execute).toHaveBeenCalledWith({
-        filePath: '/tmp/test/empty.md',
-        eventType: 'add',
-        sourceId: 'test',
-        memoryBank: 'test',
-        sourceConfig: source,
-        forceIngest: true,
-      });
-    });
-
-    it('should re-ingest a tracked file with all chunks memoryStatus: missing (stub rows)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('stub.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
-      bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok(
-          aFileChunksInfo({
-            chunks: [
-              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'missing' }),
-              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'missing' }),
-            ],
-          }),
-        ),
-      );
-
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
-      expect(processFileUseCase.execute).toHaveBeenCalledWith({
-        filePath: '/tmp/test/stub.md',
-        eventType: 'add',
-        sourceId: 'test',
-        memoryBank: 'test',
-        sourceConfig: source,
-        forceIngest: true,
-      });
-    });
-
-    it('should skip a tracked file with mixed chunks (at least one present)', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('mixed.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
-      bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok(
-          aFileChunksInfo({
-            chunks: [
-              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' }),
-              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'missing' }),
-              aStoredChunkInfo({ chunkIndex: 2, memoryStatus: 'missing' }),
-            ],
-          }),
-        ),
-      );
-
-      await service.resumeAll([source]);
+      await service.resumeAll([aWatchSourceConfig({ id: 'test', path: '/tmp/test' })]);
 
       expect(processFileUseCase.execute).not.toHaveBeenCalled();
-    });
-
-    it('should skip a tracked file with all chunks present', async () => {
-      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-      fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('healthy.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
-      bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok(
-          aFileChunksInfo({
-            chunks: [
-              aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' }),
-              aStoredChunkInfo({ chunkIndex: 1, memoryStatus: 'present' }),
-            ],
-          }),
-        ),
-      );
-
-      await service.resumeAll([source]);
-
-      expect(processFileUseCase.execute).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
     });
   });
 
@@ -659,7 +616,6 @@ describe('ForceReprocessService', () => {
 
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       await service.autoPopulateSources(sources);
 
@@ -681,7 +637,6 @@ describe('ForceReprocessService', () => {
 
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       await service.autoPopulateSources(sources);
 
@@ -708,7 +663,6 @@ describe('ForceReprocessService', () => {
         .mockRejectedValueOnce(new Error('stat failed')) // source-1 fails
         .mockResolvedValueOnce(mockDirStats()); // source-2 succeeds
       fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       await service.autoPopulateSources(sources);
 
@@ -724,7 +678,6 @@ describe('ForceReprocessService', () => {
 
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       // autoPopulateSources should complete after enqueuing, not after queue drains
       await service.autoPopulateSources(sources);
@@ -742,7 +695,6 @@ describe('ForceReprocessService', () => {
 
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       await service.resumeSource('source-2', sources);
 
@@ -833,50 +785,41 @@ describe('ForceReprocessService', () => {
     });
 
     describe('resumeSourceInternal', () => {
-      it('logs Resuming untracked file [i/totalFilesInQueue] before execute', async () => {
+      // AC7 narrow exception: the `Resuming new file` string IS the operator
+      // contract (replaces `Resuming untracked file`; bracket = queue position
+      // within the NEW-FILES queue + queue size as denominator). ONE contract
+      // test (T11 owns summary lines — untouched here).
+      it('AC7 contract: logs `Resuming new file [i/totalFilesInQueue]: path="…"` with queue-local 1-based position (known files consume no position)', async () => {
         const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
 
         fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+        fsMock.readdir.mockResolvedValue([
+          mockDirent('known-a.md', false),
+          mockDirent('fresh-a.md', false),
+          mockDirent('known-b.md', false),
+          mockDirent('fresh-b.md', false),
+        ]);
+        scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, [
+          '/tmp/test/known-a.md',
+          '/tmp/test/known-b.md',
+        ]);
 
         await service.resumeAll([source]);
 
-        expect(logger.info).toHaveBeenCalledWith(
-          expect.stringContaining('Resuming untracked file [1/1]: path="/tmp/test/untracked.md"'),
-        );
-      });
-
-      it('logs Skipping verified file for resume with the same bracket (bank confirms chunks)', async () => {
-        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-        fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('tracked.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
-        // Default getFileChunks mock: present + 1 chunk → verified skip.
-        bensyneClient.getFileChunks.mockResolvedValue(Result.ok(aFileChunksInfo()));
-
-        await service.resumeAll([source]);
-
-        expect(logger.debug).toHaveBeenCalledWith(
-          expect.stringContaining('Skipping verified file for resume [1/1]: path="/tmp/test/tracked.md"'),
-        );
-      });
-
-      it('logs Skipping file for resume; failed to read stored memory count with the same bracket', async () => {
-        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-
-        fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('error.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockRejectedValue(new Error('tracker error'));
-
-        await service.resumeAll([source]);
-
-        expect(logger.warn).toHaveBeenCalledWith(
-          expect.stringContaining(
-            'Skipping file for resume; failed to read stored memory count [1/1]: path="/tmp/test/error.md"',
-          ),
-        );
+        // Capture ONLY queue-item log lines (the run header also starts with
+        // "Resuming" — it is the entrypoint notice, not the pinned format).
+        const resumeLogs = logger.info.mock.calls
+          .map(call => (String(call[0]).startsWith('Resuming new file ') ? String(call[0]) : null))
+          .filter((entry): entry is string => entry !== null);
+        expect(resumeLogs).toEqual([
+          'Resuming new file [1/2]: path="/tmp/test/fresh-a.md"',
+          'Resuming new file [2/2]: path="/tmp/test/fresh-b.md"',
+        ]);
+        // The retired v1 string must not appear anywhere in the run.
+        for (const call of logger.info.mock.calls) {
+          expect(String(call[0])).not.toContain('Resuming untracked file');
+          expect(String(call[0])).not.toContain('Resuming stale-tracker file');
+        }
       });
     });
   });
@@ -983,9 +926,10 @@ describe('ForceReprocessService', () => {
   });
 
   describe('activity gate in the resume loop (B14a)', () => {
-    // Spec §3.3 B14(a): for ttlDays-configured sources each enumerated file is
-    // activity-checked BEFORE any getMemoryIds/verify/ingest work; past-due
-    // files are skipped with a single notice. ttlDays absent → gate never entered.
+    // Spec §3.3 B14(a): for ttlDays-configured sources every QUEUED file is
+    // activity-checked BEFORE any verify/ingest work; past-due files are
+    // skipped with a single notice — behavior preserved unchanged by T10,
+    // now operating on the new-files queue. ttlDays absent → gate not entered.
     const DAY_MS = 86_400_000;
 
     // aWatchSourceConfig has no ttlDays override on purpose (Absent = no TTL,
@@ -1013,7 +957,6 @@ describe('ForceReprocessService', () => {
       fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
       // Never-tracked: no rows — yet row presence must not matter (OD-5):
       // the gate precedes the tracker lookup entirely.
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
 
       await service.resumeAll([source]);
 
@@ -1031,9 +974,9 @@ describe('ForceReprocessService', () => {
       const forgottenFile = '/tmp/ttl-source/forgotten.md';
       stubFileMtimes(new Map([[forgottenFile, Date.now() - 90 * DAY_MS]]));
       fsMock.readdir.mockResolvedValue([mockDirent('forgotten.md', false)]);
-      // Pre-hard-deleted (forgotten) tracker row: getMemoryIds reads → [] when
-      // consulted. The gate must skip before it is ever consulted.
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      // Pre-hard-deleted (forgotten) tracker row: after T10 the file is
+      // simply un-known (queued); the activity gate must still skip it before
+      // any execute/work happens.
 
       await service.resumeAll([source]);
 
@@ -1045,53 +988,99 @@ describe('ForceReprocessService', () => {
       );
     });
 
-    it('processes a file with recent mtime normally — row age alone never triggers the skip', async () => {
+    it('processes a recent-mtime queued file normally — row age alone never triggers the skip', async () => {
       const source = aTtlSource();
       const activeFile = '/tmp/ttl-source/active.md';
-      // Recent activity (1-day-old mtime) inside the 30-day window; the
-      // tracker row behind these memory ids is old by construction — its age
-      // must never gate (mtime is the authoritative clock).
+      // Recent activity (1-day-old mtime) inside the 30-day window. T10
+      // retarget (AC5 companion): the file is NEW (no row) — under the old
+      // shape this test exercised the stale-tracker branch; the point stands
+      // unchanged: mtime is the authoritative clock and a fresh activity lets
+      // the queued file through to execute.
       stubFileMtimes(new Map([[activeFile, Date.now() - DAY_MS]]));
       fsMock.readdir.mockResolvedValue([mockDirent('active.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
-      // Bank lost the memories → today's stale-tracker re-ingest branch.
-      bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
-      );
 
       await service.resumeAll([source]);
 
-      expect(fileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith(activeFile);
+      // Retired-classifier guard (T10): the queued file reaches execute with
+      // zero per-file tracker/bank reads.
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
       expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
       expect(processFileUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ filePath: activeFile }),
+        expect.objectContaining({ filePath: activeFile, forceIngest: false }),
       );
       expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Skipping activity-expired file'));
     });
 
-    it('leaves the call sequence for a ttlDays-less source identical to today (gate not entered, no stat for the gate)', async () => {
+    it('leaves the call set for a ttlDays-less source to the queue path only (gate not entered, no stat for the gate)', async () => {
       // Gate is defined solely by source.ttlDays; the builder omits it entirely.
       const source = aWatchSourceConfig({ id: 'plain-source', path: '/tmp/plain' });
 
       fsMock.stat.mockResolvedValue(mockDirStats());
-      fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      fsMock.readdir.mockResolvedValue([mockDirent('fresh.md', false)]);
 
       await service.resumeAll([source]);
 
-      // Today's behavior, byte-for-byte sequence: tracker lookup → execute.
-      expect(fileMemoryTrackerService.getMemoryIds).toHaveBeenCalledWith('/tmp/plain/untracked.md');
+      // T10 call set: row-set seam → execute (no per-file tracker lookup).
+      expect(fileTrackerRepository.findTrackedBySourceId).toHaveBeenCalledWith('plain-source');
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
       expect(processFileUseCase.execute).toHaveBeenCalledTimes(1);
       expect(processFileUseCase.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ filePath: '/tmp/plain/untracked.md' }),
+        expect.objectContaining({ filePath: '/tmp/plain/fresh.md' }),
       );
       expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Skipping activity-expired file'));
 
       // Negative guard: the gate branch must not run — the only stat is the
       // existing source-root stat, never the enumerated file.
       const statTargets = fsMock.stat.mock.calls.map(call => String(call[0]));
-      expect(statTargets).not.toContain('/tmp/plain/untracked.md');
+      expect(statTargets).not.toContain('/tmp/plain/fresh.md');
       expect(statTargets).toEqual(['/tmp/plain']);
+    });
+
+    it('summary files= counts the full NEW-FILES QUEUE including the activity-expired file (T11 / developer ruling 2026-11-02)', async () => {
+      // Spec C8 literal: `resume finished: files=<new-files-queue size>` —
+      // the queue IS the row-subtraction; an activity-expired file is part
+      // of what resume took on and its gate-skip happens DOWNSTREAM of the
+      // count, so `files=` stays the full queue size (3) while `ingested=`
+      // counts only executed successes and `failed=` the ko outcomes. The
+      // diverges from processed-attempts arithmetic exactly HERE (2 executes
+      // vs 3 queued) — that is the whole point of this test.
+      const source = aTtlSource();
+      stubFileMtimes(
+        new Map([
+          ['/tmp/ttl-source/a-ok.md', Date.now()],
+          ['/tmp/ttl-source/b-ko.md', Date.now()],
+          ['/tmp/ttl-source/c-stale.md', Date.now() - 40 * DAY_MS],
+        ]),
+      );
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('a-ok.md', false),
+        mockDirent('b-ko.md', false),
+        mockDirent('c-stale.md', false),
+      ]);
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        '/tmp/ttl-source/a-ok.md': 'ingest',
+        '/tmp/ttl-source/b-ko.md': 'failure',
+      });
+
+      const summary = await service.resumeAll([source]);
+
+      // The gate consumed the third file with zero execute work.
+      expect(processFileUseCase.execute).toHaveBeenCalledTimes(2);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(/Skipping activity-expired file.*c-stale\.md/),
+      );
+      // Emission: files=3 (full queue), ingested=1 (executed successes),
+      // failed=1 (ko count).
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=3, ingested=1, failed=1']);
+      // Returned DATA: same queue-size semantics (field names/shape frozen).
+      expect(summary).toEqual({
+        files: 3,
+        gatedSkips: 0,
+        terminalSkipSkips: 0,
+        verifiedSkips: 0,
+        reIngested: 1,
+      });
     });
 
     // NOTE: resume/reprocess paths that reach execute() also carry the
@@ -1191,61 +1180,50 @@ describe('ForceReprocessService', () => {
       });
     });
 
-    describe('resume branch split', () => {
-      it('stale-tracker branch (bank verification proved loss) ⇒ forceIngest: true — repair never gated (G3)', async () => {
+    describe('resume new-files-only queue (T10 / DEC-A7 retarget)', () => {
+      // v1's stale/untracked branch split no longer exists: the resume loop
+      // has ONE execute shape. The stale-tracker repair moved to --recover
+      // (DEC-A7 (a)) — its forceIngest:true lives in recover suites now.
+      const queueFixture = (known: string[], queue: string[]) => {
         const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
         fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('stale.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1', 'mem-2']);
-        bensyneClient.getFileChunks.mockResolvedValue(
-          Result.ok(aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })),
+        fsMock.readdir.mockResolvedValue([
+          ...known.map(n => mockDirent(n, false)),
+          ...queue.map(n => mockDirent(n, false)),
+        ]);
+        scriptKnownRows(
+          fileTrackerRepository.findTrackedBySourceId,
+          known.map(n => `/tmp/test/${n}`),
         );
+        return source;
+      };
+
+      it('queued new file ⇒ forceIngest: false — explicitly passed, gate owns the file from there (AC3 retarget)', async () => {
+        const source = queueFixture([], ['fresh.md']);
 
         await service.resumeAll([source]);
 
         const params = capturedParams();
         expect(params).toHaveLength(1);
-        expect(params[0].filePath).toBe('/tmp/test/stale.md');
-        expect(params[0].forceIngest).toBe(true);
-      });
-
-      it('untracked branch ⇒ forceIngest: false — the M2 retry loop is gated', async () => {
-        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-        fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
-
-        await service.resumeAll([source]);
-
-        const params = capturedParams();
-        expect(params).toHaveLength(1);
-        expect(params[0].filePath).toBe('/tmp/test/untracked.md');
+        expect(params[0].filePath).toBe('/tmp/test/fresh.md');
         expect(params[0].forceIngest).toBe(false);
       });
 
-      it('healthy verified files stay skipped by the bank check — no execute regardless of the flag (no-change guard)', async () => {
-        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-        fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('healthy.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue(['mem-1']);
-        bensyneClient.getFileChunks.mockResolvedValue(
-          Result.ok(
-            aFileChunksInfo({
-              chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
-            }),
-          ),
-        );
+      it('known files never reach execute regardless of row kind — queue owns exclusion, no bank read (no-change guard retarget)', async () => {
+        const source = queueFixture(['known-normal.md', 'known-skip.md'], []);
+        fileTrackerRepository.findTrackedBySourceId.mockResolvedValue([
+          aFileTrackerRow('/tmp/test/known-normal.md'),
+          aFileTrackerRow('/tmp/test/known-skip.md', { skipReason: 'empty-content' }),
+        ]);
 
         await service.resumeAll([source]);
 
         expect(processFileUseCase.execute).not.toHaveBeenCalled();
+        expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
       });
 
-      it('untracked via autoPopulateSources (same internal path) ⇒ forceIngest: false too', async () => {
-        const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test' });
-        fsMock.stat.mockResolvedValue(mockDirStats());
-        fsMock.readdir.mockResolvedValue([mockDirent('untracked.md', false)]);
-        fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
+      it('new files via autoPopulateSources (same internal path) ⇒ forceIngest: false too', async () => {
+        const source = queueFixture([], ['fresh.md']);
 
         await service.autoPopulateSources([source]);
 
@@ -1270,58 +1248,41 @@ describe('ForceReprocessService', () => {
       fsMock.readdir.mockResolvedValue(names.map(n => mockDirent(n, false)));
     };
 
-    const bankStateOf = (stateOf: Record<string, 'healthy' | 'lost'>) => {
-      bensyneClient.getFileChunks.mockImplementation(async (filePath: string) =>
-        Result.ok(
-          stateOf[filePath] === 'lost'
-            ? aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })
-            : aFileChunksInfo({
-                chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
-              }),
-        ),
-      );
-    };
-
-    it('resume run: returned summary DATA equals the scripted outcome mix', async () => {
-      // Scripted stream: real ingest (with memoryIds), hash-gate skip,
-      // terminal skip — both from the untracked branch through execute();
-      // a loop-level verified-healthy skip; and a stale-tracker forced re-ingest.
-      enumerate('a-fresh.md', 'b-gated.md', 'c-terminal.md', 'd-verified.md', 'e-stale.md');
-      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
-        filePath === fileAt('d-verified.md')
-          ? ['mem-keep-1']
-          : filePath === fileAt('e-stale.md')
-            ? ['mem-lost-1']
-            : [],
-      );
-      bankStateOf({ [fileAt('d-verified.md')]: 'healthy', [fileAt('e-stale.md')]: 'lost' });
+    it('resume run: returned summary DATA equals the scripted outcome mix (T10 queue shape — no loop-level verified path exists)', async () => {
+      // Scripted stream through the queue: real ingest (with memoryIds), a
+      // hash-gate skip and a terminal skip (both legitimate execute()
+      // outcomes for genuinely-new files under the faked seam), and a
+      // known-row file that never reaches execute(). v1's loop-level
+      // verified-healthy skip and stale-tracker forced re-ingest are GONE
+      // (T10) — verifiedSkips stays 0 by construction.
+      enumerate('a-fresh.md', 'b-gated.md', 'c-terminal.md', 'd-known.md');
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, [fileAt('d-known.md')]);
       scriptOutcomesByPath(processFileUseCase.execute, {
         [fileAt('a-fresh.md')]: 'ingest',
         [fileAt('b-gated.md')]: 'gated-skip',
         [fileAt('c-terminal.md')]: 'terminal-skip',
-        [fileAt('e-stale.md')]: 'ingest',
       });
 
       const summary: BatchRunSummary = await service.resumeAll([c8Source()]);
 
       expect(summary).toEqual({
-        files: 4, // execute() calls only — the verified-healthy skip never reaches it
+        files: 3, // queue size (ruling 2026-11-02): 3 new files; the known-row file never enters the queue (here queue==attempts)
         gatedSkips: 1,
         terminalSkipSkips: 1,
-        verifiedSkips: 1,
-        reIngested: 2, // fresh ingest + stale-tracker forced re-ingest
+        verifiedSkips: 0, // classifier retired with the bank verification
+        reIngested: 1,
       });
+      // Retired-classifier guard on the same run.
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
     });
 
-    it('resume summary accumulates across sources of one run', async () => {
+    it('resume summary accumulates across sources of one run (row-excluded files contribute nothing)', async () => {
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir
         .mockResolvedValueOnce([mockDirent('gated.md', false), mockDirent('ingest.md', false)])
-        .mockResolvedValueOnce([mockDirent('verified.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
-        filePath === '/tmp/c8-1/verified.md' ? ['mem-keep-1'] : [],
-      );
-      bankStateOf({ '/tmp/c8-1/verified.md': 'healthy' });
+        .mockResolvedValueOnce([mockDirent('known.md', false)]);
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, ['/tmp/c8-1/known.md']);
       scriptOutcomesByPath(processFileUseCase.execute, {
         '/tmp/c8-0/gated.md': 'gated-skip',
         '/tmp/c8-0/ingest.md': 'ingest',
@@ -1333,16 +1294,33 @@ describe('ForceReprocessService', () => {
         files: 2,
         gatedSkips: 1,
         terminalSkipSkips: 0,
-        verifiedSkips: 1,
+        verifiedSkips: 0,
         reIngested: 1,
       });
+    });
+
+    it('cross-source run emits ONE aggregate resume line — run-scoped `failed=` and queue-sum `files=` across all sources (reviewer in-review pin: run-scoped tally semantics documented at ResumeRunTally but only ever asserted single-source until now)', async () => {
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('line-ok.md', false), mockDirent('line-ko.md', false)])
+        .mockResolvedValueOnce([mockDirent('new-in-1.md', false)]);
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        '/tmp/c8-0/line-ok.md': 'ingest',
+        '/tmp/c8-0/line-ko.md': 'failure',
+        '/tmp/c8-1/new-in-1.md': 'ingest',
+      });
+
+      await service.resumeAll([c8Source('c8-0', '/tmp/c8-0'), c8Source('c8-1', '/tmp/c8-1')]);
+
+      // ONE summary line for the WHOLE resumeAll run (not per source), with
+      // the run-scoped counters: queue sizes 2+1=3, ingested 2, run ko count 1.
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=3, ingested=2, failed=1']);
     });
 
     it('single-source run (resumeSource) still composes and returns the summary', async () => {
       const sources = [c8Source('c8-0'), c8Source('keep-me')];
       fsMock.stat.mockResolvedValue(mockDirStats());
       fsMock.readdir.mockResolvedValue([mockDirent('gated.md', false)]);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
       scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('gated.md')]: 'gated-skip' });
 
       const summary = await service.resumeSource('c8-0', sources);
@@ -1354,19 +1332,18 @@ describe('ForceReprocessService', () => {
         verifiedSkips: 0,
         reIngested: 0,
       });
-      expect(summaryLinesFrom(logger.info)).toEqual([
-        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
-      ]);
+      // T11 split format (single-source resume path).
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=1, ingested=0, failed=0']);
     });
 
-    it('auto-populate run (resume shape) composes and logs the summary', async () => {
+    it('auto-populate run (queue shape) composes and logs the summary (row-known file never counted)', async () => {
       // Spec §9 (amended): the flat C8 summary of the auto-populate pass IS
       // the acceptance check — the run path must carry the summary too.
-      enumerate('gated.md', 'verified.md');
-      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) =>
-        filePath === fileAt('verified.md') ? ['mem-keep-1'] : [],
-      );
-      bankStateOf({ [fileAt('verified.md')]: 'healthy' });
+      // T10: the known file is excluded by its row (verifiedSkips retired).
+      // T11: the auto-populate pass shares the resume emission split — line
+      // carries ONLY files/ingested/failed.
+      enumerate('gated.md', 'known.md');
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, [fileAt('known.md')]);
       scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('gated.md')]: 'gated-skip' });
 
       const summary = await service.autoPopulateSources([c8Source()]);
@@ -1375,17 +1352,14 @@ describe('ForceReprocessService', () => {
         files: 1,
         gatedSkips: 1,
         terminalSkipSkips: 0,
-        verifiedSkips: 1,
+        verifiedSkips: 0,
         reIngested: 0,
       });
-      expect(summaryLinesFrom(logger.info)).toEqual([
-        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=1, re-ingested=0',
-      ]);
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=1, ingested=0, failed=0']);
     });
 
     it('failed outcomes count as files only (never as a skip or a re-ingest)', async () => {
       enumerate('broken.md');
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
       scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('broken.md')]: 'failure' });
 
       const summary = await service.resumeAll([c8Source()]);
@@ -1398,6 +1372,52 @@ describe('ForceReprocessService', () => {
         verifiedSkips: 0,
         reIngested: 0,
       });
+    });
+
+    it('resume counters (T11 / DEC-A7): scripted {queued 2: 1 ok, 1 ko} run emits the EXACT split resume line and correct summary DATA', async () => {
+      // Counter machine as DATA; the emitted line is matched only as the exact
+      // C8 split string (no `verified-skips` / other retired tokens anywhere
+      // in it). The returned summary DATA keeps its field names/shape
+      // unchanged (e2e + T12 assert on it) — the mode split is presentation
+      // in logBatchSummary; `failed=` comes from an internal run counter only.
+      enumerate('ok.md', 'ko.md');
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [fileAt('ok.md')]: 'ingest',
+        [fileAt('ko.md')]: 'failure',
+      });
+
+      const summary: BatchRunSummary = await service.resumeAll([c8Source()]);
+
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=2, ingested=1, failed=1']);
+      for (const line of summaryLinesFrom(logger.info)) {
+        expect(line).not.toMatch(/verified-skips|gated-skips|terminal-skip-skips|re-ingested/);
+      }
+
+      expect(summary).toEqual({
+        files: 2,
+        gatedSkips: 0,
+        terminalSkipSkips: 0,
+        verifiedSkips: 0,
+        reIngested: 1,
+      });
+      // The ko count feeds the resume LINE only — never the returned DATA.
+      expect(Object.keys(summary).sort()).toEqual([
+        'files',
+        'gatedSkips',
+        'reIngested',
+        'terminalSkipSkips',
+        'verifiedSkips',
+      ]);
+
+      // Same outcome mix through the force path (DEC-A7 keeps its full field
+      // set): all five fields present, no split-format tokens (positive/negative
+      // grep pair for the AC3 contract, new coverage — existing force
+      // assertions above stay untouched).
+      logger.info.mockClear();
+      await service.forceReprocessAll([c8Source()]);
+      expect(summaryLinesFrom(logger.info)).toEqual([
+        'force-reprocess finished: files=2, gated-skips=0, terminal-skip-skips=0, verified-skips=0, re-ingested=1',
+      ]);
     });
 
     it('force-reprocess run summary uses the force-reprocess prefix, same tokens', async () => {
@@ -1447,9 +1467,8 @@ describe('ForceReprocessService', () => {
       const resumeSummary = await service.resumeAll([c8Source()]);
 
       expect(resumeSummary).toEqual(aZeroRunSummary());
-      expect(summaryLinesFrom(logger.info)).toEqual([
-        'resume finished: files=0, gated-skips=0, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
-      ]);
+      // files=0 is the healthy repeat-run signature (C8 amended) — T11 format.
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=0, ingested=0, failed=0']);
 
       logger.info.mockClear();
       const forceSummary = await service.forceReprocessAll([c8Source()]);
@@ -1460,21 +1479,29 @@ describe('ForceReprocessService', () => {
       ]);
     });
 
-    it('emits exactly one summary line per completed run (prefix token + key order)', async () => {
-      enumerate('b-gated.md');
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
-      scriptOutcomesByPath(processFileUseCase.execute, { [fileAt('b-gated.md')]: 'gated-skip' });
+    it('emits exactly one resume summary line per completed run in the T11 split format (format contract: files/ingested/failed only)', async () => {
+      // C8 (AMENDED 2026-11-02) / DEC-A7: resume and auto-populate paths emit
+      // ONLY `resume finished: files=…, ingested=…, failed=…`. The
+      // bank-verification `verified-skips` field retires from resume output
+      // with the removed verification. ONE format contract test for this
+      // string (narrow log-format exception); all other resume assertions here
+      // are counter-behavior tests.
+      enumerate('a-ok.md', 'b-ko.md');
+      scriptOutcomesByPath(processFileUseCase.execute, {
+        [fileAt('a-ok.md')]: 'ingest',
+        [fileAt('b-ko.md')]: 'failure',
+      });
 
       await service.resumeAll([c8Source()]);
 
       const lines = summaryLinesFrom(logger.info);
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toMatch(
-        /^resume finished: files=\d+, gated-skips=\d+, terminal-skip-skips=\d+, verified-skips=\d+, re-ingested=\d+$/,
-      );
-      expect(lines[0]).toBe(
-        'resume finished: files=1, gated-skips=1, terminal-skip-skips=0, verified-skips=0, re-ingested=0',
-      );
+      expect(lines[0]).toMatch(/^resume finished: files=\d+, ingested=\d+, failed=\d+$/);
+      expect(lines[0]).toBe('resume finished: files=2, ingested=1, failed=1');
+      // AC3 negative guard: retired v1 field tokens never appear in a resume line.
+      for (const line of lines) {
+        expect(line).not.toMatch(/verified-skips|gated-skips|terminal-skip-skips|re-ingested/);
+      }
     });
 
     it('source-not-found early exits are untouched — no run, no summary', async () => {
@@ -1503,7 +1530,6 @@ describe('ForceReprocessService', () => {
     const HB_ROOT = '/tmp/hb';
     const hbName = (n: number) => `file-${String(n).padStart(3, '0')}.md`;
     const hbPath = (n: number) => `${HB_ROOT}/${hbName(n)}`;
-    const hbIndex = (filePath: string) => Number(/file-(\d+)\.md$/.exec(filePath)?.[1] ?? NaN);
     const hbSource = () => aWatchSourceConfig({ id: 'hb-source', path: HB_ROOT });
 
     const enumerateHb = (count: number) => {
@@ -1513,10 +1539,13 @@ describe('ForceReprocessService', () => {
       );
     };
 
-    // Deterministic role assignment for the mixed stream (pairwise-disjoint
-    // residues: verified≡0 mod 50, stale≡7 mod 100, failure≡3 mod 50, gated≡11 mod 25).
-    const isVerifiedAt = (n: number) => n % 50 === 0; // bank-verified healthy skip (never executes)
-    const isStaleAt = (n: number) => n % 100 === 7; // stale-tracker branch pre-classification
+    // v1 role residues (verified≡0 mod 50, stale≡7 mod 100) drove the
+    // per-file getMemoryIds×bank classifiers — retired by T10/DEC-A7. The
+    // T10 retarget keeps the outcome residues (failure≡3 mod 50, gated≡11
+    // mod 25) on a pure queue stream: a `knownAt` residue marks row files
+    // (never queued, zero per-file work); everything else is new → execute.
+    // Deterministic and pairwise disjoint as before.
+    const knownAt = (n: number) => n % 50 === 0; // FileTracker row present → excluded from the queue
     const isFailureAt = (n: number) => n % 50 === 3; // execute → Result.ko
     const isGatedAt = (n: number) => n % 25 === 11; // execute → ok + skipped='unchanged'
 
@@ -1530,22 +1559,15 @@ describe('ForceReprocessService', () => {
 
     const scriptResumeRoles = (count: number) => {
       enumerateHb(count);
-      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) => {
-        const n = hbIndex(filePath);
-        return isVerifiedAt(n) || isStaleAt(n) ? [`mem-tracker-${n}`] : [];
-      });
-      bensyneClient.getFileChunks.mockImplementation(async (filePath: string) =>
-        Result.ok(
-          isStaleAt(hbIndex(filePath))
-            ? aFileChunksInfo({ status: 'FILE_NOT_FOUND', chunks: [] })
-            : aFileChunksInfo({
-                chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })],
-              }),
-        ),
+      scriptKnownRows(
+        fileTrackerRepository.findTrackedBySourceId,
+        Array.from({ length: count }, (_, i) => i + 1)
+          .filter(knownAt)
+          .map(hbPath),
       );
       const script: Record<string, ScriptedOutcomeKind> = {};
       for (let n = 1; n <= count; n++) {
-        if (isVerifiedAt(n)) continue; // verified-healthy files never reach execute()
+        if (knownAt(n)) continue; // row-known files never reach execute()
         script[hbPath(n)] = isFailureAt(n) ? 'failure' : isGatedAt(n) ? 'gated-skip' : 'ingest';
       }
       scriptOutcomesByPath(processFileUseCase.execute, script);
@@ -1560,13 +1582,6 @@ describe('ForceReprocessService', () => {
       scriptOutcomesByPath(processFileUseCase.execute, script);
     };
 
-    const withNoRoles = (count: number) => {
-      enumerateHb(count);
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
-      // scriptOutcomesByPath default → every file is an ordinary successful ingest.
-      scriptOutcomesByPath(processFileUseCase.execute, {});
-    };
-
     const resumeHeartbeat = (
       processed: number,
       total: number,
@@ -1577,38 +1592,69 @@ describe('ForceReprocessService', () => {
     const forceHeartbeat = (processed: number, total: number, gated: number, failures: number) =>
       `force-reprocess progress: ${processed}/${total} processed (verified=0, gated=${gated}, stale-repair=0, untracked=0, failures=${failures})`;
 
-    // Cumulative field values for the resume role-stream at milestone k — read
-    // straight off the role definitions (pairwise disjoint, so untracked =
-    // everything the loop classifies into neither verified nor stale).
-    const fieldsAt = (k: number): [number, number, number, number, number] => {
-      const verified = countUpTo(isVerifiedAt, k);
-      const stale = countUpTo(isStaleAt, k);
-      const gated = countUpTo(isGatedAt, k);
-      const failures = countUpTo(isFailureAt, k);
-      const untracked = k - verified - stale;
-      return [verified, gated, stale, untracked, failures];
+    // Cumulative field values for the T10 queue stream at the k-th QUEUED
+    // file. The `verified=` and `stale-repair=` classifiers were removed with
+    // the bank verification (structurally 0 on the resume loop — the format
+    // strings themselves are unchanged per Ad-Hoc F / T11), `untracked=` is
+    // the queue's own branch (every file the loop processes is by definition
+    // new-files-queue), gated/failures come from outcomes.
+    const queuedIndexAt = (k: number): number => {
+      let n = 0;
+      while (n < 3000) {
+        n += 1;
+        if (!knownAt(n)) {
+          k -= 1;
+          if (k === 0) return n;
+        }
+      }
+      throw new Error(`no ${k}th queued file within 3000`);
     };
 
-    it('resumes of 250 mixed files emit heartbeats EXACTLY at 100 and 200 with correct cumulative fields (none at 50/150/250)', async () => {
+    const fieldsAt = (k: number): [number, number, number, number, number] => {
+      const lastN = queuedIndexAt(k);
+      const gated = countUpTo(isGatedAt, lastN);
+      const failures = countUpTo(isFailureAt, lastN);
+      return [0, gated, 0, k, failures];
+    };
+
+    // Denominator shown in resume heartbeats = the NEW-FILES queue size.
+    const queueSize = (count: number): number => {
+      let k = 0;
+      for (let n = 1; n <= count; n++) {
+        if (!knownAt(n)) k += 1;
+      }
+      return k;
+    };
+
+    it('resumes of 250 files (row + outcome mix) emit heartbeats EXACTLY at queue positions 100 and 200 with correct cumulative fields (none at 50/150/250)', async () => {
+      // T10 retarget: the denominator is the NEW-FILES QUEUE size (246 of the
+      // 250 enumerated — n%50==0 carry rows), and heartbeats count QUEUED
+      // files only: a row-known file consumes no processed index at all.
       scriptResumeRoles(250);
 
       await service.resumeAll([hbSource()]);
 
       expect(heartbeatLinesFrom(logger.info)).toEqual([
-        resumeHeartbeat(100, 250, fieldsAt(100)),
-        resumeHeartbeat(200, 250, fieldsAt(200)),
+        resumeHeartbeat(100, queueSize(250), fieldsAt(100)),
+        resumeHeartbeat(200, queueSize(250), fieldsAt(200)),
       ]);
     });
 
-    it('a run of exactly 100 files emits one 100/100 heartbeat and then only the normal final summary (no duplicate)', async () => {
+    it('a run of 100 enumerated / 98 queued files emits NO heartbeat (below the queue threshold) and only the normal final summary (no duplicate)', async () => {
       scriptResumeRoles(100);
 
       await service.resumeAll([hbSource()]);
 
-      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 100, fieldsAt(100))]);
-      expect(summaryLinesFrom(logger.info)).toEqual([
-        'resume finished: files=98, gated-skips=4, terminal-skip-skips=0, verified-skips=2, re-ingested=92',
-      ]);
+      // v1: 100 enumerated files were 100 processed → one 100/100 heartbeat.
+      // T10: heartbeats count QUEUED files only; 98 queued < 100 → silent.
+      // Row-excluded files consuming no processed index is exactly what
+      // quiets steady-state loops (DEC-A7 / G5).
+      expect(heartbeatLinesFrom(logger.info)).toEqual([]);
+      // T11 split format: files=queue size (98 queued of the 100 enumerated
+      // — queue==attempts here, numbers invariant under the ruling),
+      // ingested=successful (92), failed=ko outcomes (n≡3 mod 50 within
+      // 1..100 minus row hits → 2).
+      expect(summaryLinesFrom(logger.info)).toEqual(['resume finished: files=98, ingested=92, failed=2']);
     });
 
     it('runs below 100 files emit zero heartbeats in either loop, per-file log volume unchanged (count-probe)', async () => {
@@ -1627,8 +1673,11 @@ describe('ForceReprocessService', () => {
       expect(perFileProcessLines).toBe(99);
     });
 
-    it('resume progress line matches the contracted format exactly (format contract, resume prefix)', async () => {
-      withNoRoles(130);
+    it('resume progress line matches the contracted format exactly (format contract, resume prefix; T10: verified/stale-repair structurally 0)', async () => {
+      // All-new queue (no rows): format string unchanged (Ad-Hoc F contract;
+      // T11 owns the final-summary lines). The removed classifiers now read
+      // 0 by construction — pinned here so a format drift can't sneak in.
+      enumerateHb(130);
 
       await service.resumeAll([hbSource()]);
 
@@ -1637,6 +1686,8 @@ describe('ForceReprocessService', () => {
         'resume progress: 100/130 processed (verified=0, gated=0, stale-repair=0, untracked=100, failures=0)',
       ]);
       expect(lines[0]).toMatch(RESUME_HB_RE);
+      expect(fileMemoryTrackerService.getMemoryIds).not.toHaveBeenCalled();
+      expect(bensyneClient.getFileChunks).not.toHaveBeenCalled();
     });
 
     it('process-only walk of the force-reprocess loop mirrors the field list under the force prefix — non-zero outcomes count, branch fields stay 0 (format contract)', async () => {
@@ -1663,36 +1714,41 @@ describe('ForceReprocessService', () => {
 
       await service.autoPopulateSources([hbSource()]);
 
-      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 150, fieldsAt(100))]);
+      // scriptResumeRoles(150) ⇒ rows at {50,100,150}: resume-prefix and
+      // queue-size expectations both follow the queue (147), not enumeration.
+      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, queueSize(150), fieldsAt(100))]);
     });
 
-    it('field provenance: terminal-skip files never appear as a heartbeat field; stale/untracked are branch classifications; ko adds failures on top', async () => {
-      // Files 1–3 are bank-verified healthy; 97 untracked files reach execute
-      // (1 terminal-skip, 1 gated, 1 ko, 94 ingests). At processed=100 the
-      // line carries: verified=3, gated=1, stale-repair=0, untracked=97
-      // (ALL non-verified branch files — terminal-skip and ko files included,
-      // that is their branch), failures=1. The terminal-skip file contributes
-      // to no field of its own; a stale-branch ko would count in BOTH
-      // stale-repair and failures (documented overlap semantics).
+    it('field provenance (T10): row files contribute to no field; outcome files contribute only to their own; terminal-skip contributes to none; ko adds failures on top', async () => {
+      // T10 retarget (v1's bank-verified-healthy provenance no longer
+      // exists). Rows sit at n=50,100 → those two files are invisible to the
+      // loop entirely (no field, no processed index). 98 queued files reach
+      // execute (1 terminal-skip, 1 gated, 1 ko, 95 ingests). At the 100th
+      // PROCESSED (none — 98 queued): no heartbeat fires at all; asserting
+      // the zero-heartbeat + summary DATA instead: terminal-skip and ko
+      // files add to files/failed only. A single-processed-index heartbeat
+      // would carry untracked= its queue position — provenance unchanged in
+      // kind, classifications removed.
       enumerateHb(100);
-      fileMemoryTrackerService.getMemoryIds.mockImplementation(async (filePath: string) => {
-        const n = hbIndex(filePath);
-        return n <= 3 ? [`mem-tracker-${n}`] : [];
-      });
-      bensyneClient.getFileChunks.mockResolvedValue(
-        Result.ok(
-          aFileChunksInfo({ chunks: [aStoredChunkInfo({ chunkIndex: 0, memoryStatus: 'present' })] }),
-        ),
-      );
+      scriptKnownRows(fileTrackerRepository.findTrackedBySourceId, [hbPath(50), hbPath(100)]);
       scriptOutcomesByPath(processFileUseCase.execute, {
         [hbPath(97)]: 'terminal-skip',
         [hbPath(98)]: 'gated-skip',
         [hbPath(99)]: 'failure',
       });
 
-      await service.resumeAll([hbSource()]);
+      const summary = await service.resumeAll([hbSource()]);
 
-      expect(heartbeatLinesFrom(logger.info)).toEqual([resumeHeartbeat(100, 100, [3, 1, 0, 97, 1])]);
+      expect(heartbeatLinesFrom(logger.info)).toEqual([]);
+      // files counts every execute; gate/terminal hits from the outcomes;
+      // verifiedSkips frozen at 0 (classifier gone); row files invisible.
+      expect(summary).toEqual({
+        files: 98,
+        gatedSkips: 1,
+        terminalSkipSkips: 1,
+        verifiedSkips: 0,
+        reIngested: 95,
+      });
     });
 
     it('per-loop heartbeats reset per source run: a 60-file second source adds no heartbeat (loop-local processed)', async () => {
@@ -1704,7 +1760,6 @@ describe('ForceReprocessService', () => {
       fsMock.readdir
         .mockResolvedValueOnce(Array.from({ length: 150 }, (_, i) => mockDirent(hbName(i + 1), false)))
         .mockResolvedValueOnce(Array.from({ length: 60 }, (_, i) => mockDirent(hbName(i + 1), false)));
-      fileMemoryTrackerService.getMemoryIds.mockResolvedValue([]);
       scriptOutcomesByPath(processFileUseCase.execute, {});
 
       await service.resumeAll(sources);

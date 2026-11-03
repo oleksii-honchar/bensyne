@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { FileTrackerRepository } from '../../infrastructure/repositories/file-tracker.repository';
 import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import { FileMemoryTrackerService } from '../../infrastructure/services/file-memory-tracker.service';
 import { FileProcessingQueue } from '../../infrastructure/services/file-processing-queue.service';
@@ -11,23 +12,54 @@ import { ProcessFileOutcome, ProcessFileUseCase } from '../../use-cases/process-
 import { Result } from '../../utils/result';
 import { isPastDue } from '../../utils/ttl-activity';
 import { isPathExcluded } from '../glob-matcher';
-import { isFileHealthy } from '../utils/file-health';
 
 /**
- * Per-run classification counters for the C8 batch summary line (spec C8,
- * T6). Accumulated in the existing batch loops from what the loop already
- * knows; emitted by the public entry methods as
- * `<mode> finished: files=…, gated-skips=…, terminal-skip-skips=…,
- * verified-skips=…, re-ingested=…` and returned as the run's summary DATA
- * (callers in main.ts keep ignoring the return value — exit-code and
- * early-exit behavior are untouched).
+ * Per-run classification counters for the C8 batch summary (spec C8,
+ * T6; fields re-baselined by the DEC-A7 amendment, T11). Accumulated in
+ * the existing batch loops from what the loop already knows; RETURNED as the
+ * run's summary DATA and emitted by the public entry methods — emission is
+ * SPLIT BY MODE in logBatchSummary (C8 amended):
+ * - `resume finished: files=…, ingested=…, failed=…` (resume/auto-populate;
+ *   the bank-verification `verified-skips` field retires from resume output
+ *   with the removed verification; `files=` is the NEW-FILES-QUEUE SIZE per
+ *   spec C8 literal (developer ruling 2026-11-02: the queue is the
+ *   row-subtraction; activity-gate skips are downstream of the count),
+ *   `ingested=` is the existing successful-execute counter, `failed=` comes
+ *   from ResumeRunTally only);
+ * - `force-reprocess finished: files=…, gated-skips=…, terminal-skip-skips=…,
+ *   verified-skips=…, re-ingested=…` — field set UNCHANGED, `files=` keeps
+ *   the per-execute-attempt v1 arithmetic (DEC-A7: force still walks
+ *   everything and may legitimately see gate hits).
+ * The DATA field names/shape are UNCHANGED by T11 (e2e + plan T12 assert on
+ * them). Callers in main.ts keep ignoring the return value — exit-code and
+ * early-exit behavior are untouched.
  */
 export interface BatchRunSummary {
+  /** Mode-specific by ruled design: resume/auto-populate runs count the full
+   * new-files queue (spec C8 queue-size signal); force-reprocess runs count
+   * execute-attempts (v1-pinned). */
   files: number;
   gatedSkips: number;
   terminalSkipSkips: number;
   verifiedSkips: number;
   reIngested: number;
+}
+
+/**
+ * Internal run-scoped presentation state for the resume/auto-populate family
+ * (T11 / C8 amended). The ONE counter field `failures` counts Result.ko
+ * outcomes of the run so the split resume summary line can render
+ * `failed=<ko count>` (same semantics as the heartbeat's `failures=` field
+ * from the fixed operator field list; a source-level thrown error still
+ * surfaces through its own existing 'Failed to resume source' error line and
+ * is not a per-file failure). Deliberately NOT part of the returned
+ * BatchRunSummary DATA — the returned object's field names/shape stay
+ * exactly as before (explicit T11 constraint: e2e + T12 assert on returned
+ * DATA; force-path emissions and assertions untouched).
+ */
+interface ResumeRunTally {
+  summary: BatchRunSummary;
+  failures: number;
 }
 
 /**
@@ -52,14 +84,17 @@ const PROGRESS_HEARTBEAT_FILES = 100;
  */
 interface LoopProgressState {
   prefix: 'resume progress' | 'force-reprocess progress';
-  /** Files enumerated for THIS loop run — the heartbeat denominator. */
+  /** Files in THIS loop's queue — the heartbeat denominator. For resume that
+   * is the NEW-FILES queue (T10/DEC-A7), not the raw enumeration; for the
+   * force loop the full walk (unchanged). */
   total: number;
   runSummary: BatchRunSummary;
   baseVerifiedSkips: number;
   baseGatedSkips: number;
-  /** Files classified through the stale-tracker pre-branch (loop-local). */
-  staleRepairCount: number;
-  /** Files classified through the untracked pre-branch (loop-local). */
+  /** Files taken through the untracked→new-file branch (loop-local). On the
+   * resume loop this is every queued file by definition; the stale-repair
+   * classifier was retired with the bank verification (T10/DEC-A7) — the
+   * heartbeat keeps the field at structurally 0 (format string unchanged). */
   untrackedCount: number;
   /** Result.ko outcomes of THIS loop run (loop-local). */
   failureCount: number;
@@ -74,6 +109,10 @@ export class ForceReprocessService {
     private readonly processingQueue: FileProcessingQueue,
     private readonly fileMemoryTrackerService: FileMemoryTrackerService,
     private readonly bensyneClient: BensyneClient,
+    // T10/DEC-A7: the resume queue-subtraction seam. Injected exactly as
+    // RecoverService already injects it (recover.service.ts) — same DI token,
+    // no new wiring. Never called per-file (one call per source).
+    private readonly fileTrackerRepository: FileTrackerRepository,
     logger: BasePinoLogger,
   ) {
     this.logger = logger.child({ component: 'ForceReprocessService' });
@@ -86,15 +125,26 @@ export class ForceReprocessService {
     return { files: 0, gatedSkips: 0, terminalSkipSkips: 0, verifiedSkips: 0, reIngested: 0 };
   }
 
+  // T11: resume-family runs carry one internal ko counter next to the summary
+  // for the split-line `failed=` — the returned summary object stays exactly
+  // the five v1 fields (see ResumeRunTally docstring).
+  private newResumeRun(): ResumeRunTally {
+    return { summary: this.newBatchRunSummary(), failures: 0 };
+  }
+
   /**
-   * Classify ONE file the loop actually processed (an execute() call):
-   * `files` counts every processed file; ok-payloads carrying the additive
+   * Classify ONE file the loop actually processed (an execute() call) into
+   * the classification counters ONLY: ok-payloads carrying the additive
    * `skipped` marker split into gated vs terminal (no extra DB reads);
    * any other ok outcome is real ingest work → re-ingested; ko outcomes
-   * are counted in `files` only (their error log already names them).
+   * add nothing here (their error log already names them).
+   * `summary.files` is NOT touched here — its accumulation is mode-specific
+   * at the loop sites (developer ruling 2026-11-02): the force loop counts
+   * one per execute-attempt (v1-pinned); the resume path counts the full
+   * new-files queue at queue construction (spec C8: `files=<queue size>`,
+   * activity-gate skips happen downstream of the count).
    */
   private countProcessedFile(summary: BatchRunSummary, result: Result<unknown>): void {
-    summary.files += 1;
     if (result.isKo()) {
       return;
     }
@@ -110,10 +160,31 @@ export class ForceReprocessService {
     summary.reIngested += 1;
   }
 
+  /**
+   * C8 summary emission — SPLIT BY MODE (C8 AMENDED 2026-11-02 / DEC-A7,
+   * plan T11). Presentation-only concern: the DATA in `summary` is
+   * unchanged for every path.
+   * - Resume/auto-populate: exactly `resume finished: files=…, ingested=…,
+   *   failed=…`. `verified-skips` (and every other v1 field) is RETIRED from
+   *   resume output — the counter retired with the bank verification T10
+   *   removed. `ingested=` reuses the existing successful-execute counter
+   *   (`reIngested`); `failed=` is the run-scoped ko count carried by
+   *   ResumeRunTally — an internal presentation counter, never part of the
+   *   returned DATA.
+   * - `force-reprocess finished:` emission is UNCHANGED (full field set —
+   *   force still walks everything and may legitimately see gate hits).
+   */
   private logBatchSummary(
     mode: 'resume finished' | 'force-reprocess finished',
     summary: BatchRunSummary,
+    resumeFailures = 0,
   ): void {
+    if (mode === 'resume finished') {
+      this.logger.info(
+        `${mode}: files=${summary.files}, ingested=${summary.reIngested}, failed=${resumeFailures}`,
+      );
+      return;
+    }
     this.logger.info(
       `${mode}: files=${summary.files}, gated-skips=${summary.gatedSkips}, terminal-skip-skips=${summary.terminalSkipSkips}, verified-skips=${summary.verifiedSkips}, re-ingested=${summary.reIngested}`,
     );
@@ -129,7 +200,6 @@ export class ForceReprocessService {
       runSummary,
       baseVerifiedSkips: runSummary.verifiedSkips,
       baseGatedSkips: runSummary.gatedSkips,
-      staleRepairCount: 0,
       untrackedCount: 0,
       failureCount: 0,
     };
@@ -137,17 +207,21 @@ export class ForceReprocessService {
 
   /**
    * Heartbeat (Ad-Hoc F): called once per file the loop has finished
-   * handling (every classification path), emitted only at every
-   * PROGRESS_HEARTBEAT-th handled file. Field sources —
-   * verified= loop delta of summary.verifiedSkips (bank-verified healthy
-   * skip branch); gated= loop delta of summary.gatedSkips (ok outcome with
-   * skipped='unchanged'); stale-repair / untracked= the loop's own branch
-   * classifications; failures= Result.ko outcomes. Branch fields and
-   * outcome fields may overlap by design (a ko'd untracked file counts in
-   * both) — the line reads as branch provenance + failure visibility,
-   * exactly per the fixed operator field list. Format is the user-specified
-   * contract: `<prefix>: <processed>/<total> processed (verified=…, gated=…,
-   * stale-repair=…, untracked=…, failures=…)`.
+   * handling (every path that consumes a queue position), emitted only at
+   * every PROGRESS_HEARTBEAT-th handled file. Field sources —
+   * verified= loop delta of summary.verifiedSkips (structurally 0 on the
+   * resume loop since T10/DEC-A7 retired the bank-verification classifier;
+   * still live for any consumer that increments it); gated= loop delta of
+   * summary.gatedSkips (ok outcome with skipped='unchanged'); stale-repair=
+   * structurally 0 (the stale-tracker classifier was removed from the resume
+   * path — the FORMAT string is unchanged per T10: "do not change the format
+   * strings"; the field list stays so the operator contract holds);
+   * untracked= the loop's own new-file branch count; failures= Result.ko
+   * outcomes. Branch fields and outcome fields may overlap by design (a ko'd
+   * queued file counts in both) — the line reads as branch provenance +
+   * failure visibility, exactly per the fixed operator field list. Format is
+   * the user-specified contract: `<prefix>: <processed>/<total> processed
+   * (verified=…, gated=…, stale-repair=…, untracked=…, failures=…)`.
    */
   private noteLoopProgress(progress: LoopProgressState, processed: number): void {
     if (processed % PROGRESS_HEARTBEAT_FILES !== 0) {
@@ -156,7 +230,7 @@ export class ForceReprocessService {
     const verified = progress.runSummary.verifiedSkips - progress.baseVerifiedSkips;
     const gated = progress.runSummary.gatedSkips - progress.baseGatedSkips;
     this.logger.info(
-      `${progress.prefix}: ${processed}/${progress.total} processed (verified=${verified}, gated=${gated}, stale-repair=${progress.staleRepairCount}, untracked=${progress.untrackedCount}, failures=${progress.failureCount})`,
+      `${progress.prefix}: ${processed}/${progress.total} processed (verified=${verified}, gated=${gated}, stale-repair=0, untracked=${progress.untrackedCount}, failures=${progress.failureCount})`,
     );
   }
 
@@ -202,12 +276,12 @@ export class ForceReprocessService {
   async resumeAll(sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
     this.logger.info(`Resuming missing chunks for all sources: count=${sources.length}`);
 
-    const summary = this.newBatchRunSummary();
+    const run = this.newResumeRun();
     for (const source of sources) {
-      await this.resumeSourceInternal(source, summary);
+      await this.resumeSourceInternal(source, run);
     }
-    this.logBatchSummary('resume finished', summary);
-    return summary;
+    this.logBatchSummary('resume finished', run.summary, run.failures);
+    return run.summary;
   }
 
   async resumeSource(sourceId: string, sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
@@ -219,10 +293,10 @@ export class ForceReprocessService {
       return this.newBatchRunSummary();
     }
 
-    const summary = this.newBatchRunSummary();
-    await this.resumeSourceInternal(source, summary);
-    this.logBatchSummary('resume finished', summary);
-    return summary;
+    const run = this.newResumeRun();
+    await this.resumeSourceInternal(source, run);
+    this.logBatchSummary('resume finished', run.summary, run.failures);
+    return run.summary;
   }
 
   async forceReprocessFile(
@@ -251,38 +325,78 @@ export class ForceReprocessService {
   /** Startup population: resume only sources that have not opted out. */
   async autoPopulateSources(sources: WatchSourceConfig[]): Promise<BatchRunSummary> {
     const targets = sources.filter(s => s.autoPopulate !== false);
-    const summary = this.newBatchRunSummary();
+    const run = this.newResumeRun();
     for (const source of targets) {
       this.logger.info(`Auto-populating source: id="${source.id}", path="${source.path}"`);
-      await this.resumeSourceInternal(source, summary);
+      await this.resumeSourceInternal(source, run);
     }
     // Spec §9 (amended): the auto-populate pass IS a resume pass and its
-    // flat C8 summary across manual watch starts is the acceptance signal.
-    this.logBatchSummary('resume finished', summary);
-    return summary;
+    // flat C8 summary across manual watch starts is the acceptance signal —
+    // including the T11 split-line format and its internal ko counter.
+    this.logBatchSummary('resume finished', run.summary, run.failures);
+    return run.summary;
   }
 
-  private async resumeSourceInternal(source: WatchSourceConfig, summary: BatchRunSummary): Promise<void> {
+  /**
+   * Resume/auto-populate queue (C4 AMENDED 2026-11-02 per DEC-A7): NEW FILES
+   * ONLY. `known` = every file with a FileTracker row for this source —
+   * normally-ingested OR terminal-skip rows alike (a row is a row). ONE
+   * findTrackedBySourceId call per source, never per file; the queue is a
+   * pure set subtraction — no per-file hash, no bank call, no tracker read
+   * for known files (a repeat run on a steady corpus is free: files=0).
+   *
+   * RETIRED here (moved to --recover — the sole reconciler, DEC-A7 (a)/(b)/
+   * (c)): the per-file getMemoryIds pre-read, the bank-verification block
+   * (getFileChunks/isFileHealthy + isKo() defensive skip + verifiedSkips
+   * counting) and the stale-tracker branch. `forceIngest:false` is passed
+   * explicitly: the internal hash-gate is structurally unreachable on this
+   * path (no row ⇒ no stored hash) but is KEPT as defense-in-depth per the
+   * DEC-A3 amendment / DEC-A7 Rejected-list, pinned by unit test.
+   */
+  private async resumeSourceInternal(source: WatchSourceConfig, run: ResumeRunTally): Promise<void> {
+    const summary = run.summary;
     try {
       const files = await this.getFiles(source);
       this.logger.info(
         `Files found for resume: source="${source.id}", path="${source.path}", count=${files.length}`,
       );
 
-      // Ad-Hoc F heartbeat: per-loop progress state over THIS enumeration;
+      // Spec §3 C4 (verbatim contract): build `known` from one per-source
+      // row fetch and subtract. Any row (normal OR terminal-skip) = known.
+      const known = new Set(
+        (await this.fileTrackerRepository.findTrackedBySourceId(source.id)).map(row => row.filePath),
+      );
+      const newFiles = files.filter(file => !known.has(file));
+
+      // Mode-specific `files` accumulation (spec C8 literal; developer ruling
+      // 2026-11-02): the resume path counts the FULL NEW-FILES QUEUE at
+      // construction — an activity-gate skip happens downstream of the count,
+      // so expired-but-queued files stay part of files= (health signal: the
+      // repeat-run signature remains files=0 on an emptied queue).
+      summary.files += newFiles.length;
+
+      // Ad-Hoc F heartbeat: per-loop progress state over THIS queue run;
       // all fields come from signals the loop already has (see noteLoopProgress).
       const progress = this.newLoopProgress('resume progress', summary);
-      progress.total = files.length;
+      progress.total = newFiles.length;
 
-      // [i/totalFilesInQueue] is the 1-based queue position (not a stored index).
-      const totalFilesInQueue = files.length;
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      // Queue visibility at zero per-file cost (the C7/G5 repeat-run story:
+      // known files are excluded here, never enumerated into the loop).
+      this.logger.info(
+        `Resume queue built: source="${source.id}", enumerated=${files.length}, known=${known.size}, new=${newFiles.length}`,
+      );
+
+      // [i/totalFilesInQueue] is the 1-based position in the NEW-FILES queue
+      // (not a stored index; row-known files consume no position).
+      const totalFilesInQueue = newFiles.length;
+      for (let i = 0; i < newFiles.length; i++) {
+        const file = newFiles[i];
         const position = i + 1;
 
         // B14(a) activity gate (opt-in per source, spec §3.1): a past-due file
-        // is not eligible for batch paths at all — skip before any
-        // getMemoryIds/verify/ingest work, tracked or never-tracked alike.
+        // is not eligible for batch paths at all — skip before any ingest
+        // work (behavior preserved from before T10; now evaluated on the
+        // new-files queue).
         if (source.ttlDays != null && (await this.isFilePastDue(file, source.ttlDays))) {
           this.logger.info(
             `Skipping activity-expired file [${position}/${totalFilesInQueue}]: path="${file}"`,
@@ -291,66 +405,10 @@ export class ForceReprocessService {
           continue;
         }
 
-        let memoryIds: string[];
-        try {
-          memoryIds = await this.fileMemoryTrackerService.getMemoryIds(file);
-        } catch (error) {
-          this.logger.warn(
-            `Skipping file for resume; failed to read stored memory count [${position}/${totalFilesInQueue}]: path="${file}", error="${error instanceof Error ? error.message : String(error)}"`,
-          );
-          this.noteLoopProgress(progress, position);
-          continue;
-        }
-
-        // Bank-verified skip: the tracker can be stale (e.g. bank wiped) — a
-        // file with tracked memories is verified against the bank before being
-        // trusted as complete (mirrors RecoverService.recoverFile).
-        if (memoryIds.length > 0) {
-          const chunksResult = await this.bensyneClient.getFileChunks(file, source.memoryBank);
-          if (chunksResult.isKo()) {
-            // Bank read failed (MCP down / error). Skip defensively — never
-            // re-ingest on a transient failure (duplicate-memory risk);
-            // --recover remains the guaranteed reconciliation tool.
-            this.logger.warn(
-              `Bank read error for resume [${position}/${totalFilesInQueue}]: path="${file}", error="${chunksResult.getFormattedErrors()}" — skipping (preserving existing memories)`,
-            );
-            this.noteLoopProgress(progress, position);
-            continue;
-          }
-
-          const fileChunks = chunksResult.getValue();
-
-          if (isFileHealthy(fileChunks)) {
-            // C8 (T6): loop-level classification — a bank-verified healthy
-            // file never reaches execute(); it is counted as a verified skip.
-            summary.verifiedSkips += 1;
-            this.logger.debug(
-              `Skipping verified file for resume [${position}/${totalFilesInQueue}]: path="${file}", memories="${memoryIds.length}"`,
-            );
-            // Ad-Hoc F: the healthy-verified files are exactly the DEBUG-only
-            // ones whose silence caused the payfit incident — heartbeat here.
-            this.noteLoopProgress(progress, position);
-            continue;
-          }
-
-          // Ad-Hoc F field source: stale-tracker pre-branch classification.
-          progress.staleRepairCount += 1;
-          this.logger.info(
-            `Resuming stale-tracker file (absent from bank) [${position}/${totalFilesInQueue}]: path="${file}"`,
-          );
-        } else {
-          // Ad-Hoc F field source: untracked pre-branch classification.
-          progress.untrackedCount += 1;
-          this.logger.info(`Resuming untracked file [${position}/${totalFilesInQueue}]: path="${file}"`);
-        }
-
-        // C4/DEC-A3 split of the shared execute path (only reachable past the
-        // verified-healthy and bank-error skips): memoryIds.length > 0 here
-        // means the stale-tracker branch — bank verification already proved
-        // the memories lost, so the hash gate must not veto the repair (G3).
-        // Untracked files stay gated (false): the hash gate + skip-rows stop
-        // the M2 retry loop at zero bank/LLM cost.
-        const forceReingest = memoryIds.length > 0;
+        // Every file still here is an un-known (new) file: the single branch
+        // of the queue (Ad-Hoc F untracked= field source).
+        progress.untrackedCount += 1;
+        this.logger.info(`Resuming new file [${position}/${totalFilesInQueue}]: path="${file}"`);
 
         const result = await this.processFileUseCase.execute({
           filePath: file,
@@ -358,7 +416,9 @@ export class ForceReprocessService {
           sourceId: source.id,
           memoryBank: source.memoryBank,
           sourceConfig: source,
-          forceIngest: forceReingest,
+          // Explicit false (AC4 defense-in-depth pin): the gate decision
+          // belongs to ProcessFileUseCase; nothing here has proven a repair.
+          forceIngest: false,
         });
 
         this.countProcessedFile(summary, result);
@@ -366,6 +426,9 @@ export class ForceReprocessService {
         if (result.isKo()) {
           // Ad-Hoc F field source: failures of this loop run (ko outcomes).
           progress.failureCount += 1;
+          // T11: run-scoped ko tally feeding the split resume line's `failed=`
+          // (internal presentation counter — never part of returned DATA).
+          run.failures += 1;
           this.logger.error(`File resume failed: path="${file}", error="${result.getFormattedErrors()}"`);
         }
         this.noteLoopProgress(progress, position);
@@ -432,6 +495,10 @@ export class ForceReprocessService {
           forceIngest: opts.forceIngest,
         });
 
+        // Mode-specific `files` accumulation (ruling 2026-11-02): the force
+        // path counts ONE per execute-attempt (v1-pinned semantics, byte-
+        // identical to the previous shared counter).
+        summary.files += 1;
         this.countProcessedFile(summary, result);
 
         if (result.isKo()) {
