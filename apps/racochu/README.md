@@ -349,7 +349,20 @@ nothing per file, not even a hash.
 only), `--process-only` (gated, safe as catch-up), `--recover` (the
 reconciler pass for changes that happened while nothing was watching —
 `npm run start:recover`), or, for the deliberate full rebuild,
-`npm run start:reprocess` (`--force-reprocess`). `npm run start:resume` runs
+`npm run start:reprocess` (`--force-reprocess`).
+
+> **Operator note (observed 2026-11-10):** when an edit to a watched file must
+> be **live within the current work session**, do not rely on a running watch —
+> this design makes watching manual, so a silent watch is indistinguishable from
+> no watch. Observed same-day: two persona-material edits sat unprocessed >15
+> minutes each while an earlier edit to the same file had gone through the watch
+> path, so the missing property was delivery timing, not capability. The
+> deterministic step is explicit intent scoped to ONE file:
+> `--force-reprocess --source <id> --file <path> --process-only` (the `--file`
+> narrow-scope pairs with `--source`; took under a minute as measured). Prove it
+> with byte parity, not with waiting: the bank's `file_hash` equals the sha256
+> of the file on disk — a passing parity check is the completion signal.
+ `npm run start:resume` runs
 the same new-files-only pass as `--resume` and likewise stays watching
 afterwards (see below; add `--process-only` to the underlying command for an
 exit-only run).
