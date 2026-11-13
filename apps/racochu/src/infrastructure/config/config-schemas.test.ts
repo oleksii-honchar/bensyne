@@ -280,6 +280,273 @@ describe('config-schemas', () => {
       });
     });
 
+    describe('include (spec §3: opt-in per-source allow-list; entry-gate-only shadow rule, ADR-1/ADR-7)', () => {
+      // Behavior at the schema boundary only (spec §3, ADR-1/ADR-7): the key is
+      // optional and never defaulted (absent ⇒ the parsed output carries no
+      // include key — same DEC-0075 idiom as ttlDays/deleteDueFiles); today-
+      // shaped configs must parse to byte-identical values (hard back-compat,
+      // spec §1.1). The operator-entry gate rejects an include entry that,
+      // after normalizePattern, is string-equal to an exclude entry — an inert
+      // allow-list entry whose file can never be in scope — with ONE issue
+      // naming both keys and the offending pattern, attached to ['include']
+      // (same rule style as the deleteDueFiles/ttlDays refusal above).
+      // Normalized-string equality only: subsumption solving is explicitly out
+      // of scope (ADR-7), so a non-equal overlap (include narrowing into a
+      // directory exclude) stays VALID. The internal seam never sees this rule
+      // (R1 regression class). No logger assertions.
+
+      // Fixture shapes are modeled on the CURRENT ~/.config/racochu.yaml (re-read
+      // at run time): the single-path `agent-sessions_oleksii` source (all its
+      // key kinds) and the multi-`paths` `agent-persona_architect` sources. The
+      // expected objects below spell every parsed field out — the test encodes
+      // "same values", not "parses" (AC: parse-identity). The contentFilter and
+      // exclude default values are the shared shape's actual defaults.
+
+      const AGENT_SESSIONS_ROOT = '~/.agent-sessions';
+
+      // The live agent-sessions_oleksii exclude list (38 entries), verbatim.
+      const AGENT_SESSIONS_EXCLUDE = [
+        '**/tool-responses/**',
+        '**/plans/**',
+        '**/.git/**',
+        '**/.obsidian/**',
+        '**/.opencode/**',
+        '**/.smart-env/**',
+        '**/.vault/**',
+        '**/*.csv',
+        '**/*.tsv',
+        '**/*.ts',
+        '**/*.txt',
+        '**/*.svg',
+        '**/*.log',
+        '**/*.html',
+        '**/*.json',
+        '**/*.jsonl',
+        '**/*.jsonc',
+        '**/*.js',
+        '**/*.mjs',
+        '**/*.py',
+        '**/*.rs',
+        '**/*.sh',
+        '**/*.bin',
+        '**/*.png',
+        '**/*.jpg',
+        '**/*.pdf',
+        '**/*.gz',
+        '**/*.zip',
+        '**/*.tar',
+        '**/*.rar',
+        '**/*.yaml',
+        '**/*.yml',
+        '**/.DS_Store',
+        '**/*.patch',
+        '**/.playwright-mcp',
+        '**/*.m4a',
+        '**/*.mp4',
+        '**/*.sql',
+      ];
+
+      const PERSONA_ROOTS = [
+        '~/www/beaver/agent-rules-n-skills/agent-personas/architect',
+        '~/www/beaver/agent-rules-n-skills/agent-personas/shared',
+      ];
+
+      const CONTENT_FILTER_DEFAULTS = {
+        enabled: true,
+        maxLineLength: 100_000,
+        longLineChars: 10_000,
+        longLineRatio: 0.001,
+        markerPatterns: [
+          '^diff --git',
+          '^@@ -\\d+,\\d+ \\+\\d+,\\d+ @@',
+          '^index [0-9a-f]{7,}\\.\\.[0-9a-f]{7,}',
+          'added in remote',
+          '(?:their|our) \\d{6}',
+        ],
+        markerRatio: 0.05,
+        minTokenDiversity: 0.1,
+      };
+
+      it('parse-identity: current single-path operator config parses to the explicit expected object, with NO include key (back-compat + no-default)', () => {
+        const input = {
+          id: 'agent-sessions_oleksii',
+          path: AGENT_SESSIONS_ROOT,
+          debounceMs: 600000,
+          memoryBank: 'agent-sessions_oleksii',
+          description: 'Agent session history for user oleksii',
+          sourceType: SOURCE_TYPES.AGENT_SESSIONS,
+          ttlDays: 108,
+          deleteDueFiles: true,
+          exclude: AGENT_SESSIONS_EXCLUDE,
+        };
+
+        const result = watchSourceConfigSchema.safeParse(input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data).toEqual({
+            id: 'agent-sessions_oleksii',
+            path: AGENT_SESSIONS_ROOT,
+            resolvedPaths: [AGENT_SESSIONS_ROOT],
+            debounceMs: 600000,
+            memoryBank: 'agent-sessions_oleksii',
+            description: 'Agent session history for user oleksii',
+            sourceType: SOURCE_TYPES.AGENT_SESSIONS,
+            ttlDays: 108,
+            deleteDueFiles: true,
+            exclude: AGENT_SESSIONS_EXCLUDE,
+            contentFilter: CONTENT_FILTER_DEFAULTS,
+            autoPopulate: true,
+          });
+          // include absent ⇒ no key synthesized (never defaulted, spec §1.2).
+          expect(result.data).not.toHaveProperty('include');
+          expect(Object.keys(result.data)).not.toContain('include');
+        }
+      });
+
+      it('parse-identity: current multi-paths operator config parses to the explicit expected object, with NO include key', () => {
+        const input = {
+          id: 'agent-persona_architect',
+          paths: PERSONA_ROOTS,
+          memoryBank: 'agent-persona_architect',
+          description: 'Architect agent decision tree (persona)',
+          sourceType: SOURCE_TYPES.AGENT_PERSONA,
+          debounceMs: 5000,
+          exclude: ['**/README.md'],
+        };
+
+        const result = watchSourceConfigSchema.safeParse(input);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data).toEqual({
+            id: 'agent-persona_architect',
+            path: PERSONA_ROOTS[0],
+            paths: PERSONA_ROOTS,
+            resolvedPaths: PERSONA_ROOTS,
+            memoryBank: 'agent-persona_architect',
+            description: 'Architect agent decision tree (persona)',
+            sourceType: SOURCE_TYPES.AGENT_PERSONA,
+            debounceMs: 5000,
+            exclude: ['**/README.md'],
+            contentFilter: CONTENT_FILTER_DEFAULTS,
+            autoPopulate: true,
+          });
+          expect(result.data).not.toHaveProperty('include');
+          expect(Object.keys(result.data)).not.toContain('include');
+        }
+      });
+
+      it('accepts include with a non-defaulted absent case: entry without include parses and output carries no include key (entry and seam)', () => {
+        const entry = watchSourceConfigSchema.safeParse({ id: 'inc', path: '/path' });
+        expect(entry.success).toBe(true);
+        if (entry.success) {
+          expect(entry.data).not.toHaveProperty('include');
+          expect(entry.data.include).toBeUndefined();
+        }
+
+        const seam = resolvedWatchSourceConfigSchema.safeParse({
+          id: 'inc',
+          path: '/path',
+          resolvedPaths: ['/path'],
+        });
+        expect(seam.success).toBe(true);
+        if (seam.success) {
+          expect(seam.data).not.toHaveProperty('include');
+        }
+      });
+
+      it('accepts include and round-trips it unchanged through the entry schema, and the normalized output carries it through the internal seam', () => {
+        const entry = watchSourceConfigSchema.safeParse({
+          id: 'inc',
+          path: '/path',
+          include: ['**/*.md'],
+        });
+        expect(entry.success).toBe(true);
+        if (entry.success) {
+          expect(entry.data.include).toEqual(['**/*.md']);
+
+          // The normalized output (path echo + resolvedPaths) fed back through
+          // the internal seam keeps the include — the shared shape carries it.
+          const seam = resolvedWatchSourceConfigSchema.safeParse(entry.data);
+          expect(seam.success).toBe(true);
+          if (seam.success) {
+            expect(seam.data.include).toEqual(['**/*.md']);
+            expect(seam.data.resolvedPaths).toEqual(['/path']);
+          }
+        }
+      });
+
+      it('rejects an include entry that normalizes string-equal to an exclude entry: one issue at [include] naming both keys and the pattern', () => {
+        // '*.ts' normalizes to '**/*.ts' — string-equal to the exclude entry.
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'shadow',
+          path: '/path',
+          include: ['*.ts'],
+          exclude: ['**/*.ts'],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toHaveLength(1);
+          const issue = result.error.issues[0];
+          expect(String(issue.path[0])).toBe('include');
+          // The single issue names BOTH keys and the offending pattern so
+          // either reading finds the rule (same style as deleteDueFiles/ttlDays).
+          expect(issue.message).toContain('include');
+          expect(issue.message).toContain('exclude');
+          expect(issue.message).toContain('*.ts');
+        }
+      });
+
+      it('configurationSchema rejects a watchSources entry with a normalized-equal include/exclude pair', () => {
+        const result = configurationSchema.safeParse({
+          watchSources: [{ id: 'shadow', path: '/path', include: ['*.ts'], exclude: ['**/*.ts'] }],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues).toHaveLength(1);
+          // Root-level propagation: zod prefixes the container path, the entry
+          // issue itself stays attached to ['include'].
+          expect(result.error.issues[0].path.map(String)).toEqual(['watchSources', '0', 'include']);
+          expect(result.error.issues[0].message).toContain('include');
+          expect(result.error.issues[0].message).toContain('exclude');
+        }
+      });
+
+      it('accepts a non-equal overlap (include narrowing into a directory exclude) — no subsumption solving (ADR-7)', () => {
+        const result = watchSourceConfigSchema.safeParse({
+          id: 'overlap',
+          path: '/path',
+          include: ['**/*.md'],
+          exclude: ['**/plans/**'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.include).toEqual(['**/*.md']);
+          expect(result.data.exclude).toEqual(['**/plans/**']);
+        }
+      });
+
+      it('internal seam never applies the shadow rule: a normalized-equal pair validates cleanly there (R1)', () => {
+        // Internal-seam inputs can carry any already-normalized object; the
+        // entry-gate refusal must not leak here (same R1 rule as the
+        // deleteDueFiles/ttlDays and path/paths precedents above).
+        const result = resolvedWatchSourceConfigSchema.safeParse({
+          id: 'shadow',
+          path: '/path',
+          resolvedPaths: ['/path'],
+          include: ['*.ts'],
+          exclude: ['**/*.ts'],
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.include).toEqual(['*.ts']);
+        }
+      });
+    });
+
     it('accepts description field and preserves it as-is', () => {
       const input = {
         id: 'test-source',

@@ -6,10 +6,8 @@ import { Result } from '../utils/result';
 export const watchSourceEntitySchema = z.object({
   id: z.bigint().positive(),
   path: z.string(),
-  include: z.array(z.string()),
   exclude: z.array(z.string()),
   debounceMs: z.number().positive(),
-  ignorePatterns: z.array(z.string()),
   // D29: the field IS the source type (default vault, the content-aware successor).
   sourceType: z.enum(Object.values(SOURCE_TYPES) as [string, ...string[]]).default(SOURCE_TYPES.VAULT),
 });
@@ -33,10 +31,8 @@ export class WatchSource {
     return {
       id: this.props.id,
       path: this.props.path,
-      include: [...this.props.include],
       exclude: [...this.props.exclude],
       debounceMs: this.props.debounceMs,
-      ignorePatterns: [...this.props.ignorePatterns],
       sourceType: this.props.sourceType,
     };
   }
@@ -47,17 +43,11 @@ export class WatchSource {
   get path(): string {
     return this.props.path;
   }
-  get include(): string[] {
-    return this.props.include;
-  }
   get exclude(): string[] {
     return this.props.exclude;
   }
   get debounceMs(): number {
     return this.props.debounceMs;
-  }
-  get ignorePatterns(): string[] {
-    return this.props.ignorePatterns;
   }
   get sourceType(): string {
     return this.props.sourceType;

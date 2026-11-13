@@ -7,7 +7,7 @@ import * as chokidar from 'chokidar';
 import { EventEmitter } from 'node:events';
 import * as os from 'os';
 import * as path from 'path';
-import { buildIgnoreRegexes } from '../../application/glob-matcher';
+import { buildIgnoreRegexes, isPathInScope } from '../../application/glob-matcher';
 import { WatchSourceConfig } from '../config/config-schemas';
 import { ConfigurationService } from '../config/configuration.service';
 import { BasePinoLogger } from '../logging/base-pino-logger';
@@ -214,7 +214,17 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     return Result.ok(undefined as unknown as void);
   }
 
+  // Scope check (spec §5 EP1) is HANDLER-LEVEL, never in the chokidar
+  // `ignored` predicate above: extension include patterns never match directory
+  // paths, so a predicate-level include would report ignored(dir)=true for
+  // every directory and disable the watcher entirely (measured hazard R2/ADR-4).
+  // filePath here is the FULL absolute path chokidar delivers — the same path
+  // basis the predicate already receives, proven-safe by the glob-matcher
+  // parity tests (invariant I3).
   private handleFileAdded(filePath: string, source: WatchSourceConfig): void {
+    if (!isPathInScope(filePath, source.include, source.exclude)) {
+      return;
+    }
     this.logger.debug(`File added; path="${filePath}", source="${source.id}"`);
     void this.processFileUseCase.execute({
       filePath,
@@ -226,6 +236,11 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
   }
 
   private handleFileChanged(filePath: string, source: WatchSourceConfig): void {
+    // Same handler-level scope check as handleFileAdded (spec §5 EP1) — see the
+    // comment there for why the check is not in the `ignored` predicate.
+    if (!isPathInScope(filePath, source.include, source.exclude)) {
+      return;
+    }
     this.logger.debug(`File changed; path="${filePath}", source="${source.id}"`);
     void this.processFileUseCase.execute({
       filePath,
@@ -236,6 +251,11 @@ export class FileWatcherService implements OnApplicationBootstrap, OnApplication
     });
   }
 
+  // UNLINK is DELIBERATELY UNFILTERED — no scope check here (spec §5): this is
+  // the only forget path for a tracked file that fell out of scope (via include
+  // or exclude) and was then deleted before any reconciliation could see it —
+  // EP4 skips files that no longer exist (existsSync guard). Forget is
+  // idempotent for never-ingested paths, so the extra no-op calls are cheap.
   private handleFileDeleted(filePath: string, source: WatchSourceConfig): void {
     this.logger.debug(`File deleted; path="${filePath}", source="${source.id}"`);
     void this.processFileUseCase.execute({

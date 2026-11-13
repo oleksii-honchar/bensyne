@@ -4,6 +4,7 @@ import { aWatchSourceConfig } from '@/domain/watch-source.entity.test-utils';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
 import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
 import { aLogger } from '../../infrastructure/logging/logger.test-utils';
 import { FileTrackerRepository } from '../../infrastructure/repositories/file-tracker.repository';
@@ -284,6 +285,123 @@ describe('ForceReprocessService', () => {
       expect(processFileUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({ filePath: '/tmp/test/src/index.ts' }),
       );
+    });
+  });
+
+  describe('include scope (EP2 wiring — spec §5: emit-side scope check, descent stays exclude-only)', () => {
+    // Fixture builder: aWatchSourceConfig never sets `include` (opt-in,
+    // never-defaulted field — Task 2 contract), so an include-carrying source
+    // is built locally by layering the optional field onto the builder
+    // output. Every case pins exclude explicitly: these tests control the
+    // full effective scope, no random builder defaults involved.
+    const aScopedSource = (
+      rootPath: string,
+      include: string[],
+      exclude: string[] = [],
+    ): WatchSourceConfig => ({
+      ...aWatchSourceConfig({ id: 'test', path: rootPath, exclude }),
+      include,
+    });
+
+    const emittedPaths = (): string[] =>
+      processFileUseCase.execute.mock.calls.map(([args]) => (args as { filePath: string }).filePath);
+
+    it('with include ["**/*.md"], emits ONLY .md files — other extensions never processed (E2-1)', async () => {
+      const source = aScopedSource('/tmp/test', ['**/*.md']);
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValue([
+        mockDirent('notes.txt', false),
+        mockDirent('report.md', false),
+        mockDirent('data.json', false),
+      ]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(emittedPaths()).toEqual(['/tmp/test/report.md']);
+    });
+
+    it('descends a directory matching NO include pattern and emits the md inside it; sibling txt still filtered (I2) (E2-2)', async () => {
+      // The §5 hazard regression at this EP: extension include patterns never
+      // match directory paths, so include must NOT prune descent. The file
+      // inside the non-matching directory is scoped by its own path at emit.
+      const source = aScopedSource('/tmp/test', ['**/*.md']);
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('session-archive-2026', true)]) // no include pattern names this dir
+        .mockResolvedValueOnce([mockDirent('inner.md', false), mockDirent('inner.txt', false)]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(fsMock.readdir).toHaveBeenCalledWith('/tmp/test/session-archive-2026', { withFileTypes: true });
+      expect(emittedPaths()).toEqual(['/tmp/test/session-archive-2026/inner.md']);
+    });
+
+    it('an exclude match wins over a matching include pattern', async () => {
+      // Spec §4 truth table row: match ∩ excluded → skip (exclude wins).
+      // File-level conflict: draft.md MATCHES the include list and is also
+      // exclude-matched; only the composed scope check resolves it.
+      const source = aScopedSource('/tmp/test', ['**/*.md'], ['**/draft.md']);
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValueOnce([
+        mockDirent('report.md', false), // in scope (included, not excluded)
+        mockDirent('draft.md', false), // include-match ∧ exclude-match → excluded wins
+        mockDirent('notes.txt', false), // no include match → filtered
+      ]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(emittedPaths()).toEqual(['/tmp/test/report.md']);
+    });
+
+    it('a pattern anchored to a directory include-scopes its files while descent stays exclude-only', async () => {
+      // Dir-anchored include (ADR-4: "Dir-anchored include patterns still
+      // scope their files naturally"): only files under notes/ are in scope;
+      // other trees are still DESCENDED (not pruned) and their files filtered.
+      const source = aScopedSource('/tmp/test', ['notes/**']);
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir
+        .mockResolvedValueOnce([mockDirent('notes', true), mockDirent('other', true)])
+        .mockResolvedValueOnce([mockDirent('a.md', false)]) // notes/a.md — in scope
+        .mockResolvedValueOnce([mockDirent('b.md', false)]); // other/b.md — descended, out of include
+
+      await service.forceReprocessAll([source]);
+
+      expect(fsMock.readdir).toHaveBeenCalledWith('/tmp/test/other', { withFileTypes: true });
+      expect(emittedPaths()).toEqual(['/tmp/test/notes/a.md']);
+    });
+
+    it("include-absent (including the empty-list edge) emits exactly today's set (fixture parity)", async () => {
+      // The back-compat lock for EP2: with NO include field the emitted set
+      // is today's behavior byte-for-byte — every extension passes, excluded
+      // trees are never descended.
+      const source = aWatchSourceConfig({ id: 'test', path: '/tmp/test', exclude: ['**/node_modules/**'] });
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValueOnce([
+        mockDirent('node_modules', true), // excluded — never descended
+        mockDirent('a.md', false),
+        mockDirent('b.txt', false),
+      ]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(emittedPaths().sort()).toEqual(['/tmp/test/a.md', '/tmp/test/b.txt']);
+      expect(fsMock.readdir).not.toHaveBeenCalledWith('/tmp/test/node_modules', { withFileTypes: true });
+    });
+
+    it('include: [] is include-neutral — same emitted set as absent (truth-table row absent/[])', async () => {
+      const source = aScopedSource('/tmp/test', []);
+
+      fsMock.stat.mockResolvedValue(mockDirStats());
+      fsMock.readdir.mockResolvedValueOnce([mockDirent('a.md', false), mockDirent('b.txt', false)]);
+
+      await service.forceReprocessAll([source]);
+
+      expect(emittedPaths().sort()).toEqual(['/tmp/test/a.md', '/tmp/test/b.txt']);
     });
   });
 

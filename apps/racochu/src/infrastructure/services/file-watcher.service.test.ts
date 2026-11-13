@@ -11,6 +11,7 @@ import * as chokidar from 'chokidar';
 import * as os from 'os';
 import * as path from 'path';
 
+import { WatchSourceConfig } from '../config/config-schemas';
 import { ConfigurationService } from '../config/configuration.service';
 import { aConfigService } from '../config/configuration.service.test-utils';
 import { BasePinoLogger } from '../logging/base-pino-logger';
@@ -186,6 +187,126 @@ describe('FileWatcherService', () => {
       expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           filePath: '/test/deleted-file.md',
+          eventType: FILE_OPERATIONS.DELETE,
+        }),
+      );
+    });
+  });
+
+  describe('include scope skip (EP1 handler guard, spec §5)', () => {
+    // Handler-level scope guard tests (spec §5 EP1, ADR-4, risk R2). The scope
+    // check lives in handleFileAdded/handleFileChanged — NEVER in the chokidar
+    // `ignored` predicate (extension patterns match no directory, so a
+    // predicate-level include would ignore every directory and disable the
+    // watcher; the 'ignore patterns' tests above lock that untouched contract).
+    // Paths below are the absolute paths chokidar passes to handlers — the
+    // proven-safe path basis for include patterns (Task 1 parity tests).
+    const INC_ROOT = '/abs-inc-root';
+
+    interface ScopedSourceOverrides {
+      include?: string[];
+      exclude?: string[];
+    }
+
+    // aWatchSourceConfig has no `include` override; the opt-in field is
+    // expressed directly here (undefined ⇒ key absent ⇒ today's behavior).
+    // exclude defaults to [] so no random exclude glob can leak in.
+    const aScopedSource = (overrides: ScopedSourceOverrides = {}): WatchSourceConfig => ({
+      ...aWatchSourceConfig({ id: 'inc-scope', path: INC_ROOT, exclude: overrides.exclude ?? [] }),
+      include: overrides.include,
+    });
+
+    const startAndCaptureHandlers = async (source: WatchSourceConfig) => {
+      configService.getWatchSources.mockReturnValue([source]);
+      await service.start();
+      const addHandler = mockWatcher.on.mock.calls.find(call => call[0] === 'add')?.[1] as
+        ((filePath: string) => void) | undefined;
+      const changeHandler = mockWatcher.on.mock.calls.find(call => call[0] === 'change')?.[1] as
+        ((filePath: string) => void) | undefined;
+      const unlinkHandler = mockWatcher.on.mock.calls.find(call => call[0] === 'unlink')?.[1] as
+        ((filePath: string) => void) | undefined;
+      expect(addHandler).toBeDefined();
+      expect(changeHandler).toBeDefined();
+      expect(unlinkHandler).toBeDefined();
+      return { addHandler: addHandler!, changeHandler: changeHandler!, unlinkHandler: unlinkHandler! };
+    };
+
+    it('does NOT process an added file that does not match the include allow-list', async () => {
+      const { addHandler } = await startAndCaptureHandlers(aScopedSource({ include: ['**/*.md'] }));
+
+      addHandler(`${INC_ROOT}/notes.txt`);
+
+      expect(mockProcessFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('processes an added file that matches the include allow-list', async () => {
+      const { addHandler } = await startAndCaptureHandlers(aScopedSource({ include: ['**/*.md'] }));
+
+      addHandler(`${INC_ROOT}/notes.md`);
+
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: `${INC_ROOT}/notes.md`,
+          eventType: FILE_OPERATIONS.ADD,
+        }),
+      );
+    });
+
+    it('does NOT process a changed file that does not match the include allow-list', async () => {
+      const { changeHandler } = await startAndCaptureHandlers(aScopedSource({ include: ['**/*.md'] }));
+
+      changeHandler(`${INC_ROOT}/data.txt`);
+
+      expect(mockProcessFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('does NOT process an added file when an exclude pattern matches, even if include matches (exclude wins)', async () => {
+      const { addHandler } = await startAndCaptureHandlers(
+        aScopedSource({ include: ['**/*.md'], exclude: ['**/drafts/**'] }),
+      );
+
+      addHandler(`${INC_ROOT}/drafts/draft.md`);
+
+      expect(mockProcessFileUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('keeps today-s behavior when include is absent: add, change and unlink are all processed', async () => {
+      const { addHandler, changeHandler, unlinkHandler } = await startAndCaptureHandlers(aScopedSource());
+
+      addHandler(`${INC_ROOT}/anything.txt`);
+      changeHandler(`${INC_ROOT}/another.log`);
+      unlinkHandler(`${INC_ROOT}/gone.dat`);
+
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: `${INC_ROOT}/anything.txt`,
+          eventType: FILE_OPERATIONS.ADD,
+        }),
+      );
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: `${INC_ROOT}/another.log`,
+          eventType: FILE_OPERATIONS.CHANGE,
+        }),
+      );
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: `${INC_ROOT}/gone.dat`,
+          eventType: FILE_OPERATIONS.DELETE,
+        }),
+      );
+    });
+
+    it('processes an UNLINK even when the deleted path fell out of include scope (forget path stays unfiltered)', async () => {
+      // Spec §5: UNLINK is DELIBERATELY unfiltered — the only forget path for a
+      // tracked file that fell out of scope before being deleted.
+      const { unlinkHandler } = await startAndCaptureHandlers(aScopedSource({ include: ['**/*.md'] }));
+
+      unlinkHandler(`${INC_ROOT}/gone.txt`);
+
+      expect(mockProcessFileUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: `${INC_ROOT}/gone.txt`,
           eventType: FILE_OPERATIONS.DELETE,
         }),
       );

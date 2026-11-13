@@ -1,4 +1,10 @@
-import { buildIgnoreRegexes, isPathExcluded, normalizePattern } from './glob-matcher';
+import {
+  buildIgnoreRegexes,
+  isPathExcluded,
+  isPathIncluded,
+  isPathInScope,
+  normalizePattern,
+} from './glob-matcher';
 
 describe('glob-matcher', () => {
   describe('normalizePattern', () => {
@@ -97,6 +103,164 @@ describe('glob-matcher', () => {
 
     it('handles patterns given with a leading slash', () => {
       expect(isPathExcluded('/a/b/tool-responses/x.log', ['/tool-responses/**'])).toBe(true);
+    });
+  });
+
+  describe('isPathIncluded', () => {
+    it('allows every path when the include list is empty (absent include allows all)', () => {
+      expect(isPathIncluded('/a/b/anything.txt', [])).toBe(true);
+      expect(isPathIncluded('notes/whatever.png', [])).toBe(true);
+    });
+
+    it('returns true for paths matching an include extension pattern (root-relative)', () => {
+      // Probe cases (materials/script-picomatch-include-probe.mjs) 1–2:
+      // '**/*.md' matches 'session.md' and 'findings/findings.md'.
+      expect(isPathIncluded('session.md', ['**/*.md'])).toBe(true);
+      expect(isPathIncluded('findings/findings.md', ['**/*.md'])).toBe(true);
+    });
+
+    it('returns true for paths matching an include extension pattern (absolute)', () => {
+      // Probe case 4 (corrected finding): the normalized '**/' prefix matches
+      // all depths, so the same pattern set matches absolute paths too.
+      expect(isPathIncluded('/abs/root/session.md', ['**/*.md'])).toBe(true);
+      expect(isPathIncluded('/abs/root/findings/findings.md', ['**/*.md'])).toBe(true);
+    });
+
+    it('returns false when no pattern matches', () => {
+      expect(isPathIncluded('/a/b/notes.txt', ['**/*.md'])).toBe(false);
+      expect(isPathIncluded('a/b/c.ts', ['**/*.md', '**/*.mmd'])).toBe(false);
+    });
+
+    it('matches when any of multiple patterns matches', () => {
+      expect(isPathIncluded('/a/b/notes.mmd', ['**/*.md', '**/*.mmd'])).toBe(true);
+      expect(isPathIncluded('/a/b/notes.md', ['**/docs/**', '**/*.md'])).toBe(true);
+    });
+
+    it('matches directory-anchored patterns — the dir itself and its contents', () => {
+      // Probe cases 5–6: dir-anchored include patterns CAN match directory
+      // paths (call sites are still contractually files-only — see I2).
+      expect(isPathIncluded('docs', ['**/docs/**'])).toBe(true);
+      expect(isPathIncluded('docs/notes.md', ['**/docs/**'])).toBe(true);
+      expect(isPathIncluded('/abs/root/docs/notes.md', ['**/docs/**'])).toBe(true);
+    });
+
+    it('normalizes include patterns through the same pipeline as excludes', () => {
+      // Probe case 7: a bare '.md' normalizes to '**/.md' — a basename glob,
+      // not an extension glob; extension include lists are written '*.md'.
+      expect(isPathIncluded('a.md', ['.md'])).toBe(false);
+      expect(isPathIncluded('a/sub/x.md', ['.md'])).toBe(false);
+      expect(isPathIncluded('a/sub/x.md', ['*.md'])).toBe(true);
+      // Leading-slash patterns behave like relative ones (normalizePattern).
+      expect(isPathIncluded('/a/x.md', ['/x.md'])).toBe(true);
+    });
+
+    it('ignores blank patterns without matching everything', () => {
+      expect(isPathIncluded('/a/b/x.log', [''])).toBe(false);
+      expect(isPathIncluded('/a/b/x.log', ['', '   '])).toBe(false);
+    });
+  });
+
+  describe('isPathInScope — spec §4 semantics truth table', () => {
+    it("row: include absent, not excluded → in scope (today's behavior)", () => {
+      expect(isPathInScope('/a/b/anything.txt', undefined, ['**/node_modules/**'])).toBe(true);
+    });
+
+    it("row: include absent, excluded → out of scope (today's behavior)", () => {
+      expect(isPathInScope('/a/node_modules/pkg/file.js', undefined, ['**/node_modules/**'])).toBe(false);
+    });
+
+    it('row: empty include list behaves as absent (allow-all)', () => {
+      expect(isPathInScope('/a/b/anything.txt', [], ['**/node_modules/**'])).toBe(true);
+    });
+
+    it('row: empty include list, excluded → out of scope', () => {
+      expect(isPathInScope('/a/node_modules/pkg/file.js', [], ['**/node_modules/**'])).toBe(false);
+    });
+
+    it('row: include non-empty, matched, not excluded → in scope (new)', () => {
+      expect(isPathInScope('notes/session.md', ['**/*.md'], ['**/*.png'])).toBe(true);
+      expect(isPathInScope('/abs/root/notes/session.md', ['**/*.md'], [])).toBe(true);
+    });
+
+    it('row: include non-empty, not matched → out of scope regardless of exclude', () => {
+      expect(isPathInScope('notes/session.txt', ['**/*.md'], [])).toBe(false);
+      expect(isPathInScope('notes/session.txt', ['**/*.md'], ['**/drafts/**'])).toBe(false);
+    });
+
+    it('row: include matched AND exclude matched → out of scope (exclude wins)', () => {
+      expect(isPathInScope('drafts/session.md', ['**/*.md'], ['**/drafts/**'])).toBe(false);
+    });
+  });
+
+  describe('invariant I1 — hard guards are never re-admitted by include', () => {
+    // Hard guards (DEFAULT_IGNORE_GLOBS in file-watcher.service.ts) live in a
+    // separate always-on layer above this module; include composes strictly
+    // above them. Tested via the composition: included but excluded ⇒ out.
+    it('keeps .git files out of scope even when the include pattern matches them', () => {
+      const include = ['**/*.md'];
+      expect(isPathIncluded('/repo/.git/README.md', include)).toBe(true);
+      expect(isPathInScope('/repo/.git/README.md', include, ['**/.git/**'])).toBe(false);
+    });
+
+    it('keeps node_modules files out of scope even when the include pattern matches them', () => {
+      const include = ['**/*.js'];
+      expect(isPathIncluded('/repo/node_modules/pkg/index.js', include)).toBe(true);
+      expect(isPathInScope('/repo/node_modules/pkg/index.js', include, ['**/node_modules/**'])).toBe(false);
+    });
+
+    it('keeps dot-file guard names out of scope even when the include pattern matches them', () => {
+      const include = ['**/.env*'];
+      expect(isPathIncluded('/repo/.env.local', include)).toBe(true);
+      expect(isPathInScope('/repo/.env.local', include, ['**/.env*'])).toBe(false);
+    });
+  });
+
+  describe('invariant I2 — include is evaluated against files only, never directory paths', () => {
+    // The functions are path-kind-agnostic by design (no stat calls). The
+    // files-only rule is a call-site contract: extension include patterns
+    // never match directory paths, so directory descent stays exclude-only.
+    it('extension include patterns do not match directory paths (root-relative and absolute)', () => {
+      // Probe case 3: '**/*.md' vs 'findings' → false.
+      expect(isPathIncluded('findings', ['**/*.md'])).toBe(false);
+      expect(isPathIncluded('/abs/root/findings', ['**/*.md'])).toBe(false);
+    });
+
+    it('files living under directories that no extension include pattern matches remain in scope', () => {
+      // Descent is not include-pruned: the file itself, not its directory,
+      // is evaluated.
+      expect(isPathInScope('findings/findings.md', ['**/*.md'], [])).toBe(true);
+      expect(isPathInScope('/abs/root/findings/findings.md', ['**/*.md'], [])).toBe(true);
+    });
+  });
+
+  describe('invariant I3 — one normalized pattern set serves both path bases (no per-EP rewriting)', () => {
+    // Transplanted probe fixtures: the SAME pattern set produces identical
+    // results for root-relative and absolute paths (i3: watcher=absolute,
+    // batch=root-relative).
+    const INCLUDE = ['**/*.md', '**/docs/**'];
+    const parityCases: { relative: string; absolute: string; expected: boolean }[] = [
+      { relative: 'session.md', absolute: '/abs/root/session.md', expected: true },
+      { relative: 'findings/findings.md', absolute: '/abs/root/findings/findings.md', expected: true },
+      { relative: 'docs/notes.md', absolute: '/abs/root/docs/notes.md', expected: true },
+      { relative: 'notes.txt', absolute: '/abs/root/notes.txt', expected: false },
+      { relative: 'docs', absolute: '/abs/root/docs', expected: true },
+    ];
+
+    it('returns identical results for root-relative and absolute fixtures with one pattern set', () => {
+      for (const { relative, absolute, expected } of parityCases) {
+        expect(isPathIncluded(relative, INCLUDE)).toBe(expected);
+        expect(isPathIncluded(absolute, INCLUDE)).toBe(expected);
+        expect(isPathInScope(relative, INCLUDE, [])).toBe(expected);
+        expect(isPathInScope(absolute, INCLUDE, [])).toBe(expected);
+      }
+    });
+
+    it('parity also holds through scope composition with shared excludes', () => {
+      const exclude = ['**/drafts/**'];
+      expect(isPathInScope('drafts/a.md', INCLUDE, exclude)).toBe(false);
+      expect(isPathInScope('/abs/root/drafts/a.md', INCLUDE, exclude)).toBe(false);
+      expect(isPathInScope('findings/b.md', INCLUDE, exclude)).toBe(true);
+      expect(isPathInScope('/abs/root/findings/b.md', INCLUDE, exclude)).toBe(true);
     });
   });
 

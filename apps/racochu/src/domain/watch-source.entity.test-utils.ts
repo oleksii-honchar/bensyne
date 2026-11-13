@@ -9,10 +9,8 @@ export function aWatchSource(overrides?: Partial<WatchSourceProps>): WatchSource
   const props: WatchSourceProps = {
     id: generateId(),
     path: faker.system.filePath(),
-    include: [`*.${faker.lorem.word().slice(0, 3)}`],
     exclude: [`**/${faker.lorem.word()}/**`],
     debounceMs: 3000,
-    ignorePatterns: [],
     sourceType: SOURCE_TYPES.VAULT,
     ...overrides,
   };

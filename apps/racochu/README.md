@@ -156,6 +156,7 @@ telemetry:
 | **watchSources[]** | id           | string   | —                                   | Unique identifier for this watch source                         |
 |                    | path         | string   | —                                   | Directory to watch (supports `~/` expansion)                    |
 |                    | exclude      | string[] | `['.git/**', '**/node_modules/**']` | Chokidar ignore patterns                                        |
+|                    | include      | string[] | — (no allow-list)                   | Optional per-source allow-list (glob patterns); present and non-empty = only matching files are ingested; see [Include allow-list](#include-allow-list-include) |
 |                    | debounceMs   | number   | 3000                                | ms to wait after last file modification before processing       |
 |                    | ttlDays      | number   | — (no TTL)                          | Optional per-source retention in days; see [Source TTL](#source-ttl-ttldays) |
 |                    | deleteDueFiles | boolean | — (off)                           | Optional; `true` also deletes due files from disk after they are forgotten (requires `ttlDays`); see [Source TTL](#source-ttl-ttldays) |
@@ -171,6 +172,69 @@ telemetry:
 |                    | retryDelayMs | number   | 1000                                | Base delay between retries (linear backoff)                     |
 | **enrichment**     | enabled      | boolean  | false                               | Enable LLM-based chunk enrichment (future)                      |
 | **telemetry**      | enabled      | boolean  | false                               | Enable OpenTelemetry metrics/traces                             |
+
+### Include allow-list (`include`)
+
+Each `watchSources[]` entry may set an optional `include` — a positive allow-list of
+glob patterns, the counterpart of `exclude`. Absent or empty means **no allow-list**:
+everything `exclude` does not reject is ingested, exactly as today; `include` is
+opt-in per source and never defaulted. When present and non-empty, a file is in
+scope only if it matches at least one include pattern **and** no exclude pattern —
+the composition is always hard guards ∧ allow-list ∧ ¬excluded, and exclude wins a
+tie. (An entry that normalizes to a pattern also present in `exclude` can never
+match anything, so the config parse refuses it, naming both keys.)
+
+Two rules hold at every scope check, by construction:
+
+- **`include` never overrides the always-on ignore list.** `.git`, `node_modules`,
+  `.DS_Store`, `Thumbs.db`, `.env*` are hard guards the watcher applies to every
+  source on top of all per-source config; an include pattern naming such a path
+  does not re-admit it.
+- **`include` never stops directory descent.** Only files are matched against the
+  allow-list; directory traversal depends on `exclude` alone — a dir-anchored
+  include pattern still reaches every file under its directory.
+
+The same scope governs every ingestion path: watcher `add`/`change` delivery and
+the batch walks (startup auto-populate / `--resume`, `--process-only`,
+`--force-reprocess`, `--reprocess-edges`). `unlink` cleanup is deliberately
+unfiltered — deleting an out-of-scope file still forgets its memories.
+
+**Example** — a positive list replacing a long per-source deny-list (an example of
+the migration shape for ONE source, not a recommendation for every source):
+
+```yaml
+watchSources:
+  - id: agent-sessions
+    path: ~/.agent-sessions
+    include:
+      - '**/*.md'
+      - '**/*.mmd'   # diagram files these sources also used to ingest
+    # Residual directory excludes stay deliberately: their contents DO match the
+    # allow-list by extension and the old config excluded them — dropping them
+    # here would be a behavior change, not a simplification.
+    exclude:
+      - '**/tool-responses/**'
+      - '**/plans/**'
+      - '**/.obsidian/**'
+      - '**/.opencode/**'
+      - '**/.smart-env/**'
+      - '**/.vault/**'
+      - '**/.playwright-mcp/**'
+```
+
+> **Mass-forget guard on scope narrowing:** like `exclude`, an `include` change
+> only steers *future* ingestion — previously-ingested files that fall out of
+> scope are forgotten by the startup reconciliation that re-checks every tracked
+> file. If more than **20 files** of one source are out of scope, the shared
+> mass-forget guard **refuses that source's run** and forgets **nothing**, logging
+> `MASS-FORGET REFUSED` with the `outOfScopeMatched` count, the threshold, and
+> both pattern lists — review the numbers first. Forgetting is irreversible (only
+> re-ingesting the file from disk — `--resume` or `--force-reprocess` — brings it
+> back); when the list is what you meant, consent with
+> `RACOCHU_RECONCILE_FORCE_FORGET=1` for one run (same guard and
+> consent path as [Source TTL](#source-ttl-ttldays)). Per-source migrations to
+> this shape (an obsidian vault, for instance) wait on the operator's
+> confirmation of the source path before rollout.
 
 ### Source TTL (`ttlDays`)
 
@@ -683,6 +747,21 @@ Stale database. Clean up: `rm -rf data/e2e/mnemosyne.db && npm run bensyne:start
 - Check `~/.config/racochu.yaml` watchSources path is correct
 - Ensure path uses absolute path or `~/` expansion (no relative paths in production config)
 - Verify exclude patterns don't accidentally match your files (e.g., `**/.git/**` doesn't match `.git/FETCH_HEAD` at root)
+
+**Files stopped being ingested after adding `include`:**
+
+- **The file matches no include pattern.** Patterns are standard `picomatch` globs,
+  each normalized to match at any depth (an added `**/` prefix, stripped leading
+  slashes) — so `*.md` and `**/*.md` are the same pattern; check the extension
+  spelling and any dir-anchored part against the file's actual path under the root.
+- **A hard guard outranks it.** The watcher always ignores `.git`, `node_modules`,
+  `.DS_Store`, `Thumbs.db`, `.env*` whatever is configured — `include` never
+  overrides that (and an `exclude` pattern still beats a matching `include` entry).
+- **The mass-forget guard refused the reconciliation.** Log lines reading
+  `MASS-FORGET REFUSED … outOfScopeMatched=…` mean your scope narrowing was
+  counted but **nothing was forgotten** for that source — earlier memories are
+  pending your review, not silently lost; review the printed counts and patterns,
+  then consent explicitly (see [Include allow-list](#include-allow-list-include)).
 
 **"No session_id received from SSE endpoint":**
 Mnemosyne MCP not reachable. Check:

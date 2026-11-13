@@ -11,7 +11,7 @@ import { FileProcessingQueue } from '../../infrastructure/services/file-processi
 import { ProcessFileOutcome, ProcessFileUseCase } from '../../use-cases/process-file.use-case';
 import { Result } from '../../utils/result';
 import { isPastDue } from '../../utils/ttl-activity';
-import { isPathExcluded } from '../glob-matcher';
+import { isPathExcluded, isPathInScope } from '../glob-matcher';
 
 /**
  * Per-run classification counters for the C8 batch summary (spec C8,
@@ -596,7 +596,10 @@ export class ForceReprocessService {
           const subFiles = await this.scanDirectory(fullPath, source, sourceRoot);
           files.push(...subFiles);
         } else if (entry.isFile()) {
-          if (!isPathExcluded(relPath, source.exclude)) {
+          // File emission uses the shared scope check: include allow-list
+          // (when present) ∧ ¬excluded — one composition, same semantics as
+          // every other enforcement point (spec §5 EP2).
+          if (isPathInScope(relPath, source.include, source.exclude)) {
             files.push(fullPath);
           }
         }

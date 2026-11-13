@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
-import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
-import { ReprocessEdgesUseCase, ReprocessEdgesResult } from '../../use-cases/reprocess-edges.use-case';
-import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { WatchSourceConfig } from '../../infrastructure/config/config-schemas';
+import { BasePinoLogger } from '../../infrastructure/logging/base-pino-logger';
+import { BensyneClient } from '../../infrastructure/services/bensyne-client.service';
+import { ReprocessEdgesUseCase } from '../../use-cases/reprocess-edges.use-case';
+import { isPathExcluded, isPathInScope } from '../glob-matcher';
 
 @Injectable()
 export class ReprocessEdgesService {
@@ -30,7 +31,7 @@ export class ReprocessEdgesService {
   async reprocessSource(sourceId: string, sources: WatchSourceConfig[]): Promise<void> {
     this.logger.info(`Reprocessing edges for source; id="${sourceId}"`);
 
-    const source = sources.find((s) => s.id === sourceId);
+    const source = sources.find(s => s.id === sourceId);
     if (!source) {
       this.logger.error(`Source not found; id="${sourceId}"`);
       return;
@@ -62,11 +63,11 @@ export class ReprocessEdgesService {
         const stats = result.getValue();
         this.logger.info(
           `Edge reprocessing complete; source="${source.id}", filesProcessed=${stats.filesProcessed}, ` +
-          `ghostEdgesFound=${stats.ghostEdgesFound}, edgesNeedUpdate=${stats.edgesNeedUpdate}`
+            `ghostEdgesFound=${stats.ghostEdgesFound}, edgesNeedUpdate=${stats.edgesNeedUpdate}`,
         );
       } else {
         this.logger.error(
-          `Edge reprocessing failed; source="${source.id}", errors="${result.getFormattedErrors()}"`
+          `Edge reprocessing failed; source="${source.id}", errors="${result.getFormattedErrors()}"`,
         );
       }
     } catch (error) {
@@ -149,14 +150,22 @@ export class ReprocessEdgesService {
         const relPath = path.relative(sourceRoot, fullPath);
 
         if (entry.isDirectory()) {
-          // Skip excluded directories
-          if (source.exclude && source.exclude.length > 0) {
-            // Simplified exclude check
+          // Skip excluded directories using the shared glob matcher — the
+          // behavior the empty stub in be40a0f documented but never had
+          // (ADR-3 alignment). Descent stays EXCLUDE-ONLY: include patterns
+          // match files, never directory paths (invariant I2).
+          if (isPathExcluded(relPath, source.exclude)) {
+            continue;
           }
           const subFiles = await this.scanDirectory(fullPath, source, sourceRoot);
           files.push(...subFiles);
         } else if (entry.isFile()) {
-          files.push(fullPath);
+          // File emission uses the shared scope check: include allow-list
+          // (when present) ∧ ¬excluded — one composition, same semantics as
+          // every other enforcement point (spec §5 EP3).
+          if (isPathInScope(relPath, source.include, source.exclude)) {
+            files.push(fullPath);
+          }
         }
       }
     } catch (error) {

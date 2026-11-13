@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizePattern } from '../../application/glob-matcher';
 import { DEFAULT_CONTENT_FILTER_OPTIONS } from '../../application/services/content-classifier.service';
 import { SOURCE_TYPES } from './source-types';
 
@@ -47,6 +48,12 @@ const watchSourceShape = z.object({
   // same DEC-0075 idiom as ttlDays; the cross-key rule lives in the entry
   // refine below, NOT here and NOT on the internal seam).
   deleteDueFiles: z.boolean().optional(),
+  // Optional per-source include allow-list (glob patterns, same idiom as exclude).
+  // Absent = no allow-list: everything not excluded is ingested (opt-in, never
+  // defaulted — same DEC-0075 idiom as ttlDays/deleteDueFiles). When present and
+  // non-empty, ONLY files matching at least one include pattern are in scope.
+  // include NEVER overrides the hard guards and NEVER prunes directory descent.
+  include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).default(['.git/**', '**/.git/**', 'node_modules/**', '**/node_modules/**']),
   debounceMs: z.number().positive().default(3000),
   // Optional content-classifier config; defaults are conservative (see
@@ -109,6 +116,25 @@ export const watchSourceConfigSchema = watchSourceShape
           "Watch source 'deleteDueFiles: true' requires 'ttlDays' (deleteDueFiles is set while ttlDays is absent)",
         path: ['deleteDueFiles'],
       });
+    }
+    // Spec §3 / ADR-7: an include entry that, after normalizePattern, is
+    // string-equal to an exclude entry can never land in scope (the file that
+    // matches it is always excluded) — an inert allow-list entry, refused here
+    // exactly like the inert deleteDueFiles option above (one issue naming BOTH
+    // keys and the offending pattern). Normalized-string equality only:
+    // subsumption solving is out of scope (ADR-7). The internal seam never
+    // sees this rule (R1 rule — entry gate only).
+    const normalizedExcludes = new Set(data.exclude.map(normalizePattern));
+    for (const entry of data.include ?? []) {
+      if (normalizedExcludes.has(normalizePattern(entry))) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            `Watch source 'include' entry '${entry}' normalizes to a pattern identical to an 'exclude' entry ` +
+            '(a file matching it can never be in scope while both lists name it)',
+          path: ['include'],
+        });
+      }
     }
   })
   .transform(normalizeWatchSource);

@@ -70,10 +70,8 @@ describe('WatchSource', () => {
       // Assert
       expect(json.id).toBe(watchSource.id);
       expect(json.path).toBe(watchSource.path);
-      expect(json.include).toEqual(watchSource.include);
       expect(json.exclude).toEqual(watchSource.exclude);
       expect(json.debounceMs).toBe(watchSource.debounceMs);
-      expect(json.ignorePatterns).toEqual(watchSource.ignorePatterns);
       expect(json.sourceType).toBe(watchSource.sourceType);
     });
 
@@ -85,9 +83,7 @@ describe('WatchSource', () => {
       const json = watchSource.toJson();
 
       // Assert
-      expect(json.include).not.toBe(watchSource.include);
       expect(json.exclude).not.toBe(watchSource.exclude);
-      expect(json.ignorePatterns).not.toBe(watchSource.ignorePatterns);
     });
 
     it('returned props can recreate the entity', () => {
@@ -103,10 +99,8 @@ describe('WatchSource', () => {
       const recreated = result.getValue();
       expect(recreated.id).toBe(watchSource.id);
       expect(recreated.path).toBe(watchSource.path);
-      expect(recreated.include).toEqual(watchSource.include);
       expect(recreated.exclude).toEqual(watchSource.exclude);
       expect(recreated.debounceMs).toBe(watchSource.debounceMs);
-      expect(recreated.ignorePatterns).toEqual(watchSource.ignorePatterns);
       expect(recreated.sourceType).toBe(watchSource.sourceType);
     });
   });
@@ -116,30 +110,24 @@ describe('WatchSource', () => {
       // Arrange
       const expectedId = 9876543210987654321n;
       const expectedPath = '/tmp/getters';
-      const expectedInclude = ['*.md', '*.txt'];
       const expectedExclude = ['**/archive/**'];
       const expectedDebounceMs = 5000;
-      const expectedIgnorePatterns = ['**/.DS_Store', '**/Thumbs.db'];
       const expectedSourceType = SOURCE_TYPES.AGENT_SESSIONS;
 
       // Act
       const watchSource = aWatchSource({
         id: expectedId,
         path: expectedPath,
-        include: expectedInclude,
         exclude: expectedExclude,
         debounceMs: expectedDebounceMs,
-        ignorePatterns: expectedIgnorePatterns,
         sourceType: expectedSourceType,
       });
 
       // Assert
       expect(watchSource.id).toBe(expectedId);
       expect(watchSource.path).toBe(expectedPath);
-      expect(watchSource.include).toEqual(expectedInclude);
       expect(watchSource.exclude).toEqual(expectedExclude);
       expect(watchSource.debounceMs).toBe(expectedDebounceMs);
-      expect(watchSource.ignorePatterns).toEqual(expectedIgnorePatterns);
       expect(watchSource.sourceType).toBe(expectedSourceType);
     });
   });
