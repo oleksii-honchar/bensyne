@@ -2,7 +2,7 @@
 type: index
 title: "Specifications"
 createdAt: "2026-08-16"
-updatedAt: "2026-11-01T13:54:35Z"
+updatedAt: "2026-11-13T16:38:43Z"
 ---
 
 # Specifications
@@ -21,6 +21,7 @@ Technical specifications. Grouped by `system` frontmatter.
 - [[0005-file-hash-deduplication]] — Dual-Hash Deduplication for Cross-Device Sync
 - [[0006-source-ttl-sweep]] — Source TTL Sweep (Racochu) (clock design superseded by DEC-0118, 2026-10-28 — activity-clock gate)
 - [[0007-racochu-recover-mode]] — Racochu CLI recover Mode — Zero-LLM Chunk Recovery
+- [[0011-watch-source-include-allowlist]] — Watch-Source Include Allow-List (completed — landed 7464e39)
 
 ### shared
 

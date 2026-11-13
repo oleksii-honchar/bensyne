@@ -2,7 +2,7 @@
 type: index
 title: "Concepts"
 createdAt: "2026-08-16"
-updatedAt: "2026-11-01T13:54:35Z"
+updatedAt: "2026-11-13T16:38:43Z"
 tags: []
 ---
 
@@ -45,3 +45,4 @@ Domain concepts and models. Grouped by `system` frontmatter.
 - [[0021-llm-enrichment]] — LLM Enrichment
 - [[0023-materialization]] — Materialization
 - [[0024-vault-note-chunking]] — Vault Note Chunking
+- [[0028-ingestion-scope-filtering]] — Ingestion Scope Filtering — Four Enforcement Points, One Matcher, Two Path Bases

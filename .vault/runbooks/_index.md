@@ -2,7 +2,7 @@
 type: index
 title: "Runbooks"
 createdAt: "2026-08-16"
-updatedAt: "2026-11-02T11:07:30Z"
+updatedAt: "2026-11-13T16:38:43Z"
 tags: []
 ---
 
@@ -24,6 +24,7 @@ Operational runbooks. Grouped by `system` frontmatter.
 - [[0006-racochu-recover-mode]] — Racochu Recover Mode (--recover)
 - [[0011-verify-racochu-ingest-gate-holding]] — Verify the racochu Ingest Gate Is Holding (DEC-0119 post-change health check)
 - [[0012-persona-edge-startup-reconcile]] — Startup Persona Edge Reconciliation (self-heal, --skip-edge-reconcile)
+- [[0013-include-allowlist-rollout-guarded-forget]] — Include Allow-List Rollout with Guarded Forgetting (refusal → RACOCHU_RECONCILE_FORCE_FORGET=1 consent)
 
 ### bensyne-mcp
 

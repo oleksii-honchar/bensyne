@@ -4,9 +4,9 @@ title: "RAG Content Chunker — Server Components"
 c4_level: component
 system: racochu
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-11-01T13:54:35Z"
+updatedAt: "2026-11-13T16:38:43Z"
 tags: [architecture, component]
-see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md, decisions/0087-chokidar-dot-root-root-guard.decision.md, decisions/0088-chokidar-watcher-ready-log.decision.md, decisions/0118-ttl-activity-clock-gate.decision.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0121-manual-cli-watch-operation-with-instance-lock.decision.md, concepts/0014-file-memory-tracking.concept.md]
+see_also: [concepts/0012-processing-model.concept.md, concepts/0016-chunking-strategy-pattern.concept.md, specifications/0006-source-ttl-sweep.spec.md, specifications/0007-racochu-recover-mode.spec.md, decisions/0073-ttl-sweep-racochu-side.decision.md, decisions/0081-recover-exiting-cli-mode.decision.md, decisions/0087-chokidar-dot-root-root-guard.decision.md, decisions/0088-chokidar-watcher-ready-log.decision.md, decisions/0118-ttl-activity-clock-gate.decision.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0121-manual-cli-watch-operation-with-instance-lock.decision.md, concepts/0014-file-memory-tracking.concept.md, decisions/0122-watch-source-include-allowlist.decision.md, decisions/0123-reprocess-edges-exclude-alignment.decision.md, decisions/0125-reconciliation-out-of-scope-semantics.decision.md, concepts/0028-ingestion-scope-filtering.concept.md]
 linked_elements: []
 deprecated:
   date: null
@@ -25,7 +25,7 @@ C4Component
   Container(server, "RAG Content Chunker Server", "Node.js + NestJS", "CLI server")
 
   Boundary(server, "Server Components", "Boundary") {
-    Component(fileWatcher, "FileWatcherService", "TypeScript + Chokidar", "Monitors configured directories for add/change/unlink")
+    Component(fileWatcher, "FileWatcherService", "TypeScript + Chokidar", "Monitors configured directories for add/change/unlink; event handlers apply the shared scope check isPathInScope (include allow-list, DEC-0122)")
     Component(eventBus, "AppEventEmitter", "TypeScript + @nestjs/event-emitter", "Pub/sub for file change events")
     Component(processFile, "ProcessFileUseCase", "TypeScript", "Ingest gate: content-hash gate + terminal-skip quarantine (DEC-0119), then orchestrates read → chunk → enhance → ingest", vault_link="decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md")
     Component(instanceLock, "InstanceLockService", "TypeScript + fs lock file", "Watch-mode single-instance guard: data/racochu.watch.lock, holder-pid check, refuses second watcher (DEC-0121)")
@@ -83,7 +83,7 @@ C4Component
 
 | ID | Name | Type | Technology | Description |
 |----|------|------|-----------|-------------|
-| `fileWatcher` | FileWatcherService | Component | Chokidar | Watches multiple configured directories with debounce per source; root guard never excludes the normalized watched root (dot-root fix, DEC-0088) + per-source `ready` log for detectability (DEC-0089) |
+| `fileWatcher` | FileWatcherService | Component | Chokidar | Watches multiple configured directories with debounce per source; root guard never excludes the normalized watched root (dot-root fix, DEC-0088) + per-source `ready` log for detectability (DEC-0089). Event handlers apply the shared scope check `isPathInScope` (include allow-list, DEC-0122); the chokidar `ignored` predicate deliberately does NOT hold include patterns (watcher-blindfold hazard — memory 0031); `handleFileDeleted` deliberately unfiltered (only forget path for tracked out-of-scope deletes) |
 | `eventBus` | AppEventEmitter | Component | @nestjs/event-emitter | Pub/sub event bus decoupling FileWatcher from ProcessFileUseCase |
 | `processFile` | ProcessFileUseCase | Component | DDD UseCase | The ingest choke point. Handlers: handleAdd, handleChange (get old IDs → forget old → ingest), handleDelete. **Content-hash ingest gate (DEC-0119):** unchanged-hash ⇒ log-and-skip before `getMemoryIds`/`forgetByFile` (order-guard tested); hash computed before chunking on add paths; fail-open on gate-input errors; `forceIngest` parameter bypasses at corrective call sites. Dedup via processing Set (see memory 0007) remains for concurrent event de-dup only |
 | `instanceLock` | InstanceLockService | Component | TypeScript (`fs.open` `wx` + pid liveness) | Watch-mode single-instance guard (DEC-0121): acquires `data/racochu.watch.lock` before auto-populate; stale-pid reclaim once; second live holder ⇒ refusal exit 1 with holder pid; SIGINT/SIGTERM release; one-shot modes neither take nor honor it |

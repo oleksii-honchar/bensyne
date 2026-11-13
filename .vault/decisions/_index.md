@@ -2,13 +2,13 @@
 type: index
 title: "Decisions"
 createdAt: "2026-08-16"
-updatedAt: "2026-11-01T13:54:35Z"
+updatedAt: "2026-11-13T16:38:43Z"
 tags: []
 ---
 
 # Decisions
 
-Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). From filename 0111 onward the offset ends: filenames and DEC ids match 1:1. For the 2026-10-08 session-bank-cleanup repair set: filenames 0115–0117 carry DEC-0115..0117 (no offset). For the 2026-10-28 TTL activity-clock promotion: filename 0118 carries DEC-0118 (1:1 continues). For the 2026-11-01 racochu ingest-gate set: filenames 0119–0121 carry DEC-0119..0121 (1:1 continues). Grouped by `system` frontmatter.
+Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0001–0060, 0062–0094; filenames 0061–0093 map to DEC-0062..0094 with a +1 offset). For 2026-08-28 bank-discovery set: filenames 0094–0097 carry DEC-0095..0098 (continuing the +1 offset). For 2026-08-28 forgetFile contract set: filenames 0098–0099 carry DEC-0099..0100. For 2026-08-31 bank-resolution fix set: filenames 0100–0101 carry DEC-0101..0102 (continuing the +1 offset). For the 2026-08-31 path-handle set: filenames 0102–0106 carry DEC-0103..0107 (continuing the +1 offset). For the 2026-09-07 content-sync set: filename 0107 carries DEC-0108 (continuing the +1 offset). For the 2026-09-14 per-session memory set: filename 0108 carries DEC-0109 (continuing the +1 offset). For the 2026-09-26 episodic-memory tier migration set: filename 0109 carries DEC-0110 (continuing the +1 offset). From filename 0111 onward the offset ends: filenames and DEC ids match 1:1. For the 2026-10-08 session-bank-cleanup repair set: filenames 0115–0117 carry DEC-0115..0117 (no offset). For the 2026-10-28 TTL activity-clock promotion: filename 0118 carries DEC-0118 (1:1 continues). For the 2026-11-01 racochu ingest-gate set: filenames 0119–0121 carry DEC-0119..0121 (1:1 continues). For the 2026-11-13 include allow-list set: filenames 0122–0125 carry DEC-0122..DEC-0125 (1:1 continues). Grouped by `system` frontmatter.
 
 ### Shared
 
@@ -139,3 +139,7 @@ Architectural decisions for the Bensyne monorepo. Single ID space: `DEC-NNNN` (0
 - [[0119-file-hash-ingest-gate-and-terminal-skip-quarantine]] — Content-Hash Ingest Gate at the ProcessFileUseCase Choke Point + Terminal-Skip Quarantine (DEC-0119; with forceIngest corrective paths; CLI semantics divergence process-only gated / force-reprocess override)
 - [[0120-prisma-migrate-deploy-with-fail-loud-dedup-guard]] — Startup Schema via prisma migrate deploy + Fail-Loud Dedup Row-Count Guard (DEC-0120)
 - [[0121-manual-cli-watch-operation-with-instance-lock]] — No Daemon: Manual CLI-Run Watch with Single-Instance Lock; M3 as Repeat-Cost (DEC-0121; operator directive 2026-10-31)
+- [[0122-watch-source-include-allowlist]] — Per-Source Include Allow-List — Positive-List Field, One Composition in glob-matcher, Files-Only, Entry-Gate Shadow Rule (DEC-0122; consolidates session ADR-1/2/4/7)
+- [[0123-reprocess-edges-exclude-alignment]] — Wire reprocess-edges' Unfinished Exclude Stub — Edge Reprocessing Narrows to In-Scope Files (DEC-0123; behavior change)
+- [[0124-remove-dead-watchsource-entity-fields]] — Remove Dead WatchSource include/ignorePatterns Scaffolding — WatchSourceConfig Is the Seam (DEC-0124)
+- [[0125-reconciliation-out-of-scope-semantics]] — ExcludeReconciliation Generalized to Out-of-Scope Cleanup — Mass-Forget Guard Covers Allow-List Rollouts (DEC-0125)

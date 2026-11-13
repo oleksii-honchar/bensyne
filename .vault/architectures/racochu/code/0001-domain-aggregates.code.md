@@ -4,9 +4,9 @@ title: "RAG Content Chunker — Domain Entities"
 c4_level: code
 system: racochu
 createdAt: "2026-07-31T07:30:00Z"
-updatedAt: "2026-11-01T13:54:35Z"
+updatedAt: "2026-11-13T16:38:43Z"
 tags: [architecture, domain, ddd]
-see_also: [concepts/0008-chunk-concept.concept.md, concepts/0009-file-role.concept.md, concepts/0014-file-memory-tracking.concept.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0041-filetracker-schema-extension.decision.md]
+see_also: [concepts/0008-chunk-concept.concept.md, concepts/0009-file-role.concept.md, concepts/0014-file-memory-tracking.concept.md, decisions/0119-file-hash-ingest-gate-and-terminal-skip-quarantine.decision.md, decisions/0041-filetracker-schema-extension.decision.md, decisions/0124-remove-dead-watchsource-entity-fields.decision.md]
 linked_elements: []
 deprecated:
   date: null
@@ -43,7 +43,7 @@ C4Code
     }
 
     Class_Boundary(watchSource, "WatchSource", "Entity") {
-      Class(wsId, "id: string", "Unique source identifier")
+      Class(wsId, "id: bigint", "Unique source identifier (z.bigint().positive() in code)")
       Class(wsPath, "path: string", "Directory to watch")
       Class(wsExclude, "exclude: string[]", "Chokidar ignore patterns")
       Class(wsDebounce, "debounceMs: number", "Debounce interval in ms")
