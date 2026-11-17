@@ -352,9 +352,13 @@ class TestForgetMemoryUseCase:
 
     # -- Bank type guard --
 
-    def test_execute_rejects_non_pure_memories_bank(self, mnemosyne_client, hash_index_service, logger) -> None:
-        """ForgetMemoryUseCase must reject banks that are not pure_memories."""
-        bank_type_checker = lambda bank: "file_metadata"
+    def test_execute_rejects_unsupported_bank_types(self, mnemosyne_client, hash_index_service, logger) -> None:
+        """ForgetMemoryUseCase must reject bank types outside pure_memories/file_metadata.
+
+        (Was: blanket rejection of file_metadata — superseded by the row-level
+        provenance contract tested below; refusal for all other types stands.)
+        """
+        bank_type_checker = lambda bank: "source_type"
 
         use_case = ForgetMemoryUseCase(
             mnemosyne_client=mnemosyne_client,
@@ -648,3 +652,89 @@ class TestForgetMemoryUseCase:
         )
 
         hash_index_service.remove.assert_called_once_with("mem_123")
+
+    # -- File-metadata banks: row-level provenance guard (persona-bank forget) --
+    #
+    # Persona banks are file_metadata banks whose store holds BOTH file-backed node
+    # projections (must never be forgotten) and plain occasional memories (must be
+    # forgettable). The guard therefore moves from bank-level refusal to row-level
+    # provenance: chunks present = file-backed = refuse; lookup failing = provenance
+    # unknown = refuse (fail-closed); no chunks = ordinary forget.
+
+    @pytest.fixture
+    def file_metadata_bank_checker(self) -> MagicMock:
+        return MagicMock(return_value="file_metadata")
+
+    def test_execute_forgets_episodic_row_in_file_metadata_bank(
+        self, mnemosyne_client, hash_index_service, file_service, file_metadata_bank_checker, logger
+    ) -> None:
+        """file_metadata bank + no chunk rows = row is not file-backed: forget proceeds."""
+        use_case = ForgetMemoryUseCase(
+            mnemosyne_client=mnemosyne_client,
+            hash_index_service=hash_index_service,
+            logger=logger,
+            file_service=file_service,
+            bank_type_checker=file_metadata_bank_checker,
+        )
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([])
+        mnemosyne_client.forget.return_value = Result.ok(True)
+
+        result = use_case.execute({"memory_id": "occ_123", "memory_bank": "agent-persona_worker"})
+
+        assert result.is_ok is True
+        assert result.value["status"] == "deleted"
+        mnemosyne_client.forget.assert_called_once_with("occ_123")
+        hash_index_service.remove.assert_called_once_with("occ_123")
+
+    def test_execute_refuses_file_backed_row_in_file_metadata_bank(
+        self, mnemosyne_client, hash_index_service, file_service, file_metadata_bank_checker, logger
+    ) -> None:
+        """file_metadata bank + chunk rows = file-backed projection: refuse, delete nothing."""
+        use_case = ForgetMemoryUseCase(
+            mnemosyne_client=mnemosyne_client,
+            hash_index_service=hash_index_service,
+            logger=logger,
+            file_service=file_service,
+            bank_type_checker=file_metadata_bank_checker,
+        )
+        file_service.get_chunks_by_memory_id.return_value = Result.ok([MagicMock(file_id="file_1")])
+
+        result = use_case.execute({"memory_id": "node_projection_1", "memory_bank": "agent-persona_worker"})
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "MEMORY_FILE_BACKED"
+        mnemosyne_client.forget.assert_not_called()
+        hash_index_service.remove.assert_not_called()
+
+    def test_execute_refuses_when_row_provenance_unknown_in_file_metadata_bank(
+        self, mnemosyne_client, hash_index_service, file_service, file_metadata_bank_checker, logger
+    ) -> None:
+        """file_metadata bank + provenance lookup fails: fail-closed, delete nothing."""
+        use_case = ForgetMemoryUseCase(
+            mnemosyne_client=mnemosyne_client,
+            hash_index_service=hash_index_service,
+            logger=logger,
+            file_service=file_service,
+            bank_type_checker=file_metadata_bank_checker,
+        )
+        file_service.get_chunks_by_memory_id.return_value = Result.ko(
+            [ErrorWithDetails("CHUNKS_LOOKUP_FAILED", {})]
+        )
+
+        result = use_case.execute({"memory_id": "occ_999", "memory_bank": "agent-persona_worker"})
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "MEMORY_PROVENANCE_UNKNOWN"
+        mnemosyne_client.forget.assert_not_called()
+
+    def test_execute_still_refuses_other_bank_types(
+        self, use_case, mnemosyne_client, bank_type_checker
+    ) -> None:
+        """Other non-pure bank types keep the original bank-level refusal."""
+        bank_type_checker.return_value = "source_type"
+
+        result = use_case.execute({"memory_id": "mem_123", "memory_bank": "agent-sessions_x"})
+
+        assert result.is_ko is True
+        assert result.errors[0].error_code == "MEMORY_BANK_NOT_SUPPORTED"
+        mnemosyne_client.forget.assert_not_called()
